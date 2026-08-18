@@ -23,6 +23,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+          fetch-depth: 0
 
       - name: Set up JDK 21
         uses: actions/setup-java@v5
@@ -58,8 +59,18 @@ jobs:
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE }}
         run: |
+          set -euo pipefail
           mkdir -p app/keystore
-          echo "$KEYSTORE_BASE64" | base64 -d > app/keystore/release.keystore
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > app/keystore/release.keystore
+
+      - name: Verify release keystore
+        env:
+          STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          keytool -list \
+            -keystore app/keystore/release.keystore \
+            -storepass "$STORE_PASSWORD"
 
       - name: Build Universal GMS Release APK
         env:
@@ -69,13 +80,54 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          ./gradlew assembleUniversalGmsRelease --no-configuration-cache --console=plain --warning-mode summary -x lint
+          ./gradlew assembleUniversalGmsRelease \
+            --no-configuration-cache \
+            --console=plain \
+            --warning-mode summary \
+            -x lint
 
-      - name: Upload APK to Release
+      - name: Create GitHub Release and Upload APK
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${{ github.ref_name }}"
+          fi
+
+          # Add "v" if manually entered without it
+          if [[ "$TAG" != v* ]]; then
+            TAG="v${TAG}"
+          fi
+
+          echo "Release tag: ${TAG}"
+
           APK_PATH=$(find app/build/outputs/apk -name '*.apk' | head -n 1)
-          mv "$APK_PATH" "convx-${TAG}.apk"
-          gh release upload "$TAG" "convx-${TAG}.apk" --repo "${{ github.repository }}" --clobber
+
+          if [ -z "$APK_PATH" ]; then
+            echo "::error::No APK was found."
+            exit 1
+          fi
+
+          APK_NAME="convx-${TAG}.apk"
+          mv "$APK_PATH" "$APK_NAME"
+
+          # Create the release if it doesn't exist.
+          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "Release ${TAG} already exists."
+          else
+            echo "Creating release ${TAG}..."
+            gh release create "$TAG" \
+              --repo "${{ github.repository }}" \
+              --title "$TAG" \
+              --generate-notes
+          fi
+
+          # Upload APK to the release.
+          gh release upload "$TAG" \
+            "$APK_NAME" \
+            --repo "${{ github.repository }}" \
+            --clobber
