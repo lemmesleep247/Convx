@@ -51,9 +51,10 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import com.convx.music.ui.component.buildAlphabetSectionIndex
+import com.convx.music.ui.component.ListScrollRail
 import com.convx.music.ui.component.LargeScreenTitle
 import com.convx.music.ui.component.AnimatedPlayPauseIcon
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -89,11 +90,8 @@ import com.convx.music.ui.utils.heroPullZoom
 import com.convx.music.ui.utils.listOverscroll
 import androidx.compose.ui.util.fastForEachReversed
 import androidx.compose.ui.util.fastSumBy
-import androidx.core.net.toUri
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.media3.exoplayer.offline.Download
-import androidx.media3.exoplayer.offline.DownloadRequest
-import androidx.media3.exoplayer.offline.DownloadService
 import androidx.navigation.NavController
 import coil3.compose.AsyncImage
 import com.convx.music.ui.utils.bounceClick
@@ -107,9 +105,7 @@ import com.convx.music.constants.SongSortType
 import com.convx.music.constants.SongSortTypeKey
 import com.convx.music.db.entities.Song
 import com.convx.music.extensions.toMediaItem
-import com.convx.music.playback.ExoDownloadService
 import com.convx.music.playback.queues.ListQueue
-import com.convx.music.ui.component.DraggableScrollbar
 import com.convx.music.ui.component.EmptyPlaceholder
 import com.convx.music.ui.component.ExpandableText
 import com.convx.music.ui.component.IconButton
@@ -145,6 +141,8 @@ import com.convx.music.ui.component.GlassCircleButton
 import com.convx.music.ui.component.ChromeScrim
 import com.convx.music.ui.component.rememberChromeScrimProgress
 import java.time.LocalDateTime
+import com.convx.music.playback.DownloadTarget
+import com.convx.music.playback.downloadSongs
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -280,6 +278,15 @@ fun CachePlaylistScreen(
             // directly to it doesn't reliably flatten.
             Box(modifier = Modifier
             .nestedScroll(backdropFreeze.connection)
+
+            // OUTER layer, and it must come BEFORE layerBackdrop: the layer has to
+            // enclose the backdrop node, or that node's draw re-runs whenever anything
+            // else in the window redraws. The mini player, the playing indicator and
+            // the position poll are all siblings that tick on their own schedule, and
+            // each tick was re-recording this entire list. MainActivity pairs an outer
+            // and inner layer for exactly this; the screen-local backdrops were left
+            // with only the inner half.
+            .graphicsLayer()
             .layerBackdrop(listBackdrop, frozen = backdropFreeze.frozen)
             // Content becomes ONE cached RenderNode, so the backdrop's
             // layer.record { drawContent() } records a single drawRenderNode
@@ -358,7 +365,11 @@ fun CachePlaylistScreen(
                         }
                     }
 
-                    itemsIndexed(filteredSongs, key = { _, song -> song.id }) { index, song ->
+                    itemsIndexed(
+                        filteredSongs,
+                        key = { _, song -> song.id },
+                        contentType = { _, _ -> "song_row" }
+                    ) { index, song ->
                         val onCheckedChange: (Boolean) -> Unit = {
                             if (it) {
                                 selection.add(song.id)
@@ -436,15 +447,24 @@ fun CachePlaylistScreen(
             }
             }
 
-            DraggableScrollbar(
-                modifier = Modifier
-                    .padding(
-                        LocalPlayerAwareWindowInsets.current.union(WindowInsets.ime)
-                            .asPaddingValues()
-                    )
-                    .align(Alignment.CenterEnd),
-                scrollState = lazyListState,
-                headerItems = 2
+            ListScrollRail(
+                lazyListState = lazyListState,
+                itemCount = filteredSongs.size,
+                sectionIndexMap = when (sortType) {
+                    SongSortType.NAME ->
+                        remember(filteredSongs) {
+                            buildAlphabetSectionIndex(filteredSongs) { it.title }
+                        }
+
+                    SongSortType.ARTIST ->
+                        remember(filteredSongs) {
+                            buildAlphabetSectionIndex(filteredSongs) { song ->
+                                song.artists.firstOrNull()?.name.orEmpty()
+                            }
+                        }
+
+                    else -> null
+                },
             )
 
             // Top bar logic
@@ -613,6 +633,7 @@ private fun CachePlaylistHeader(
     modifier: Modifier = Modifier
 ) {
     val playerConnection = LocalPlayerConnection.current ?: return
+    val downloads by com.convx.music.LocalDownloadUtil.current.downloads.collectAsState()
     val isPlaying by playerConnection.isEffectivelyPlaying.collectAsState()
     val mediaMetadata by playerConnection.mediaMetadata.collectAsState()
     val cacheLength = remember(songs) { songs.fastSumBy { it.song.duration ?: 0 } }
@@ -783,19 +804,11 @@ private fun CachePlaylistHeader(
                                 )
                             },
                             onDownload = {
-                                songs.forEach { song ->
-                                    val downloadRequest = DownloadRequest
-                                        .Builder(song.id, song.id.toUri())
-                                        .setCustomCacheKey(song.id)
-                                        .setData(song.title.toByteArray())
-                                        .build()
-                                    DownloadService.sendAddDownload(
-                                        context,
-                                        ExoDownloadService::class.java,
-                                        downloadRequest,
-                                        false,
-                                    )
-                                }
+                                downloadSongs(
+                                    context,
+                                    songs.map { DownloadTarget(it.id, it.title) },
+                                    downloads,
+                                )
                             },
                             onDismiss = { menuState.dismiss() }
                         )

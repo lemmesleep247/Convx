@@ -91,6 +91,8 @@ import com.convx.music.ui.component.NewAction
 import com.convx.music.ui.component.NewActionGrid
 import com.convx.music.ui.component.SongListItem
 import com.convx.music.ui.component.TextFieldDialog
+import android.widget.Toast
+import com.convx.music.utils.ExternalTagEditor
 import com.convx.music.utils.listItemShape
 import com.convx.music.ui.utils.ShowMediaInfo
 import com.convx.music.viewmodels.CachePlaylistViewModel
@@ -717,6 +719,36 @@ fun SongMenu(
                                 }
                             )
                         }
+                        // A failed download used to fall into the same branch as
+                        // "never downloaded" below — same icon, same "Download" label,
+                        // no sign anything had gone wrong. Surfacing it distinctly (and
+                        // letting the same tap re-queue it) is the whole fix.
+                        Download.STATE_FAILED -> {
+                            Material3MenuItemData(
+                                title = { Text(text = stringResource(R.string.download_failed)) },
+                                icon = {
+                                    Icon(
+                                        painter = painterResource(R.drawable.error),
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error,
+                                    )
+                                },
+                                onClick = {
+                                    val downloadRequest =
+                                        DownloadRequest
+                                            .Builder(song.id, song.id.toUri())
+                                            .setCustomCacheKey(song.id)
+                                            .setData(song.song.title.toByteArray())
+                                            .build()
+                                    DownloadService.sendAddDownload(
+                                        context,
+                                        ExoDownloadService::class.java,
+                                        downloadRequest,
+                                        false,
+                                    )
+                                }
+                            )
+                        }
                         else -> {
                             Material3MenuItemData(
                                 title = { Text(text = stringResource(R.string.action_download)) },
@@ -839,6 +871,40 @@ fun SongMenu(
                             }
                         )
                     )
+                    // Local files only: a song's id is its MediaStore content URI, which
+                    // is the one thing an external editor can actually be handed. There
+                    // is nothing on disk to edit for a YouTube track.
+                    if (song.song.isLocal) {
+                        add(
+                            Material3MenuItemData(
+                                title = { Text(text = stringResource(R.string.edit_tags)) },
+                                description = {
+                                    Text(text = stringResource(R.string.edit_tags_desc))
+                                },
+                                icon = {
+                                    Icon(
+                                        painter = painterResource(R.drawable.edit),
+                                        contentDescription = null,
+                                    )
+                                },
+                                onClick = {
+                                    onDismiss()
+                                    val opened = ExternalTagEditor.launch(
+                                        context = context,
+                                        contentUri = song.id,
+                                        mimeType = null,
+                                    )
+                                    if (!opened) {
+                                        Toast.makeText(
+                                            context,
+                                            context.getString(R.string.edit_tags_no_app),
+                                            Toast.LENGTH_SHORT,
+                                        ).show()
+                                    }
+                                }
+                            )
+                        )
+                    }
                 }
             )
         }

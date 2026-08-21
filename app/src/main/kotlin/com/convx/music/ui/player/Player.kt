@@ -69,6 +69,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
@@ -93,6 +94,10 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.core.content.ContextCompat
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -191,11 +196,13 @@ import com.convx.music.constants.FullscreenLyricsCollapseTopKey
 import com.convx.music.constants.PlayerButtonsStyleKey
 import com.convx.music.constants.PlayerHorizontalPadding
 import com.convx.music.constants.QueuePeekHeight
+import com.convx.music.constants.ShowUpNextKey
 import com.convx.music.constants.SliderStyle
 import com.convx.music.constants.SliderStyleKey
 import com.convx.music.constants.SwipeLyricsKey
 import com.convx.music.constants.ThumbnailCornerRadius
 import com.convx.music.constants.ThumbnailRoundedShape
+import com.convx.music.constants.UseAppleMusicPlayerKey
 import com.convx.music.constants.UseNewPlayerDesignKey
 import com.convx.music.constants.ShowAudioQualityBadgeKey
 import com.convx.music.db.entities.LyricsEntity
@@ -211,6 +218,7 @@ import com.convx.music.vivimusic.isSpeaker
 import com.convx.music.vivimusic.AudioDeviceBottomSheet
 import com.convx.music.ui.component.DjReadout
 import com.convx.music.ui.component.BottomSheet
+import com.convx.music.ui.component.PLAYER_LAYER_HANDOFF_PROGRESS
 import com.convx.music.ui.component.BottomSheetState
 import com.convx.music.ui.component.LocalBottomSheetPageState
 import com.convx.music.ui.component.LocalMenuState
@@ -329,6 +337,14 @@ fun BottomSheetPlayer(
     val menuState = LocalMenuState.current
     val bottomSheetPageState = LocalBottomSheetPageState.current
     val playerConnection = LocalPlayerConnection.current ?: return
+
+    // Alternate player style, ported from vivizzz007/vivi-music. Off by default.
+    // Swapped in below as the BottomSheet's collapsed/expanded content slots (see
+    // collapsedContent/content near the BottomSheet(...) call) so it still goes
+    // through the sheet's real drag/expand/collapse mechanics -- an early return
+    // here used to skip that machinery entirely, which is why V17 used to render
+    // as an always-on-top full-bleed box instead of a proper mini/expanded player.
+    val (useAppleMusicPlayer) = rememberPreference(UseAppleMusicPlayerKey, defaultValue = false)
 
     // Shared between the background slot (BackgroundVideoView polls into it)
     // and the control pills below (read it via LocalBackdropLoopBucket) — see
@@ -463,7 +479,19 @@ fun BottomSheetPlayer(
         value = target.audioFormat
         val listener = object : Player.Listener {
             override fun onEvents(player: androidx.media3.common.Player, events: androidx.media3.common.Player.Events) {
-                if (events.contains(androidx.media3.common.Player.EVENT_TRACKS_CHANGED)) {
+                // A lossless-fallback retry (and other same-item error retries)
+                // re-prepare the SAME media item in place via seekTo()+prepare()
+                // rather than transitioning to a new one — ExoPlayer doesn't
+                // reliably fire EVENT_TRACKS_CHANGED for that even though the
+                // actual resolved format changed underneath (FLAC -> AAC/Opus),
+                // so the badge kept showing the old format while the DB-backed
+                // song-info menu (which re-reads fresh on every resolve) already
+                // had the new one. EVENT_POSITION_DISCONTINUITY reliably fires
+                // for that seekTo(), giving a second, more certain trigger to
+                // re-read the live format.
+                if (events.contains(androidx.media3.common.Player.EVENT_TRACKS_CHANGED) ||
+                    events.contains(androidx.media3.common.Player.EVENT_POSITION_DISCONTINUITY)
+                ) {
                     value = (player as? ExoPlayer)?.audioFormat
                 }
             }
@@ -584,18 +612,42 @@ fun BottomSheetPlayer(
 
     val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
     val maxSystemVolume = remember { audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).toFloat() }
-    val systemVolume by produceState(initialValue = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / maxSystemVolume) {
+    // Seeded once and then refreshed ONLY by VOLUME_CHANGED_ACTION, this used to drift:
+    // that broadcast is undocumented and is not reliably delivered while the app is
+    // backgrounded, so changing the volume with the hardware keys and coming back left
+    // the slider showing whatever it last saw — 23% while the system was really at 54%.
+    // Re-reading on every resume means the slider can't sit on a stale number, whether or
+    // not the broadcast arrives.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var systemVolume by remember {
+        mutableFloatStateOf(
+            audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / maxSystemVolume
+        )
+    }
+    DisposableEffect(lifecycleOwner, maxSystemVolume) {
+        fun refresh() {
+            systemVolume =
+                audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / maxSystemVolume
+        }
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
-                if (intent.action == "android.media.VOLUME_CHANGED_ACTION") {
-                    value = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / maxSystemVolume
-                }
+                if (intent.action == "android.media.VOLUME_CHANGED_ACTION") refresh()
             }
         }
-        val filter = IntentFilter("android.media.VOLUME_CHANGED_ACTION")
-        context.registerReceiver(receiver, filter)
-        awaitDispose {
+        ContextCompat.registerReceiver(
+            context,
+            receiver,
+            IntentFilter("android.media.VOLUME_CHANGED_ACTION"),
+            ContextCompat.RECEIVER_EXPORTED,
+        )
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) refresh()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        refresh()
+        onDispose {
             context.unregisterReceiver(receiver)
+            lifecycleOwner.lifecycle.removeObserver(observer)
         }
     }
 
@@ -660,6 +712,7 @@ fun BottomSheetPlayer(
     // read it indirectly via MaterialTheme.colorScheme.onBackground. Take the
     // global color directly, for every style, whenever the user has set one.
     val (appTextColorInt) = rememberPreference(AppTextColorKey, defaultValue = 0)
+    val (showUpNext) = rememberPreference(ShowUpNextKey, defaultValue = false)
     val TextBackgroundColor by animateColorAsState(
         targetValue = if (appTextColorInt != 0) Color(appTextColorInt) else when (playerBackground) {
             PlayerBackgroundStyle.DEFAULT -> MaterialTheme.colorScheme.onBackground
@@ -978,13 +1031,13 @@ fun BottomSheetPlayer(
     val (oneTapFullscreenLyrics) = rememberPreference(OneTapFullscreenLyricsKey, defaultValue = false)
     val (fullscreenLyricsCollapseTop) = rememberPreference(FullscreenLyricsCollapseTopKey, defaultValue = true)
     val (hideVolumeBar) = rememberPreference(HideVolumeBarKey, defaultValue = false)
-    // Position update - only for local playback
+    // Position update - only for local playback when player is visible
     // When casting, we use castPosition directly to avoid sync issues
-    // Use isPlaying instead of playbackState to ensure continuous updates during playback
-    LaunchedEffect(isPlaying, isCasting) {
-        if (!isCasting && isPlaying) {
+    // Pauses polling when the full sheet is collapsed to prevent background recompositions
+    LaunchedEffect(isPlaying, isCasting, state.isCollapsed) {
+        if (!isCasting && isPlaying && !state.isCollapsed) {
             while (isActive) {
-                delay(100) // Update more frequently for smoother progress bar
+                delay(100) // Update for smooth progress bar while player is open
                 if (sliderPosition == null) { // Only update if user isn't dragging
                     position = playerConnection.player.currentPosition
                     duration = playerConnection.player.duration
@@ -1103,10 +1156,46 @@ fun BottomSheetPlayer(
         ?: (LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE)
     val diyOrientation = if (isLandscapeLayout) DiyOrientation.LANDSCAPE else DiyOrientation.PORTRAIT
 
+    // Publishes this sheet's progress to the shared container morph. Read only in the
+    // draw phase (see PlayerMorph), so nothing recomposes per frame because of it.
+    DisposableEffect(state) {
+        PlayerMorph.progressProvider = { state.progress }
+        PlayerMorph.onDragDelta = { state.dispatchRawDelta(it) }
+        PlayerMorph.onDragEnd = { state.performFling(it, null) }
+        PlayerMorph.onDragCancel = { state.snapTo(state.collapsedBound) }
+        onDispose {
+            PlayerMorph.progressProvider = { 0f }
+            PlayerMorph.onDragDelta = {}
+            PlayerMorph.onDragEnd = {}
+            PlayerMorph.onDragCancel = {}
+        }
+    }
+
     BottomSheet(
         state = state,
         modifier = modifier,
+        morphEnabled = true,
         contentMaxWidth = playerContentMaxWidth,
+        // The sheet rounds to the device's real screen radius as it reaches full size, so
+        // its corners sit on the glass rather than near it, then opens out to square once
+        // settled. 0.dp on a device that reports no rounded corners, or in split screen.
+        expandedCornerRadius = rememberScreenCornerRadius(),
+        // Mini-to-full artwork morph (registerMiniArtworkRect/registerFullArtworkRect
+        // above mark the two ends; see PlayerArtworkMorphOverlay's own doc for why this
+        // draws a fresh AsyncImage rather than a captured GraphicsLayer).
+        overlayContent = {
+            // Container first, artwork on top of it: the artwork is travelling across
+            // the same window and has to ride above the surface it is growing out of.
+            PlayerContainerMorphOverlay(
+                progress = { state.progress },
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                expandedCornerRadius = rememberScreenCornerRadius(),
+            )
+            PlayerArtworkMorphOverlay(
+                thumbnailUrl = mediaMetadata?.thumbnailUrl,
+                progress = { state.progress },
+            )
+        },
         background = {
             val glassConfig = LocalGlassEffectConfig.current
             val glassActive = isGlassAllowed()
@@ -1114,7 +1203,14 @@ fun BottomSheetPlayer(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
+                    // OUTER layer, before layerBackdrop: without it every sibling tick
+                    // in the sheet (progress, waveform, the position poll) re-records
+                    // this whole background subtree instead of just redrawing itself.
+                    // Pairs with the inner graphicsLayer the same way MainActivity's
+                    // app backdrop does.
+                    .graphicsLayer()
                     .layerBackdrop(playerBackdrop, frozen = state.backdropFrozen)
+                    .graphicsLayer()
                     .then(
                         if (glassActive) {
                             // Unified Apple Music glass player background:
@@ -1219,18 +1315,22 @@ fun BottomSheetPlayer(
                             label = "GlowAnimatedContent"
                         ) { colors ->
                             if (colors.isNotEmpty()) {
-                                val infiniteTransition =
-                                    rememberInfiniteTransition(label = "GlowAnimation")
+                                val progress: androidx.compose.runtime.State<Float> = if (isPlaying && !state.isCollapsed) {
+                                    val infiniteTransition =
+                                        rememberInfiniteTransition(label = "GlowAnimation")
 
-                                val progress = infiniteTransition.animateFloat(
-                                    initialValue = 0f,
-                                    targetValue = 1f,
-                                    animationSpec = infiniteRepeatable(
-                                        animation = tween(20000, easing = LinearEasing),
-                                        repeatMode = RepeatMode.Restart
-                                    ),
-                                    label = "glowProgress"
-                                )
+                                    infiniteTransition.animateFloat(
+                                        initialValue = 0f,
+                                        targetValue = 1f,
+                                        animationSpec = infiniteRepeatable(
+                                            animation = tween(20000, easing = LinearEasing),
+                                            repeatMode = RepeatMode.Restart
+                                        ),
+                                        label = "glowProgress"
+                                    )
+                                } else {
+                                    remember { mutableFloatStateOf(0f) }
+                                }
 
                                 Box(
                                     modifier = Modifier
@@ -1491,37 +1591,49 @@ fun BottomSheetPlayer(
                         }
                     }
                     PlayerBackgroundStyle.LIVE_MESH -> {
-                        val infiniteTransition = rememberInfiniteTransition(label = "liveMeshRotation")
-                        
-                        val anchorRotation by infiniteTransition.animateFloat(
-                            initialValue = 0f,
-                            targetValue = -360f,
-                            animationSpec = infiniteRepeatable(
-                                animation = tween(80000, easing = LinearEasing),
-                                repeatMode = RepeatMode.Restart
-                            ),
-                            label = "anchorRotation"
-                        )
-                        
-                        val fastRotation by infiniteTransition.animateFloat(
-                            initialValue = 0f,
-                            targetValue = 360f,
-                            animationSpec = infiniteRepeatable(
-                                animation = tween(40000, easing = LinearEasing),
-                                repeatMode = RepeatMode.Restart
-                            ),
-                            label = "fastRotation"
-                        )
-                        
-                        val slowRotation by infiniteTransition.animateFloat(
-                            initialValue = 0f,
-                            targetValue = 360f,
-                            animationSpec = infiniteRepeatable(
-                                animation = tween(60000, easing = LinearEasing),
-                                repeatMode = RepeatMode.Restart
-                            ),
-                            label = "slowRotation"
-                        )
+                        val shouldAnimateLiveMesh = isPlaying && !state.isCollapsed
+                        val anchorRotation: androidx.compose.runtime.State<Float>
+                        val fastRotation: androidx.compose.runtime.State<Float>
+                        val slowRotation: androidx.compose.runtime.State<Float>
+
+                        if (shouldAnimateLiveMesh) {
+                            val infiniteTransition = rememberInfiniteTransition(label = "liveMeshRotation")
+                            
+                            anchorRotation = infiniteTransition.animateFloat(
+                                initialValue = 0f,
+                                targetValue = -360f,
+                                animationSpec = infiniteRepeatable(
+                                    animation = tween(80000, easing = LinearEasing),
+                                    repeatMode = RepeatMode.Restart
+                                ),
+                                label = "anchorRotation"
+                            )
+                            
+                            fastRotation = infiniteTransition.animateFloat(
+                                initialValue = 0f,
+                                targetValue = 360f,
+                                animationSpec = infiniteRepeatable(
+                                    animation = tween(40000, easing = LinearEasing),
+                                    repeatMode = RepeatMode.Restart
+                                ),
+                                label = "fastRotation"
+                            )
+                            
+                            slowRotation = infiniteTransition.animateFloat(
+                                initialValue = 0f,
+                                targetValue = 360f,
+                                animationSpec = infiniteRepeatable(
+                                    animation = tween(60000, easing = LinearEasing),
+                                    repeatMode = RepeatMode.Restart
+                                ),
+                                label = "slowRotation"
+                            )
+                        } else {
+                            val zero = remember { mutableFloatStateOf(0f) }
+                            anchorRotation = zero
+                            fastRotation = zero
+                            slowRotation = zero
+                        }
 
                         AnimatedContent(
                             targetState = mediaMetadata?.thumbnailUrl,
@@ -1565,7 +1677,7 @@ fun BottomSheetPlayer(
                                             modifier = Modifier
                                                 .fillMaxSize()
                                                 .blur(100.dp)
-                                                .graphicsLayer { rotationZ = anchorRotation }
+                                                .graphicsLayer { rotationZ = anchorRotation.value }
                                         )
 
                                         // Layer 2: Fast Rotating Crop (Top-Left)
@@ -1583,7 +1695,7 @@ fun BottomSheetPlayer(
                                                 .fillMaxSize()
                                                 .blur(120.dp)
                                                 .graphicsLayer {
-                                                    rotationZ = fastRotation
+                                                    rotationZ = fastRotation.value
                                                     alpha = 0.6f
                                                 }
                                         )
@@ -1603,7 +1715,7 @@ fun BottomSheetPlayer(
                                                 .fillMaxSize()
                                                 .blur(120.dp)
                                                 .graphicsLayer {
-                                                    rotationZ = slowRotation
+                                                    rotationZ = slowRotation.value
                                                     alpha = 0.5f
                                                 }
                                         )
@@ -1723,12 +1835,24 @@ fun BottomSheetPlayer(
             playerConnection.player.clearMediaItems()
         },
         collapsedContent = {
-            MiniPlayer(
-                positionState = positionState,
-                durationState = durationState
-            )
+            if (useAppleMusicPlayer) {
+                AppleMiniPlayer(
+                    progressState = remember(positionState, durationState) {
+                        ProgressState(positionState, durationState)
+                    }
+                )
+            } else {
+                MiniPlayer(
+                    positionState = positionState,
+                    durationState = durationState
+                )
+            }
         },
     ) {
+        if (useAppleMusicPlayer) {
+            PlayerV2(state = state, navController = navController, modifier = Modifier)
+            return@BottomSheet
+        }
         val controlsContent: @Composable ColumnScope.(MediaMetadata) -> Unit = { mediaMetadata ->
             val playPauseRoundness by animateDpAsState(
                 targetValue = if (isPlaying) 24.dp else 36.dp,
@@ -1951,6 +2075,15 @@ fun BottomSheetPlayer(
                     }
 
                     DjReadout(modifier = Modifier.padding(top = 2.dp))
+
+                    if (showUpNext) {
+                        UpNextSong(
+                            playerConnection = playerConnection,
+                            titleColor = TextBackgroundColor,
+                            subtitleColor = TextBackgroundColor.copy(alpha = 0.7f),
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.width(12.dp))
@@ -2671,6 +2804,7 @@ fun BottomSheetPlayer(
                                 modifier = Modifier
                                     .height(68.dp)
                                     .weight(backButtonWeight)
+                                    .widthIn(min = 44.dp)
                             ) {
                                 PlayerGlyph(
                                     slot = PlayerIconSlot.PREVIOUS,
@@ -2710,6 +2844,7 @@ fun BottomSheetPlayer(
                                 modifier = Modifier
                                     .height(68.dp)
                                     .weight(playPauseWeight)
+                                    .widthIn(min = 44.dp)
                             ) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
@@ -2761,8 +2896,8 @@ fun BottomSheetPlayer(
                                 ),
                                 modifier = Modifier
                                     .height(68.dp)
-                                    .weight(nextButtonWeight
-                                    )
+                                    .weight(nextButtonWeight)
+                                    .widthIn(min = 44.dp)
                             ) {
                                 PlayerGlyph(
                                     slot = PlayerIconSlot.NEXT,
@@ -3161,6 +3296,13 @@ fun BottomSheetPlayer(
 
                     Box(
                         contentAlignment = Alignment.Center,
+                        // Registers this box's on-screen bounds for
+                        // PlayerArtworkMorphOverlay -- the standard (portrait,
+                        // non-landscape) player only; see the mini player's own
+                        // registerMiniArtworkRect() call for the other end.
+                        // The morph's target rect is registered on the artwork ITSELF, down
+                        // in Thumbnail -- this column is far taller than the cover, and
+                        // flying the cover into these bounds landed it too big and too high.
                         modifier = Modifier.weight(1f),
                     ) {
                         // Remember lambdas to prevent unnecessary recomposition
@@ -3361,10 +3503,10 @@ fun MoreActionsButton(
     val bottomSheetPageState = LocalBottomSheetPageState.current
 
     Box(
+        contentAlignment = Alignment.Center,
         modifier = Modifier
-            .size(40.dp)
+            .size(44.dp)
             .clip(RoundedCornerShape(24.dp))
-            .background(textButtonColor)
             .clickable {
                 menuState.show {
                     PlayerMenu(
@@ -3383,6 +3525,12 @@ fun MoreActionsButton(
                 }
             }
     ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(RoundedCornerShape(24.dp))
+                .background(textButtonColor)
+        )
         // Routed through PlayerGlyph like every other control: this one drew the stock
         // glyph straight from resources, so the More slot in player-icon settings did
         // nothing here even though the sibling PlayerMoreMenuButton honoured it.
@@ -3409,9 +3557,8 @@ private fun PlayerMoreMenuButton(
         contentAlignment = Alignment.Center,
         modifier =
         Modifier
-            .size(40.dp)
+            .size(44.dp)
             .clip(RoundedCornerShape(24.dp))
-            .background(textButtonColor)
             .clickable {
                 menuState.show {
                     PlayerMenu(
@@ -3430,6 +3577,12 @@ private fun PlayerMoreMenuButton(
                 }
             },
     ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(RoundedCornerShape(24.dp))
+                .background(textButtonColor)
+        )
         // PlayerGlyph, not a raw Image with an unconditional tint: a user's own
         // image for this slot was being flattened to a solid colour regardless of
         // the slot's per-icon tint flag, so a photo came out as a coloured blob.

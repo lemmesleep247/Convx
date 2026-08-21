@@ -81,6 +81,10 @@ import com.convx.music.constants.PlayerArtworkStyle
 import com.convx.music.constants.PlayerArtworkStyleKey
 import com.convx.music.constants.PlayerBackgroundStyle
 import com.convx.music.constants.PlayerBackgroundStyleKey
+import com.convx.music.constants.UseAppleMusicPlayerKey
+import com.convx.music.constants.ShowPlayerThumbnailShadowKey
+import com.convx.music.constants.ShowUpNextKey
+import com.convx.music.constants.PlayerThumbnailShadowElevationKey
 import com.convx.music.constants.PlayerGradientAngleKey
 import com.convx.music.constants.PlayerGradientStopsKey
 import com.convx.music.constants.PlayerLayoutHiddenSlotsKey
@@ -90,6 +94,8 @@ import com.convx.music.constants.SliderStyle
 import com.convx.music.constants.SliderStyleKey
 import com.convx.music.models.MediaMetadata
 import com.convx.music.ui.component.ColorPickerDialog
+import com.convx.music.ui.component.SwitchPreference
+import com.convx.music.ui.component.SliderPreference
 import com.convx.music.ui.component.IconButton as AppIconButton
 import com.convx.music.ui.component.shapes.ContinuousRoundedRectangle
 import com.convx.music.ui.player.PlayerLayoutRegistry
@@ -138,6 +144,16 @@ fun PlayerThemeScreen(
     val (gradientAngle, onGradientAngleChange) = rememberPreference(
         PlayerGradientAngleKey, defaultValue = 90f
     )
+    val (useAppleMusicPlayer, onUseAppleMusicPlayerChange) = rememberPreference(
+        UseAppleMusicPlayerKey, defaultValue = false
+    )
+    val (showPlayerThumbnailShadow, onShowPlayerThumbnailShadowChange) = rememberPreference(
+        ShowPlayerThumbnailShadowKey, defaultValue = false
+    )
+    val (playerThumbnailShadowElevation, onPlayerThumbnailShadowElevationChange) = rememberPreference(
+        PlayerThumbnailShadowElevationKey, defaultValue = 8f
+    )
+    val (showUpNext, onShowUpNextChange) = rememberPreference(ShowUpNextKey, defaultValue = false)
     val gradientStops = remember(gradientStopsRaw) { decodeGradientStops(gradientStopsRaw) }
 
     var showStaticPicker by rememberSaveable { mutableStateOf(false) }
@@ -156,6 +172,8 @@ fun PlayerThemeScreen(
     // Apple Music draws its own square artwork treatment, so the shape presets
     // have nothing to act on while it is selected.
     val artworkLocked = background == PlayerBackgroundStyle.APPLE_MUSIC
+    // V17 uses its own thumbnail layout — VINYL and CLOVER don't apply.
+    val v17Active = useAppleMusicPlayer
 
     // Preview the song that is actually playing; fall back to the app icon.
     val playerConnection = LocalPlayerConnection.current
@@ -170,11 +188,12 @@ fun PlayerThemeScreen(
             .verticalScroll(rememberScrollState()),
     ) {
         SectionTitle(stringResource(R.string.player_theme_artwork))
-        if (artworkLocked) {
-            LockedNote(stringResource(R.string.player_theme_artwork_locked))
+        if (artworkLocked || v17Active) {
+            LockedNote(stringResource(if (v17Active) R.string.player_theme_artwork_locked_v17 else R.string.player_theme_artwork_locked))
         }
         PresetRow {
             PlayerArtworkStyle.entries.forEach { style ->
+                val disabledByV17 = v17Active && style != PlayerArtworkStyle.CARD
                 PresetCard(
                     label = when (style) {
                         PlayerArtworkStyle.CARD -> stringResource(R.string.player_theme_card)
@@ -182,7 +201,7 @@ fun PlayerThemeScreen(
                         PlayerArtworkStyle.CLOVER -> stringResource(R.string.player_theme_clover)
                     },
                     selected = artworkStyle == style,
-                    enabled = !artworkLocked,
+                    enabled = !artworkLocked && !disabledByV17,
                     onClick = { onArtworkStyleChange(style) },
                 ) {
                     PlayerPreview(
@@ -203,9 +222,11 @@ fun PlayerThemeScreen(
             PlayerBackgroundStyle.entries.filter {
                 it != PlayerBackgroundStyle.BLUR || Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
             }.forEach { style ->
+                val disabledByV17 = v17Active && style == PlayerBackgroundStyle.APPLE_MUSIC
                 PresetCard(
                     label = backgroundLabel(style),
                     selected = background == style,
+                    enabled = !disabledByV17,
                     onClick = { onBackgroundChange(style) },
                 ) {
                     PlayerPreview(
@@ -220,6 +241,49 @@ fun PlayerThemeScreen(
                 }
             }
         }
+
+        SectionTitle(stringResource(R.string.apple_music_player_v17))
+        PresetRow {
+            PresetCard(
+                label = stringResource(R.string.apple_music_player_v17),
+                selected = useAppleMusicPlayer,
+                onClick = { onUseAppleMusicPlayerChange(!useAppleMusicPlayer) },
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    androidx.compose.foundation.Image(
+                        painter = painterResource(R.drawable.convx_logo),
+                        contentDescription = null,
+                        modifier = Modifier.size(48.dp),
+                    )
+                }
+            }
+        }
+        if (useAppleMusicPlayer) {
+            LockedNote(stringResource(R.string.apple_music_player_v17_description))
+            SwitchPreference(
+                title = { Text(stringResource(R.string.player_thumbnail_shadow)) },
+                checked = showPlayerThumbnailShadow,
+                onCheckedChange = onShowPlayerThumbnailShadowChange,
+            )
+            if (showPlayerThumbnailShadow) {
+                SliderPreference(
+                    title = { Text(stringResource(R.string.player_thumbnail_shadow_elevation)) },
+                    value = playerThumbnailShadowElevation,
+                    onValueChange = onPlayerThumbnailShadowElevationChange,
+                )
+            }
+        }
+        SwitchPreference(
+            title = { Text(stringResource(R.string.show_up_next)) },
+            description = stringResource(R.string.show_up_next_desc),
+            checked = showUpNext,
+            onCheckedChange = onShowUpNextChange,
+        )
 
         if (background == PlayerBackgroundStyle.STATIC) {
             SettingRow(

@@ -29,6 +29,7 @@ import com.convx.music.constants.HideVideoSongsKey
 import com.convx.music.constants.DataSaverEnabledKey
 import com.convx.music.constants.HideYoutubeShortsKey
 import com.convx.music.constants.InnerTubeCookieKey
+import com.convx.music.constants.LocalAlbumsByYearKey
 import com.convx.music.constants.LocalOnlyModeKey
 import com.convx.music.constants.LocalSongSortDescendingKey
 import com.convx.music.constants.LocalSongSortTypeKey
@@ -132,7 +133,15 @@ class HomeViewModel @Inject constructor(
         .distinctUntilChanged()
         .flatMapLatest { (sortType, descending) -> database.localSongs(sortType, descending) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-    val localAlbums: StateFlow<List<Album>> = database.albumsLocalByNameAsc()
+    // Newest release first by default, not A-Z: an on-device library is something the
+    // user assembled over time, so release order says more about it than the alphabet
+    // does. Files with no year tag sort last -- SQLite puts NULLs at the end on DESC.
+    val localAlbums: StateFlow<List<Album>> = context.dataStore.data
+        .map { it[LocalAlbumsByYearKey] ?: true }
+        .distinctUntilChanged()
+        .flatMapLatest { byYear ->
+            if (byYear) database.albumsLocalByYearDesc() else database.albumsLocalByNameAsc()
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val localArtists: StateFlow<List<com.convx.music.db.entities.Artist>> = database.artistsLocalByNameAsc()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -479,14 +488,20 @@ class HomeViewModel @Inject constructor(
 
         getQuickPicks()
 
+        // On-device tracks are the whole of local-only mode, which is a separate Home
+        // (see localHomeContent). Leaking them into the online feed put files with no
+        // artwork and no metadata beside YouTube rows that have both, so every shelf
+        // they landed in looked broken.
+        quickPicks.value = quickPicks.value?.filterNot { it.song.isLocal }
+
         forgottenFavorites.value = database.forgottenFavorites().first()
-            .filterVideoSongs(hideVideoSongs).shuffled().take(20)
+            .filterVideoSongs(hideVideoSongs).filterNot { it.song.isLocal }.shuffled().take(20)
 
         val fromTimeStamp = System.currentTimeMillis() - 86400000L * 7 * 2
         val keepListeningSongs = database.mostPlayedSongs(fromTimeStamp, limit = 15, offset = 5).first()
-            .filterVideoSongs(hideVideoSongs).shuffled().take(10)
+            .filterVideoSongs(hideVideoSongs).filterNot { it.song.isLocal }.shuffled().take(10)
         val keepListeningAlbums = database.mostPlayedAlbums(fromTimeStamp, limit = 8, offset = 2).first()
-            .filter { it.album.thumbnailUrl != null }.shuffled().take(5)
+            .filter { !it.album.isLocal && it.album.thumbnailUrl != null }.shuffled().take(5)
         val keepListeningArtists = database.mostPlayedArtists(fromTimeStamp).first()
             .filter { it.artist.isYouTubeArtist && it.artist.thumbnailUrl != null }.shuffled().take(5)
         keepListening.value = (keepListeningSongs + keepListeningAlbums + keepListeningArtists).shuffled()

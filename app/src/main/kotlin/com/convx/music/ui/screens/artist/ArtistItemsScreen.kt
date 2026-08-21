@@ -58,6 +58,7 @@ import com.convx.music.constants.GridItemsSizeKey
 import com.convx.music.constants.GridThumbnailHeight
 import com.convx.music.models.toMediaMetadata
 import com.convx.music.playback.queues.YouTubeQueue
+import com.convx.music.ui.component.ListScrollRail
 import com.convx.music.ui.component.GlassCircleButton
 import com.convx.music.ui.component.HeroBackground
 import com.convx.music.ui.component.HeroSource
@@ -161,23 +162,34 @@ fun ArtistItemsScreen(
         modifier = Modifier.fillMaxSize(),
     ) {
       HeroTintedContent(tint = tint, backdrop = heroBackdrop) {
+        // Was recomputed once for `items =` and then AGAIN inside every item's
+        // listItemShape(...) call — a full distinctBy pass per row, i.e. O(n²)
+        // plus a list allocation each time, on every frame of a scroll. Hoisted out
+        // of the captured Box too, so the scroll rail can read its count without
+        // being drawn into the backdrop layer.
+        val distinctItems = remember(itemsPage) {
+            itemsPage?.items.orEmpty().distinctBy { it.id }
+        }
         Box(modifier = Modifier.fillMaxSize()) {
             // Capture from a plain Box wrapping the lists, not the lists
             // themselves: they promote items to their own RenderNodes for
             // recycling, which a capture attached directly doesn't flatten.
             Box(modifier = Modifier
             .nestedScroll(backdropFreeze.connection)
+
+            // OUTER layer, and it must come BEFORE layerBackdrop: the layer has to
+            // enclose the backdrop node, or that node's draw re-runs whenever anything
+            // else in the window redraws. The mini player, the playing indicator and
+            // the position poll are all siblings that tick on their own schedule, and
+            // each tick was re-recording this entire list. MainActivity pairs an outer
+            // and inner layer for exactly this; the screen-local backdrops were left
+            // with only the inner half.
+            .graphicsLayer()
             .layerBackdrop(listBackdrop, frozen = backdropFreeze.frozen)
             // Content becomes ONE cached RenderNode, so the backdrop's
             // layer.record { drawContent() } records a single drawRenderNode
             // instead of re-issuing every op in the list.
             .graphicsLayer()) {
-                // Was recomputed once for `items =` and then AGAIN inside every item's
-                // listItemShape(...) call — a full distinctBy pass per row, i.e. O(n²)
-                // plus a list allocation each time, on every frame of a scroll.
-                val distinctItems = remember(itemsPage) {
-                    itemsPage?.items.orEmpty().distinctBy { it.id }
-                }
                 if (itemsPage == null) {
                     ShimmerHost(
                         modifier = Modifier.windowInsetsPadding(LocalPlayerAwareWindowInsets.current),
@@ -193,7 +205,7 @@ fun ArtistItemsScreen(
                         state = lazyListState,
                         // No bounce here: the top pull drives the hero zoom instead.
                         overscrollEffect = heroZoom.listOverscroll(),
-                        modifier = Modifier.heroPullZoom(heroZoom, onRefresh = viewModel::refresh),
+                        modifier = Modifier.heroPullZoom(heroZoom),
                         contentPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues(),
                     ) {
                         itemsIndexed(
@@ -292,7 +304,7 @@ fun ArtistItemsScreen(
                         columns = rememberGridColumns(),
                         // No bounce here: the top pull drives the hero zoom instead.
                         overscrollEffect = heroZoom.listOverscroll(),
-                        modifier = Modifier.heroPullZoom(heroZoom, onRefresh = viewModel::refresh),
+                        modifier = Modifier.heroPullZoom(heroZoom),
                         contentPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues()
                     ) {
                         items(
@@ -369,6 +381,16 @@ fun ArtistItemsScreen(
                     }
                 }
             }
+
+            // Artist items arrive in YouTube's own order, so the rail is a
+            // proportional thumb rather than letters.
+            ListScrollRail(
+                lazyListState = lazyListState,
+                lazyGridState = lazyGridState,
+                isGrid = itemsPage?.items?.firstOrNull() !is SongItem,
+                itemCount = distinctItems.size,
+                sectionIndexMap = null,
+            )
 
             // `align` is resolved here, in BoxScope, because the provider
             // lambda below is not a BoxScope.
