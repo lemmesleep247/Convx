@@ -169,7 +169,9 @@ function discoverAndInit() {
                             break;
                         }
                     }
-                } catch(e) {}
+                } catch(e) {
+                    // Invalid candidates are expected while probing obfuscated functions.
+                }
             }
             info = "brute_force:tested=" + tested + "/" + keys.length;
             if (!nFuncName && candidates.length > 0) {
@@ -298,7 +300,7 @@ function discoverAndInit() {
     }
 
     companion object {
-        private const val TAG = "vivimusic_CipherWebView"
+        private const val TAG = "convx_CipherWebView"
         private const val JS_INTERFACE = "CipherBridge"
 
         suspend fun create(

@@ -37,7 +37,11 @@ data class AlbumEntity(
     val isLocal: Boolean = false,
     @ColumnInfo(name = "isUploaded", defaultValue = false.toString())
     val isUploaded: Boolean = false,
+    /** When pinned to the top of Library (Apple Music "Pin Album"); null = not pinned. */
+    val pinnedAt: LocalDateTime? = null,
 ) {
+    fun togglePin() = copy(pinnedAt = if (pinnedAt != null) null else LocalDateTime.now())
+
     fun localToggleLike() = copy(
         bookmarkedAt = if (bookmarkedAt != null) null else LocalDateTime.now()
     )

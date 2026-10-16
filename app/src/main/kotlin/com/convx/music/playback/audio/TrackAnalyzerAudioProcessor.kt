@@ -12,211 +12,223 @@ import com.convx.music.playback.dj.BeatGrid
 import com.convx.music.playback.dj.BeatTracker
 import com.convx.music.playback.dj.KeyDetector
 import com.convx.music.playback.dj.MusicalKey
-import timber.log.Timber
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
-/**
- * Passive, always-transparent (never alters the audio) tap that feeds decoded
- * PCM to [BeatTracker] and [KeyDetector].
- *
- * Deliberately thin: it unpacks samples and nothing else. Everything that can
- * actually be wrong — tempo, phase, confidence — lives in [BeatTracker], which
- * has no Android or media3 dependency and is unit-tested on the JVM.
- *
- * Analyzes [analysisWindowMs] of track audio, reports once via
- * [onAnalysisReady], then goes idle until [resetForTrack] is called for the
- * next one.
- */
+/** PCM tap with track-scoped analysis snapshots; estimation runs off the audio thread. */
 @UnstableApi
 class TrackAnalyzerAudioProcessor(
     private val onAnalysisReady: () -> Unit,
-    /**
-     * Live read of whether DJ mode is on. Beat tracking and key detection are a
-     * DJ-mode feature, but this processor sits in the chain unconditionally, so
-     * without this gate the full DSP ran on every buffer of every track with DJ
-     * mode switched off. Read per configure/buffer rather than captured, so
-     * toggling the preference takes effect without rebuilding the player.
-     */
     private val analysisEnabled: () -> Boolean = { true },
 ) : AudioProcessor {
-
-    private var channelCount = 0
-    private var bytesPerSample = 0
-    private var isFloatEncoding = false
-    private var tracker: BeatTracker? = null
-    private var keyDetector: KeyDetector? = null
-
-    private var outputBuffer: ByteBuffer = EMPTY_BUFFER
+    private val lock = Any()
+    private var format = AudioProcessor.AudioFormat.NOT_SET
+    private var pendingFormat = AudioProcessor.AudioFormat.NOT_SET
+    private var generation = 0L
+    @Volatile private var run: AnalysisRun? = null
+    private var mediaId: String? = null
+    private var startPositionMs = 0L
+    private var processedFrames = 0L
+    private var outputBuffer = AudioProcessor.EMPTY_BUFFER
     private var inputEnded = false
-    private var reported = false
-    private var pendingStartPositionMs = 0L
 
-    override fun configure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
-        channelCount = inputAudioFormat.channelCount
-        isFloatEncoding = inputAudioFormat.encoding == C.ENCODING_PCM_FLOAT
-        bytesPerSample = when (inputAudioFormat.encoding) {
+    class AnalysisInput internal constructor(
+        val generation: Long,
+        val mediaId: String?,
+        private val tracker: BeatTracker,
+        private val keyDetector: KeyDetector,
+        private val energyProfile: ByteArray,
+    ) {
+        private val result by lazy {
+            AnalysisSnapshot(generation, mediaId, tracker.estimate(), keyDetector.estimate(), energyProfile)
+        }
+        internal fun compute(): AnalysisSnapshot = result
+    }
+
+    data class AnalysisSnapshot(
+        val generation: Long,
+        val mediaId: String?,
+        val grid: BeatGrid,
+        val key: MusicalKey,
+        val energyProfile: ByteArray,
+    )
+
+    data class EnergySnapshot(
+        val generation: Long,
+        val mediaId: String?,
+        val energyProfile: ByteArray,
+    )
+
+    private class AnalysisRun(
+        val generation: Long,
+        val mediaId: String?,
+        val format: AudioProcessor.AudioFormat,
+        startPositionMs: Long,
+    ) {
+        val tracker = BeatTracker(format.sampleRate).also { it.beginAt(startPositionMs) }
+        val keyDetector = KeyDetector(format.sampleRate)
+        val bytesPerSample = when (format.encoding) {
             C.ENCODING_PCM_16BIT, C.ENCODING_PCM_16BIT_BIG_ENDIAN -> 2
             C.ENCODING_PCM_24BIT, C.ENCODING_PCM_24BIT_BIG_ENDIAN -> 3
-            C.ENCODING_PCM_32BIT, C.ENCODING_PCM_32BIT_BIG_ENDIAN, C.ENCODING_PCM_FLOAT -> 4
-            else -> 0
+            else -> 4
         }
-        val unsupported = bytesPerSample == 0 || channelCount <= 0 || inputAudioFormat.sampleRate <= 0
-        if (unsupported) {
-            Timber.tag(TAG).w(
-                "No DJ analysis for this stream: encoding=${inputAudioFormat.encoding} " +
-                    "channels=${inputAudioFormat.channelCount} rate=${inputAudioFormat.sampleRate}"
-            )
+        val bigEndian = format.encoding == C.ENCODING_PCM_16BIT_BIG_ENDIAN ||
+            format.encoding == C.ENCODING_PCM_24BIT_BIG_ENDIAN ||
+            format.encoding == C.ENCODING_PCM_32BIT_BIG_ENDIAN
+        var analysisInput: AnalysisInput? = null
+    }
+
+    override fun configure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
+        synchronized(lock) {
+            pendingFormat = inputAudioFormat
         }
-        tracker = if (unsupported) {
-            null
-        } else {
-            BeatTracker(inputAudioFormat.sampleRate).also { it.beginAt(pendingStartPositionMs) }
-        }
-        keyDetector = if (unsupported) null else KeyDetector(inputAudioFormat.sampleRate)
         return inputAudioFormat
     }
 
-    override fun isActive(): Boolean = tracker != null && analysisEnabled()
+    override fun isActive(): Boolean = supports(pendingFormat)
 
-    /**
-     * Energy curve for the track analyzed so far, one byte per second, or empty
-     * if there isn't one yet. Read on demand rather than delivered with
-     * [onAnalysisReady]: the grid is final after [analysisWindowMs], but the
-     * energy profile keeps growing for as long as the track plays, and the
-     * useful read is at transition time when it covers the outro.
-     */
-    val energyProfile: ByteArray get() = tracker?.energyProfile() ?: ByteArray(0)
+    val energyProfile: ByteArray get() = energySnapshot()?.energyProfile ?: EMPTY_PROFILE
+
+    fun captureAnalysisInput(): AnalysisInput? = synchronized(lock) { run?.analysisInput }
+
+    fun energySnapshot(): EnergySnapshot? = synchronized(lock) {
+        run?.let { EnergySnapshot(it.generation, it.mediaId, it.tracker.energyProfile()) }
+    }
+
+    fun isCurrentAnalysis(generation: Long): Boolean = run?.generation == generation
+
+    fun computeAnalysis(input: AnalysisInput): AnalysisSnapshot = input.compute()
+
+    fun computeAnalysis(): Pair<BeatGrid, MusicalKey> {
+        val result = captureAnalysisInput()?.compute()
+        return (result?.grid ?: BeatGrid.NONE) to (result?.key ?: MusicalKey.NONE)
+    }
 
     override fun queueInput(inputBuffer: ByteBuffer) {
-        if (!inputBuffer.hasRemaining()) {
-            outputBuffer = EMPTY_BUFFER
-            return
-        }
-
-        // Keeps running after `reported`: the beat grid is done, but the energy
-        // profile accumulates for the whole track.
-        analyze(inputBuffer)
-
-        val out = replaceOutputBuffer(inputBuffer.remaining())
-        out.put(inputBuffer)
-        out.flip()
-    }
-
-    private fun analyze(buffer: ByteBuffer) {
-        if (!analysisEnabled()) return
-        val beatTracker = tracker ?: return
-        val detector = keyDetector
-        buffer.order(ByteOrder.LITTLE_ENDIAN)
-
-        val frameSize = bytesPerSample * channelCount
-        if (frameSize <= 0) return
-        val frameCount = buffer.remaining() / frameSize
-        val basePosition = buffer.position()
-
-        repeat(frameCount) { frameIndex ->
-            // Mono downmix. The old analyzer took the per-frame peak across
-            // channels, which biases the envelope toward whichever channel is
-            // momentarily loudest and adds jitter the tempo search has to fight.
-            var sum = 0f
-            repeat(channelCount) { channelIndex ->
-                val sampleIndex = basePosition + (frameIndex * channelCount + channelIndex) * bytesPerSample
-                sum += readSample(buffer, sampleIndex)
+        val byteCount = inputBuffer.remaining()
+        if (byteCount == 0) return
+        val enabled = analysisEnabled()
+        val ready = synchronized(lock) {
+            if (enabled && run == null && supports(format)) {
+                generation++
+                val position = startPositionMs + processedFrames * 1000L / format.sampleRate
+                run = AnalysisRun(generation, mediaId, format, position)
+            } else if (!enabled && run != null) {
+                generation++
+                run = null
             }
-            val mono = sum / channelCount
-            beatTracker.accept(mono)
-            if (!reported) detector?.accept(mono)
+            val analysisReady = if (enabled) analyze(inputBuffer) else false
+            if (format.bytesPerFrame > 0) processedFrames += byteCount / format.bytesPerFrame
+            analysisReady
         }
-
-        if (!reported && beatTracker.isAnalysisComplete) {
-            // Only signals. The analysis itself is deliberately not run here —
-            // see computeAnalysis().
-            reported = true
-            onAnalysisReady()
-        }
+        outputBuffer = inputBuffer.slice().order(ByteOrder.nativeOrder())
+        inputBuffer.position(inputBuffer.limit())
+        if (ready) onAnalysisReady()
     }
 
-    /**
-     * Runs the actual tempo, phase and key analysis.
-     *
-     * Deliberately NOT called from [queueInput]: the autocorrelation and the
-     * tempo/phase search are hundreds of thousands of operations, and a spike
-     * that size on the audio thread risks an underrun — more so on the probe
-     * player, where buffers arrive six times faster than real time.
-     *
-     * Safe to call from another thread once [onAnalysisReady] has fired: that
-     * only happens when the beat tracker's envelope is full, at which point the
-     * arrays this reads have stopped being written to.
-     */
-    fun computeAnalysis(): Pair<BeatGrid, MusicalKey> =
-        (tracker?.estimate() ?: BeatGrid.NONE) to (keyDetector?.estimate() ?: MusicalKey.NONE)
+    private fun analyze(buffer: ByteBuffer): Boolean {
+        val current = run ?: return false
+        val channels = current.format.channelCount
+        val sampleSize = current.bytesPerSample
+        val frameCount = buffer.remaining() / (sampleSize * channels)
+        val basePosition = buffer.position()
+        buffer.order(if (current.bigEndian) ByteOrder.BIG_ENDIAN else ByteOrder.LITTLE_ENDIAN)
+        repeat(frameCount) { frame ->
+            var sum = 0f
+            repeat(channels) { channel ->
+                val index = basePosition + (frame * channels + channel) * sampleSize
+                sum += readSample(buffer, index, current)
+            }
+            val mixed = sum / channels
+            val mono = if (mixed.isFinite()) mixed else 0f
+            current.tracker.accept(mono)
+            if (current.analysisInput == null) current.keyDetector.accept(mono)
+        }
+        if (current.analysisInput != null || !current.tracker.isAnalysisComplete) return false
 
-    /** Normalized to roughly [-1, 1] regardless of source encoding. */
-    private fun readSample(buffer: ByteBuffer, index: Int): Float = when {
-        isFloatEncoding -> buffer.getFloat(index)
-        bytesPerSample == 2 -> buffer.getShort(index) / 32768f
-        bytesPerSample == 3 -> {
-            val b0 = buffer.get(index).toInt() and 0xFF
-            val b1 = buffer.get(index + 1).toInt() and 0xFF
-            val b2 = buffer.get(index + 2).toInt()
-            ((b2 shl 16) or (b1 shl 8) or b0) / 8388608f
+        // Completed envelopes are never reset or written again; only energy keeps accumulating.
+        current.analysisInput = AnalysisInput(
+            current.generation,
+            current.mediaId,
+            current.tracker,
+            current.keyDetector,
+            current.tracker.energyProfile(),
+        )
+        return true
+    }
+
+    private fun readSample(buffer: ByteBuffer, index: Int, current: AnalysisRun): Float = when {
+        current.format.encoding == C.ENCODING_PCM_FLOAT -> buffer.getFloat(index)
+        current.bytesPerSample == 2 -> buffer.getShort(index) / 32768f
+        current.bytesPerSample == 3 -> {
+            val lowIndex = if (current.bigEndian) index + 2 else index
+            val highIndex = if (current.bigEndian) index else index + 2
+            val low = buffer.get(lowIndex).toInt() and 0xFF
+            val middle = buffer.get(index + 1).toInt() and 0xFF
+            val high = buffer.get(highIndex).toInt()
+            ((high shl 16) or (middle shl 8) or low) / 8388608f
         }
         else -> buffer.getInt(index) / 2147483648f
     }
 
-    /**
-     * Restart analysis for a new track. [startPositionMs] is the track position
-     * the next decoded audio corresponds to — the beat grid's anchor is
-     * absolute track time, so a probe that seeks into the middle of a track
-     * must say so or every beat time it reports is wrong.
-     */
-    fun resetForTrack(startPositionMs: Long = 0L) {
-        pendingStartPositionMs = startPositionMs
-        reported = false
-        tracker?.beginAt(startPositionMs)
-        keyDetector?.reset()
+    fun resetForTrack(startPositionMs: Long = 0L, mediaId: String? = null) {
+        synchronized(lock) {
+            this.startPositionMs = startPositionMs.coerceAtLeast(0L)
+            this.mediaId = mediaId
+            beginAnalysis()
+        }
     }
+
+    private fun beginAnalysis() {
+        generation++
+        processedFrames = 0L
+        run = if (supports(format) && analysisEnabled()) {
+            AnalysisRun(generation, mediaId, format, startPositionMs)
+        } else null
+    }
+
+    private fun supports(format: AudioProcessor.AudioFormat): Boolean =
+        format.sampleRate > 0 && format.channelCount > 0 && when (format.encoding) {
+            C.ENCODING_PCM_16BIT, C.ENCODING_PCM_16BIT_BIG_ENDIAN,
+            C.ENCODING_PCM_24BIT, C.ENCODING_PCM_24BIT_BIG_ENDIAN,
+            C.ENCODING_PCM_32BIT, C.ENCODING_PCM_32BIT_BIG_ENDIAN, C.ENCODING_PCM_FLOAT -> true
+            else -> false
+        }
 
     override fun queueEndOfStream() {
         inputEnded = true
     }
 
-    override fun getOutput(): ByteBuffer {
-        val output = outputBuffer
-        outputBuffer = EMPTY_BUFFER
-        return output
-    }
+    override fun getOutput(): ByteBuffer = outputBuffer.also { outputBuffer = AudioProcessor.EMPTY_BUFFER }
 
-    override fun isEnded(): Boolean = inputEnded && outputBuffer === EMPTY_BUFFER
+    override fun isEnded(): Boolean = inputEnded && !outputBuffer.hasRemaining()
 
     @Deprecated("Deprecated in AudioProcessor")
     override fun flush() {
-        outputBuffer = EMPTY_BUFFER
+        outputBuffer = AudioProcessor.EMPTY_BUFFER
         inputEnded = false
+        synchronized(lock) {
+            if (format != pendingFormat) {
+                format = pendingFormat
+                beginAnalysis()
+            }
+        }
     }
 
     @Deprecated("Deprecated in AudioProcessor")
     override fun reset() {
-        flush()
-        channelCount = 0
-        bytesPerSample = 0
-        tracker = null
-        keyDetector = null
-        resetForTrack()
-    }
-
-    private fun replaceOutputBuffer(size: Int): ByteBuffer {
-        if (outputBuffer.capacity() < size) {
-            outputBuffer = ByteBuffer.allocateDirect(size).order(ByteOrder.nativeOrder())
-        } else {
-            outputBuffer.clear()
+        outputBuffer = AudioProcessor.EMPTY_BUFFER
+        inputEnded = false
+        synchronized(lock) {
+            format = AudioProcessor.AudioFormat.NOT_SET
+            pendingFormat = AudioProcessor.AudioFormat.NOT_SET
+            startPositionMs = 0L
+            mediaId = null
+            beginAnalysis()
         }
-        return outputBuffer
     }
 
-    companion object {
-        private const val TAG = "TrackAnalyzer"
-
-        private val EMPTY_BUFFER: ByteBuffer = ByteBuffer.allocateDirect(0).order(ByteOrder.nativeOrder())
+    private companion object {
+        val EMPTY_PROFILE = ByteArray(0)
     }
 }

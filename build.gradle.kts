@@ -22,6 +22,19 @@ tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }
 
+// Kotlin 2.3.10 emits metadata format 2.4.0. Hilt/KSP pull in an older
+// kotlin-metadata-jvm transitively that only reads up to 2.3.0, which fails with
+// "Provided Metadata instance has version 2.4.0, while maximum supported version is
+// 2.3.0" during Hilt's annotation processing. Force the whole build onto a
+// kotlin-metadata-jvm release that understands 2.4.x metadata.
+allprojects {
+    configurations.all {
+        resolutionStrategy {
+            force("org.jetbrains.kotlin:kotlin-metadata-jvm:2.4.10")
+        }
+    }
+}
+
 subprojects {
     tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
         compilerOptions {

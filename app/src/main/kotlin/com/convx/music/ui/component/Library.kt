@@ -9,7 +9,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.material3.Icon
+import com.convx.music.ui.ios.compat.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
@@ -20,6 +20,10 @@ import com.convx.music.R
 import com.convx.music.db.entities.Album
 import com.convx.music.db.entities.Artist
 import com.convx.music.db.entities.Playlist
+import com.convx.music.ui.utils.albumRoute
+import com.convx.music.ui.utils.artistRoute
+import com.convx.music.ui.utils.localPlaylistRoute
+import com.convx.music.ui.utils.onlinePlaylistRoute
 import com.convx.music.ui.menu.AlbumMenu
 import com.convx.music.ui.menu.ArtistMenu
 import com.convx.music.ui.menu.PlaylistMenu
@@ -49,16 +53,13 @@ fun LibraryArtistListItem(
                 }
             }
         ) {
-            Icon(
-                painter = painterResource(R.drawable.more_vert),
-                contentDescription = null
-            )
+            SymbolIcon(symbol = sf("ellipsis"), contentDescription = null)
         }
     },
     modifier = modifier
         .fillMaxWidth()
         .clickable {
-            navController.navigate("artist/${artist.id}")
+            navController.navigate(artistRoute(artist.id, artist.thumbnailUrl))
         }
 )
 
@@ -79,7 +80,7 @@ fun LibraryArtistGridItem(
         .fillMaxWidth()
         .combinedClickable(
             onClick = {
-                navController.navigate("artist/${artist.id}")
+                navController.navigate(artistRoute(artist.id, artist.thumbnailUrl))
             },
             onLongClick = {
                 menuState.show {
@@ -119,16 +120,13 @@ fun LibraryAlbumListItem(
                 }
             }
         ) {
-            Icon(
-                painter = painterResource(R.drawable.more_vert),
-                contentDescription = null
-            )
+            SymbolIcon(symbol = sf("ellipsis"), contentDescription = null)
         }
     },
     modifier = modifier
         .fillMaxWidth()
         .clickable {
-            navController.navigate("album/${album.id}")
+            navController.navigate(albumRoute(album.id, album.thumbnailUrl))
         }
 )
 
@@ -154,7 +152,7 @@ fun LibraryAlbumGridItem(
         .fillMaxWidth()
         .combinedClickable(
             onClick = {
-                navController.navigate("album/${album.id}")
+                navController.navigate(albumRoute(album.id, album.thumbnailUrl))
             },
             onLongClick = {
                 menuState.show {
@@ -179,6 +177,8 @@ fun LibraryPlaylistListItem(
 ) = PlaylistListItem(
     playlist = playlist,
     showIconOnly = showIconOnly,
+    sharedArtworkId = if (!playlist.playlist.isEditable && playlist.songCount == 0 && playlist.playlist.remoteSongCount != 0)
+        playlist.playlist.browseId else playlist.id,
     trailingContent = {
         androidx.compose.material3.IconButton(
             onClick = {
@@ -220,19 +220,16 @@ fun LibraryPlaylistListItem(
                 }
             }
         ) {
-            Icon(
-                painter = painterResource(R.drawable.more_vert),
-                contentDescription = null
-            )
+            SymbolIcon(symbol = sf("ellipsis"), contentDescription = null)
         }
     },
     modifier = modifier
         .fillMaxWidth()
         .clickable {
             if (!playlist.playlist.isEditable && playlist.songCount == 0 && playlist.playlist.remoteSongCount != 0)
-                navController.navigate("online_playlist/${playlist.playlist.browseId}")
+                navController.navigate(onlinePlaylistRoute(playlist.playlist.browseId.orEmpty(), playlist.playlist.name, playlist.playlist.thumbnailUrl))
             else
-                navController.navigate("local_playlist/${playlist.id}")
+                navController.navigate(localPlaylistRoute(playlist.id, playlist.thumbnailUrl))
         }
 )
 
@@ -249,14 +246,16 @@ fun LibraryPlaylistGridItem(
     playlist = playlist,
     fillMaxWidth = true,
     showIconOnly = showIconOnly,
+    sharedArtworkId = if (!playlist.playlist.isEditable && playlist.songCount == 0 && playlist.playlist.remoteSongCount != 0)
+        playlist.playlist.browseId else playlist.id,
     modifier = modifier
         .fillMaxWidth()
         .combinedClickable(
             onClick = {
                 if (!playlist.playlist.isEditable && playlist.songCount == 0 && playlist.playlist.remoteSongCount != 0)
-                    navController.navigate("online_playlist/${playlist.playlist.browseId}")
+                    navController.navigate(onlinePlaylistRoute(playlist.playlist.browseId.orEmpty(), playlist.playlist.name, playlist.playlist.thumbnailUrl))
                 else
-                    navController.navigate("local_playlist/${playlist.id}")
+                    navController.navigate(localPlaylistRoute(playlist.id, playlist.thumbnailUrl))
             },
             onLongClick = {
                 menuState.show {

@@ -4,26 +4,28 @@
  */
 
 package com.convx.music.ui.screens.search.suggestions
-import timber.log.Timber
+
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.navigation.NavController
+import com.convx.music.playback.PlayerConnection
+import com.convx.music.playback.queues.YouTubeQueue
+import com.music.innertube.SearchFilter
+import com.music.innertube.YouTube
+import com.music.innertube.models.AlbumItem
+import com.music.innertube.models.ArtistItem
+import com.music.innertube.models.SongItem
+import com.music.innertube.models.WatchEndpoint
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
-import com.music.innertube.YouTube
-import com.music.innertube.models.SongItem
-import com.music.innertube.models.ArtistItem
-import com.music.innertube.models.WatchEndpoint
-import com.convx.music.playback.PlayerConnection
-import com.convx.music.playback.queues.YouTubeQueue
-import androidx.navigation.NavController
+import timber.log.Timber
+import java.util.Locale
 
 @HiltViewModel
 class SuggestionsViewModel @Inject constructor() : ViewModel() {
@@ -49,19 +51,17 @@ class SuggestionsViewModel @Inject constructor() : ViewModel() {
 
     fun refresh(countryCode: String = "system", force: Boolean = false) {
         val resolvedCode = if (countryCode == "system") {
-            java.util.Locale.getDefault().country.lowercase()
+            Locale.getDefault().country.lowercase()
         } else {
             countryCode.lowercase()
         }
 
-        // Allow refresh if force is true OR if we are switching regions
         if (_isLoading.value && !force && currentLoadedRegion == resolvedCode) return
         
         viewModelScope.launch(Dispatchers.IO) {
             _isLoading.value = true
             if (force) _isManualLoading.value = true
             
-            // Clear current data if we are switching regions or forcing a fresh load
             if (currentLoadedRegion != resolvedCode || force) {
                 _suggestionTracks.value = null
                 _suggestionArtists.value = null
@@ -71,7 +71,6 @@ class SuggestionsViewModel @Inject constructor() : ViewModel() {
 
             try {
                 coroutineScope {
-                    // Launch each fetch in its own job so they update the UI independently
                     launch {
                         try {
                             val tracks = AppleMusicScraper.fetchTopSongs(resolvedCode)
@@ -118,40 +117,35 @@ class SuggestionsViewModel @Inject constructor() : ViewModel() {
     }
 
     fun playTrack(track: SuggestionTrack, playerConnection: PlayerConnection?) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val query = "${track.title} ${track.artist}"
-            YouTube.search(query, YouTube.SearchFilter.FILTER_SONG).onSuccess { searchResult ->
-                val songs = searchResult.items.filterIsInstance<SongItem>()
-                
-                // 1. Try to find an exact title match with at least one matching artist
-                val bestMatch = songs.firstOrNull { s ->
-                    s.title.equals(track.title, ignoreCase = true) &&
-                    s.artists.any { a -> track.artist.contains(a.name, ignoreCase = true) }
-                } ?: 
-                // 2. Try to find a title that contains our target title and matches artist
-                songs.firstOrNull { s ->
-                    s.title.contains(track.title, ignoreCase = true) &&
-                    s.artists.any { a -> track.artist.contains(a.name, ignoreCase = true) }
-                } ?:
-                // 3. Just find the first one that matches the artist
-                songs.firstOrNull { s ->
-                    s.artists.any { a -> track.artist.contains(a.name, ignoreCase = true) }
-                } ?:
-                // 4. Fallback to first song result
-                songs.firstOrNull()
+        playSuggestion(track.title, track.artist, playerConnection)
+    }
 
-                if (bestMatch != null) {
-                    withContext(Dispatchers.Main) {
-                        playerConnection?.playQueue(YouTubeQueue(WatchEndpoint(videoId = bestMatch.id)))
-                    }
+    private fun playSuggestion(title: String, artist: String, playerConnection: PlayerConnection?) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val query = "$title $artist"
+            YouTube.search(query, SearchFilter.FILTER_SONG).onSuccess { result ->
+                val songs = result.items.filterIsInstance<SongItem>()
+                val bestMatch = findBestMatch(songs, title, artist) ?: return@onSuccess
+
+                withContext(Dispatchers.Main) {
+                    playerConnection?.playQueue(YouTubeQueue(WatchEndpoint(videoId = bestMatch.id)))
                 }
             }
         }
     }
 
+    private fun findBestMatch(songs: List<SongItem>, title: String, artist: String): SongItem? {
+        fun SongItem.matchesArtist() = artists.any { artist.contains(it.name, ignoreCase = true) }
+
+        return songs.firstOrNull { it.title.equals(title, ignoreCase = true) && it.matchesArtist() }
+            ?: songs.firstOrNull { it.title.contains(title, ignoreCase = true) && it.matchesArtist() }
+            ?: songs.firstOrNull { it.matchesArtist() }
+            ?: songs.firstOrNull()
+    }
+
     fun navigateToArtist(artist: SuggestionArtist, navController: NavController) {
         viewModelScope.launch(Dispatchers.IO) {
-            YouTube.search(artist.name, YouTube.SearchFilter.FILTER_ARTIST)
+            YouTube.search(artist.name, SearchFilter.FILTER_ARTIST)
                 .onSuccess { searchResult ->
                     val firstArtist =
                         searchResult.items.filterIsInstance<ArtistItem>().firstOrNull()
@@ -163,16 +157,23 @@ class SuggestionsViewModel @Inject constructor() : ViewModel() {
                 }
         }
     }
+
     fun navigateToAlbum(album: SuggestionAlbum, navController: NavController) {
         viewModelScope.launch(Dispatchers.IO) {
             val query = "${album.title} ${album.artist}"
-            YouTube.search(query, YouTube.SearchFilter.FILTER_ALBUM)
+            YouTube.search(query, SearchFilter.FILTER_ALBUM)
                 .onSuccess { searchResult ->
                     val firstAlbum =
-                        searchResult.items.filterIsInstance<com.music.innertube.models.AlbumItem>().firstOrNull()
+                        searchResult.items.filterIsInstance<AlbumItem>().firstOrNull()
                     if (firstAlbum != null) {
                         withContext(Dispatchers.Main) {
-                            navController.navigate("album/${firstAlbum.id}")
+                            navController.navigate(
+                                com.convx.music.ui.utils.albumRoute(
+                                    firstAlbum.id,
+                                    album.thumbnailUrl,
+                                    album.sharedArtworkId,
+                                ),
+                            )
                         }
                     }
                 }
@@ -180,32 +181,6 @@ class SuggestionsViewModel @Inject constructor() : ViewModel() {
     }
 
     fun playVideo(video: SuggestionTrack, playerConnection: PlayerConnection?) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val query = "${video.title} ${video.artist}"
-            YouTube.search(query, YouTube.SearchFilter.FILTER_SONG)
-                .onSuccess { searchResult ->
-                    val songs = searchResult.items.filterIsInstance<SongItem>()
-
-                    // Use the same multi-step matching as playTrack for reliability
-                    val bestMatch = songs.firstOrNull { s ->
-                        s.title.equals(video.title, ignoreCase = true) &&
-                        s.artists.any { a -> video.artist.contains(a.name, ignoreCase = true) }
-                    } ?:
-                    songs.firstOrNull { s ->
-                        s.title.contains(video.title, ignoreCase = true) &&
-                        s.artists.any { a -> video.artist.contains(a.name, ignoreCase = true) }
-                    } ?:
-                    songs.firstOrNull { s ->
-                        s.artists.any { a -> video.artist.contains(a.name, ignoreCase = true) }
-                    } ?:
-                    songs.firstOrNull()
-
-                    if (bestMatch != null) {
-                        withContext(Dispatchers.Main) {
-                            playerConnection?.playQueue(YouTubeQueue(WatchEndpoint(videoId = bestMatch.id)))
-                        }
-                    }
-                }
-        }
+        playSuggestion(video.title, video.artist, playerConnection)
     }
 }

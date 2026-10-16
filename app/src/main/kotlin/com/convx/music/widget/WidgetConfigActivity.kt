@@ -23,11 +23,11 @@ import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import com.convx.music.ui.ios.compat.Button
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.RadioButton
+import com.convx.music.ui.ios.compat.Surface
+import com.convx.music.ui.ios.compat.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -41,7 +41,7 @@ import com.convx.music.R
 import com.convx.music.ui.component.PreferenceEntry
 import com.convx.music.ui.component.PreferenceGroupTitle
 import com.convx.music.ui.component.SwitchPreference
-import com.convx.music.ui.theme.vivimusicTheme
+import com.convx.music.ui.theme.ConvxTheme
 import dagger.hilt.android.AndroidEntryPoint
 
 /**
@@ -74,10 +74,10 @@ class WidgetConfigActivity : ComponentActivity() {
         }
 
         setContent {
-            vivimusicTheme {
+            ConvxTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background,
+                    color = AppTheme.colorScheme.background,
                 ) {
                     WidgetConfigScreen(
                         initial = WidgetConfig.load(this, widgetId),

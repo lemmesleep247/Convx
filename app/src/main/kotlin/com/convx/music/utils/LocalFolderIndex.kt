@@ -49,8 +49,7 @@ object LocalFolderIndex {
         return dir.trim('/')
     }
 
-    // ponytail: process-lifetime cache, reloaded on demand. Folders only change
-    // when files do, and a rescan/app restart already refreshes it.
+    // Folder contents change only after a rescan or app restart; reload on demand.
     @Volatile
     private var cache: List<Folder> = emptyList()
 

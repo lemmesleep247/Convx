@@ -67,7 +67,7 @@ object PresetStore {
     private const val V2_ASSET_PREFIX = "v2_"
 
 
-    // --- Import limits. A preset can arrive from anywhere, so every one of these is a hard stop.
+    // Import limits. A preset can arrive from anywhere, so every one of these is a hard stop.
     private const val MAX_ARCHIVE_BYTES = 20L * 1024 * 1024
     private const val MAX_ENTRIES = 64
     private const val MAX_ENTRY_BYTES = 25L * 1024 * 1024
@@ -109,8 +109,6 @@ object PresetStore {
             categories = obj.optJSONArray("categories").toCategorySet(),
         )
     }.getOrNull()
-
-    // ---------------------------------------------------------------- capture
 
     /**
      * Snapshots the current look into a new preset.
@@ -210,8 +208,6 @@ object PresetStore {
             if (source !== bitmap) source.recycle()
         }
     }
-
-    // ------------------------------------------------------------------ apply
 
     /**
      * Writes the preset's values back into preferences.
@@ -335,8 +331,6 @@ object PresetStore {
             else put("v", value)
         }
 
-    // ----------------------------------------------------------------- delete
-
     fun delete(context: Context, id: String) {
         dirFor(context, id).deleteRecursively()
     }
@@ -348,8 +342,6 @@ object PresetStore {
             manifest.writeText(obj.toString())
         }
     }
-
-    // ----------------------------------------------------------------- export
 
     /** Zips a preset into the cache directory, ready to hand to a share sheet. */
     fun export(context: Context, meta: PresetStore.Meta): File? = runCatching {
@@ -368,8 +360,6 @@ object PresetStore {
         }
         out
     }.getOrNull()
-
-    // ----------------------------------------------------------------- import
 
     /**
      * Unpacks a shared preset.

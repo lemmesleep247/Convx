@@ -15,9 +15,6 @@ fun ModernSwitch(
     enabled: Boolean = true,
     modifier: Modifier = Modifier
 ) {
-    // Delegates to the same glass toggle the rest of settings uses. This
-    // component predates it and was still drawing a Material3 Switch, which left
-    // Modules / Canvas / Jio as the only settings screens with the old look.
     GlassSwitchCompat(
         checked = checked,
         onCheckedChange = onCheckedChange,

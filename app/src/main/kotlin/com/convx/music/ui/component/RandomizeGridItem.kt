@@ -11,8 +11,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.LoadingIndicator
-import androidx.compose.material3.MaterialTheme
+import com.convx.music.ui.ios.compat.LoadingIndicator
+import com.convx.music.ui.ios.compat.AppTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -31,8 +31,6 @@ fun RandomizeGridItem(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // When isLoading is true, multiplier goes to 0 (moving dots to center)
-    // When isLoading is false, multiplier goes to 1 (moving dots to corners)
     val dotOffsetMultiplier by animateFloatAsState(
         targetValue = if (isLoading) 0f else 1f,
         animationSpec = tween(durationMillis = 600),
@@ -49,19 +47,17 @@ fun RandomizeGridItem(
         modifier = modifier
             .aspectRatio(1f)
             .clip(ThumbnailRoundedShape)
-            .background(MaterialTheme.colorScheme.secondaryContainer)
+            .background(AppTheme.colorScheme.secondaryContainer)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        // Die Dots (5-pattern)
-        val dotColor = MaterialTheme.colorScheme.onSecondaryContainer
+        val dotColor = AppTheme.colorScheme.onSecondaryContainer
         val dotSize = 14.dp
         val padding = 24.dp
 
         // Using a single Center alignment and offsetting FROM center ensures they
         // collapse TO center correctly.
 
-        // Top Left
         Box(
             modifier = Modifier
                 .align(Alignment.Center)
@@ -70,7 +66,6 @@ fun RandomizeGridItem(
                 .clip(CircleShape)
                 .background(dotColor)
         )
-        // Top Right
         Box(
             modifier = Modifier
                 .align(Alignment.Center)
@@ -79,7 +74,6 @@ fun RandomizeGridItem(
                 .clip(CircleShape)
                 .background(dotColor)
         )
-        // Center
         Box(
             modifier = Modifier
                 .align(Alignment.Center)
@@ -87,7 +81,6 @@ fun RandomizeGridItem(
                 .clip(CircleShape)
                 .background(dotColor)
         )
-        // Bottom Left
         Box(
             modifier = Modifier
                 .align(Alignment.Center)
@@ -96,7 +89,6 @@ fun RandomizeGridItem(
                 .clip(CircleShape)
                 .background(dotColor)
         )
-        // Bottom Right
         Box(
             modifier = Modifier
                 .align(Alignment.Center)
@@ -106,18 +98,12 @@ fun RandomizeGridItem(
                 .background(dotColor)
         )
 
-        // Loading Indicator overlay. Composed only while it has any opacity:
-        // Material3's LoadingIndicator morphs its shape on an infinite
-        // animation for as long as it is in the tree, and alpha = 0 does not
-        // stop that. Left composed, this tile — which sits permanently in
-        // Home's Speed dial grid — kept the whole app recomposing and redrawing
-        // every vsync at idle. The fade-out still plays: the condition only
-        // goes false once the animation has actually reached 0.
+        // Compose the animated indicator only while visible to avoid idle work.
         if (loadingAlpha > 0f) {
             Box(modifier = Modifier.graphicsLayer { alpha = loadingAlpha }) {
                 LoadingIndicator(
                     modifier = Modifier.size(48.dp),
-                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    color = AppTheme.colorScheme.onSecondaryContainer,
                 )
             }
         }

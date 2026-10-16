@@ -24,6 +24,7 @@ import com.convx.music.utils.get
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
@@ -37,7 +38,7 @@ class OnlineSearchSuggestionViewModel
 @Inject
 constructor(
     @ApplicationContext val context: Context,
-    database: MusicDatabase,
+    private val database: MusicDatabase,
 ) : ViewModel() {
     val query = MutableStateFlow("")
     private val _viewState = MutableStateFlow(SearchSuggestionViewState())
@@ -46,55 +47,48 @@ constructor(
     init {
         viewModelScope.launch {
             query
-                .flatMapLatest { query ->
-                    if (query.isEmpty()) {
-                        database.searchHistory().map { history ->
-                            SearchSuggestionViewState(
-                                history = history,
-                            )
-                        }
-                    } else {
-                        val parsedUrl = YouTubeUrlParser.parse(query)
-                        val parsedItem = if (parsedUrl != null) fetchParsedUrlItem(parsedUrl) else null
-                        
-                        val result = if (parsedUrl != null) null else YouTube.searchSuggestions(query).getOrNull()
-                        val hideExplicit = context.dataStore.get(HideExplicitKey, false)
-                        val hideVideoSongs = context.dataStore.get(HideVideoSongsKey, false) || context.dataStore.get(DataSaverEnabledKey, false)
-
-                        database
-                            .searchHistory(query)
-                            .map { it.take(3) }
-                            .map { history ->
-                                SearchSuggestionViewState(
-                                    history = history,
-                                    suggestions =
-                                    result
-                                        ?.queries
-                                        ?.filter { suggestionQuery ->
-                                            history.none { it.query == suggestionQuery }
-                                        }.orEmpty(),
-                                    items = listOfNotNull(parsedItem) +
-                                    result
-                                        ?.recommendedItems
-                                        ?.distinctBy { it.id }
-                                        ?.filter { it.id != parsedItem?.id }
-                                        ?.filterExplicit(hideExplicit)
-                                        ?.filterVideoSongs(hideVideoSongs)
-                                        .orEmpty(),
-                                    isFromLink = parsedUrl != null
-                                )
-                            }
-                    }
+                .flatMapLatest { currentQuery ->
+                    if (currentQuery.isEmpty()) historySuggestions() else searchSuggestions(currentQuery)
                 }.collect {
                     _viewState.value = it
                 }
         }
     }
 
+    private fun historySuggestions(): Flow<SearchSuggestionViewState> =
+        database.searchHistory().map { history -> SearchSuggestionViewState(history = history) }
+
+    private suspend fun searchSuggestions(query: String): Flow<SearchSuggestionViewState> {
+        val parsedUrl = YouTubeUrlParser.parse(query)
+        val parsedItem = parsedUrl?.let { fetchParsedUrlItem(it) }
+        val result = if (parsedUrl == null) YouTube.searchSuggestions(query).getOrNull() else null
+        val hideExplicit = context.dataStore.get(HideExplicitKey, false)
+        val hideVideoSongs = context.dataStore.get(HideVideoSongsKey, false) ||
+            context.dataStore.get(DataSaverEnabledKey, false)
+
+        return database.searchHistory(query)
+            .map { it.take(3) }
+            .map { history ->
+                val historyQueries = history.mapTo(mutableSetOf()) { it.query }
+                val suggestions = result?.queries.orEmpty().filterNot { it in historyQueries }
+                val recommendedItems = result?.recommendedItems.orEmpty()
+                    .distinctBy { it.id }
+                    .filter { it.id != parsedItem?.id }
+                    .filterExplicit(hideExplicit)
+                    .filterVideoSongs(hideVideoSongs)
+
+                SearchSuggestionViewState(
+                    history = history,
+                    suggestions = suggestions,
+                    items = listOfNotNull(parsedItem) + recommendedItems,
+                    isFromLink = parsedUrl != null,
+                )
+            }
+    }
+
     private suspend fun fetchParsedUrlItem(parsedUrl: YouTubeUrlParser.ParsedUrl): YTItem? {
-        println("[LINK_PARSE_DEBUG] Fetching metadata for: $parsedUrl")
         return try {
-            val item = when (parsedUrl) {
+            when (parsedUrl) {
                 is YouTubeUrlParser.ParsedUrl.Video -> {
                     YouTube.queue(listOf(parsedUrl.id)).getOrNull()?.firstOrNull()
                 }
@@ -103,11 +97,7 @@ constructor(
                     YouTube.artist(parsedUrl.id).getOrNull()?.artist
                 }
             }
-            println("[LINK_PARSE_DEBUG] Fetch successful: ${item?.id} (${item?.javaClass?.simpleName})")
-            item
-        } catch (e: Exception) {
-            println("[LINK_PARSE_DEBUG] Fetch failed: ${e.message}")
-            e.printStackTrace()
+        } catch (_: Exception) {
             null
         }
     }

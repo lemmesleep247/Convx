@@ -30,7 +30,7 @@ object AppleMusicScraper {
             
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return null
-                response.body?.string()
+                response.body.string()
             }
         } catch (e: Exception) {
             Timber.tag(TAG).e(e, "Error executing GET request for $url")
@@ -126,12 +126,10 @@ object AppleMusicScraper {
     }
 
     fun getTrendingArtists(tracks: List<SuggestionTrack>): List<SuggestionArtist> {
-        // Extract top unique artists from the tracks list
         val artistCounts = mutableMapOf<String, Int>()
         val artistImages = mutableMapOf<String, String?>()
         
         tracks.forEach { track ->
-            // Handle multiple artists in string
             val mainArtist = track.artist.split(",", "&", "feat.", "ft.").first().trim()
             artistCounts[mainArtist] = (artistCounts[mainArtist] ?: 0) + 1
             if (artistImages[mainArtist] == null) {

@@ -11,15 +11,7 @@ import androidx.media3.common.audio.BaseAudioProcessor
 import androidx.media3.common.util.UnstableApi
 import java.nio.ByteBuffer
 
-/**
- * The move a DJ pulls on the *outgoing* track's tail: a turntable brake.
- *
- * Idle it is a straight buffer copy. It emits exactly as many bytes as it
- * consumes, so the audio sink's rate is untouched and there is no way for
- * buffering to run away — the brake reads the ring more slowly than it fills,
- * letting the surplus fall off the back, which is fine because this only ever
- * runs on a player that is seconds from being released.
- */
+/** Tape stop preserves the output frame count; other PCM formats bypass it. */
 @UnstableApi
 class DjTailAudioProcessor : BaseAudioProcessor() {
 
@@ -35,18 +27,14 @@ class DjTailAudioProcessor : BaseAudioProcessor() {
     private var ringFrames = 0
     private var writeFrame = 0
 
-    // Tape-stop state
     private var readPosition = 0.0
     private var tapeRate = 1.0
     private var tapeDecayPerFrame = 0.0
 
-    /** Slow the track to a standstill over [durationMs], pitch falling with it. */
     fun startTapeStop(durationMs: Long) {
         if (sampleRate <= 0 || channels <= 0) return
         val frames = ((durationMs * sampleRate) / 1000L).coerceAtLeast(1L)
         tapeRate = 1.0
-        // Linear rate decay: the pitch drop a listener expects from a turntable
-        // losing power, and it reaches exactly zero at the end of the window.
         tapeDecayPerFrame = 1.0 / frames
         readPosition = writeFrame.toDouble()
         mode = Mode.TAPE_STOP
@@ -58,7 +46,7 @@ class DjTailAudioProcessor : BaseAudioProcessor() {
 
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
         if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT ||
-            inputAudioFormat.channelCount !in 1..2 ||
+            inputAudioFormat.channelCount !in 1..8 ||
             inputAudioFormat.sampleRate <= 0
         ) {
             return AudioProcessor.AudioFormat.NOT_SET
@@ -89,8 +77,6 @@ class DjTailAudioProcessor : BaseAudioProcessor() {
         output.flip()
     }
 
-    /** Reading the ring at a falling rate: tempo and pitch drop together, which
-     *  is what makes it sound like a turntable rather than a fade. */
     private fun brake(input: ByteBuffer, output: ByteBuffer, frameCount: Int) {
         repeat(frameCount) {
             for (channel in 0 until channels) {

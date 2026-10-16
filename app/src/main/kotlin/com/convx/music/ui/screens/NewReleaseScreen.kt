@@ -5,6 +5,15 @@
 
 package com.convx.music.ui.screens
 
+import com.convx.music.ui.component.sf
+import dev.chrisbanes.haze.hazeSource
+import com.convx.music.ui.component.SymbolIcon
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import com.convx.music.ui.component.rememberTitleCollapseProgressState
+import com.convx.music.ui.ios.foundation.IosTheme
+import androidx.compose.foundation.layout.size
 import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -29,9 +38,9 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.Text
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -70,6 +79,8 @@ import com.convx.music.ui.component.backdrop.backdrops.rememberLayerBackdrop
 import com.convx.music.ui.component.isGlassAllowed
 import com.convx.music.ui.component.liquidGlass
 import com.convx.music.ui.component.rememberHeroSource
+import com.convx.music.ui.component.rememberHeroTopBlur
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import com.convx.music.ui.component.rememberHeroTint
 import com.convx.music.ui.component.shapes.ContinuousRoundedRectangle
 import com.convx.music.ui.component.shimmer.GridItemPlaceHolder
@@ -79,9 +90,11 @@ import com.convx.music.ui.menu.YouTubeAlbumMenu
 import com.convx.music.ui.theme.AppleTokens
 import com.convx.music.ui.theme.HeroTintedContent
 import com.convx.music.ui.utils.backToMain
+import com.convx.music.ui.utils.albumRoute
 import com.convx.music.ui.utils.combinedBounceClick
 import com.convx.music.utils.rememberEnumPreference
 import com.convx.music.viewmodels.NewReleaseViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -93,10 +106,10 @@ fun NewReleaseScreen(
     val menuState = LocalMenuState.current
     val haptic = LocalHapticFeedback.current
     val playerConnection = LocalPlayerConnection.current ?: return
-    val isPlaying by playerConnection.isEffectivelyPlaying.collectAsState()
-    val mediaMetadata by playerConnection.mediaMetadata.collectAsState()
+    val isPlaying by playerConnection.isEffectivelyPlaying.collectAsStateWithLifecycle()
+    val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
 
-    val newReleaseAlbums by viewModel.newReleaseAlbums.collectAsState()
+    val newReleaseAlbums by viewModel.newReleaseAlbums.collectAsStateWithLifecycle()
 
     val coroutineScope = rememberCoroutineScope()
     val gridItemSize by rememberEnumPreference(GridItemsSizeKey, GridItemSize.BIG)
@@ -114,21 +127,25 @@ fun NewReleaseScreen(
     val heroBackdrop = rememberLayerBackdrop()
 
     val heroZoom = rememberHeroZoom()
+    val lazyGridState = rememberLazyGridState()
 
     HeroBackground(
         tint = tint,
         heroSource = heroSource,
         heroScale = heroZoom.scale,
+        // Progressive top blur: artwork dissolves under the status bar as the grid scrolls up.
+        topBlurProgress = rememberHeroTopBlur(lazyGridState),
         modifier = Modifier.fillMaxSize(),
     ) {
       HeroTintedContent(tint = tint, backdrop = heroBackdrop) {
         val chromeShape = ContinuousRoundedRectangle(percent = 50)
-        
+        val hazeState = androidx.compose.runtime.remember { dev.chrisbanes.haze.HazeState() }
+
         Box(modifier = Modifier.fillMaxSize()) {
             LazyVerticalGrid(
-                // No bounce here: the top pull drives the hero zoom instead.
+                state = lazyGridState,
                 overscrollEffect = heroZoom.listOverscroll(),
-                modifier = Modifier.heroPullZoom(heroZoom).fillMaxSize(),
+                modifier = Modifier.heroPullZoom(heroZoom).fillMaxSize().hazeSource(hazeState),
                 columns = rememberGridColumns(),
                 contentPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues(),
             ) {
@@ -155,7 +172,7 @@ fun NewReleaseScreen(
                         Modifier
                             .combinedBounceClick(
                                 onClick = {
-                                    navController.navigate("album/${album.id}")
+                                    navController.navigate(albumRoute(album.id, album.thumbnail))
                                 },
                                 onLongClick = {
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -184,7 +201,12 @@ fun NewReleaseScreen(
                 }
             }
 
-            // Top bar logic
+            val newReleaseProgress = com.convx.music.ui.component.rememberTitleCollapseProgressState(lazyGridState)
+            com.convx.music.ui.component.TopFadeBlur(
+                hazeState = hazeState,
+                pageColor = tint,
+                modifier = Modifier.align(Alignment.TopCenter),
+            )
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -198,13 +220,23 @@ fun NewReleaseScreen(
                     onClick = { navController.navigateUp() },
                     onLongClick = { navController.backToMain() },
                 ) {
-                    Icon(
-                        painter = painterResource(R.drawable.arrow_back),
-                        contentDescription = null,
-                    )
+                    SymbolIcon(symbol = sf("chevron.left"), contentDescription = null)
                 }
 
-                Spacer(Modifier.weight(1f))
+                Text(
+                    text = stringResource(R.string.new_release_albums),
+                    style = IosTheme.typography.headline,
+                    color = onTint,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 12.dp)
+                        .graphicsLayer { alpha = newReleaseProgress.value },
+                    textAlign = TextAlign.Center,
+                )
+
+                Spacer(Modifier.size(44.dp))
             }
         }
       }

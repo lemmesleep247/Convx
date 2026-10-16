@@ -22,6 +22,7 @@ class EqualizerService @Inject constructor() {
     private val audioProcessors = mutableListOf<CustomEqualizerAudioProcessor>()
     private var pendingProfile: SavedEQProfile? = null
     private var shouldDisable: Boolean = false
+    private var bitPerfectBypass: Boolean = false
 
     companion object {
         private const val TAG = "EqualizerService"
@@ -34,15 +35,17 @@ class EqualizerService @Inject constructor() {
     @OptIn(UnstableApi::class)
     fun addAudioProcessor(processor: CustomEqualizerAudioProcessor) {
         audioProcessors.add(processor)
+        processor.forceBypass = bitPerfectBypass
         Timber.tag(TAG).d("Audio processor added. Total: ${audioProcessors.size}")
 
         // Apply pending profile if one was set before processor was available
         if (shouldDisable) {
             processor.disable()
             // Don't clear shouldDisable here, as we might add more processors
-        } else if (pendingProfile != null) {
-            val profile = pendingProfile!!
-            applyProfileToProcessor(processor, profile)
+        } else {
+            pendingProfile?.let { profile ->
+                applyProfileToProcessor(processor, profile)
+            }
             // Don't clear pendingProfile here
         }
     }
@@ -60,6 +63,7 @@ class EqualizerService @Inject constructor() {
      */
     @OptIn(UnstableApi::class)
     fun applyProfile(profile: SavedEQProfile): Result<Unit> {
+        if (!shouldDisable && pendingProfile == profile && audioProcessors.isNotEmpty()) return Result.success(Unit)
         if (audioProcessors.isEmpty()) {
             Timber.tag(TAG)
                 .w("No audio processors set yet. Storing profile as pending: ${profile.name}")
@@ -121,23 +125,24 @@ class EqualizerService @Inject constructor() {
     }
 
     /**
-     * Check if audio processor is set
+     * Bit Perfect mode: force a flat passthrough on every processor without
+     * touching the saved profile or [shouldDisable], so it restores exactly
+     * as it was when Bit Perfect is turned back off.
      */
+    fun setBitPerfectBypass(bypass: Boolean) {
+        bitPerfectBypass = bypass
+        audioProcessors.forEach { it.forceBypass = bypass }
+    }
+
     fun isInitialized(): Boolean {
         return audioProcessors.isNotEmpty()
     }
 
-    /**
-     * Check if equalizer is enabled
-     */
     @OptIn(UnstableApi::class)
     fun isEnabled(): Boolean {
         return audioProcessors.any { it.isEnabled() }
     }
 
-    /**
-     * Get information about the current EQ capabilities
-     */
     fun getEqualizerInfo(): EqualizerInfo {
         return EqualizerInfo(
             supportsUnlimitedBands = true,

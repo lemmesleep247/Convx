@@ -13,6 +13,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.music.innertube.SearchFilter
 import com.music.innertube.YouTube
 import com.music.innertube.models.filterExplicit
 import com.music.innertube.models.filterVideoSongs
@@ -31,6 +32,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import java.net.URLDecoder
+import com.convx.music.utils.PageCaches
 import javax.inject.Inject
 
 @HiltViewModel
@@ -41,28 +43,29 @@ constructor(
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
     val query = try {
-        URLDecoder.decode(savedStateHandle.get<String>("query")!!, "UTF-8")
+        URLDecoder.decode(requireNotNull(savedStateHandle.get<String>("query")) { "Missing query" }, "UTF-8")
     } catch (e: IllegalArgumentException) {
-        savedStateHandle.get<String>("query")!!
+        requireNotNull(savedStateHandle.get<String>("query")) { "Missing query" }
     }
-    val filter = MutableStateFlow<YouTube.SearchFilter?>(null)
+    val filter = MutableStateFlow<SearchFilter?>(null)
     var summaryPage by mutableStateOf<SearchSummaryPage?>(null)
     val viewStateMap = mutableStateMapOf<String, ItemsPage?>()
 
     init {
         viewModelScope.launch {
-            // Only fetches what isn't cached yet â€” switching filters back and forth
+            // Only fetches what isn't cached yet — switching filters back and forth
             // must not re-hit the network. refresh() drops the cache entry first.
             filter.collect { load(it) }
         }
     }
 
-    private suspend fun load(filter: YouTube.SearchFilter?) {
+    private suspend fun load(filter: SearchFilter?) {
         if (filter == null) {
             if (summaryPage != null) return
-            YouTube
-                .searchSummary(query)
-                .onSuccess {
+            PageCaches.searchSummaries
+                .get(query) { YouTube.searchSummary(query).onFailure { reportException(it) }.getOrNull() }
+                ?.let {
+                    com.convx.music.utils.AppleArt.prefetchArtistIds(it.summaries.flatMap { summary -> summary.items })
                     val hideExplicit = context.dataStore.get(HideExplicitKey, false)
                     val hideVideoSongs = context.dataStore.get(HideVideoSongsKey, false) || context.dataStore.get(DataSaverEnabledKey, false)
                     val hideYoutubeShorts = context.dataStore.get(HideYoutubeShortsKey, false)
@@ -70,14 +73,13 @@ constructor(
                         it.filterExplicit(
                             hideExplicit,
                         ).filterVideoSongs(hideVideoSongs).filterYoutubeShorts(hideYoutubeShorts)
-                }.onFailure {
-                    reportException(it)
                 }
         } else {
             if (viewStateMap[filter.value] != null) return
-            YouTube
-                .search(query, filter)
-                .onSuccess { result ->
+            PageCaches.searchResults
+                .get("$query|${filter.value}") { YouTube.search(query, filter).onFailure { reportException(it) }.getOrNull() }
+                ?.let { result ->
+                    com.convx.music.utils.AppleArt.prefetchArtistIds(result.items)
                     val hideExplicit = context.dataStore.get(HideExplicitKey, false)
                     val hideVideoSongs = context.dataStore.get(HideVideoSongsKey, false) || context.dataStore.get(DataSaverEnabledKey, false)
                     val hideYoutubeShorts = context.dataStore.get(HideYoutubeShortsKey, false)
@@ -92,8 +94,6 @@ constructor(
                                 .filterYoutubeShorts(hideYoutubeShorts),
                             result.continuation,
                         )
-                }.onFailure {
-                    reportException(it)
                 }
         }
     }
@@ -102,12 +102,18 @@ constructor(
      * Re-runs the current query. Bound to the pull-to-refresh gesture.
      *
      * Clears this filter's cached page first, otherwise [load] short-circuits on
-     * it â€” and calls [load] directly rather than re-setting [filter], since a
+     * it — and calls [load] directly rather than re-setting [filter], since a
      * StateFlow drops a write of the value it already holds.
      */
     fun refresh() {
         val current = filter.value
-        if (current == null) summaryPage = null else viewStateMap.remove(current.value)
+        if (current == null) {
+            summaryPage = null
+            PageCaches.searchSummaries.remove(query)
+        } else {
+            viewStateMap.remove(current.value)
+            PageCaches.searchResults.remove("$query|${current.value}")
+        }
         viewModelScope.launch { load(current) }
     }
 

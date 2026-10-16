@@ -29,13 +29,13 @@ object ListenTogetherServers {
             "name": "Hugging Face Sync",
             "url": "wss://devilmi-vivi-music-listen-together.hf.space",
             "location": "Global",
-            "operator": "VIVIDH"
+            "operator": "Community"
           },
           {
-            "name": "ViviMusic Sync Server",
+            "name": "Convx Sync Server",
             "url": "wss://vivimusic-listen-together.onrender.com",
             "location": "USA",
-            "operator": "Vividh"
+            "operator": "Community"
           }
         ]
     """

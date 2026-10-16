@@ -47,6 +47,12 @@ sealed class Screens(
         iosIcon = R.drawable.cosmos_search,
     )
 
+    object Radio : Screens(
+        titleId = R.string.radio,
+        route = "radio",
+        icon = R.drawable.radio,
+    )
+
     object ListenTogether : Screens(
         titleId = R.string.together,
         route = "listen_together",
@@ -69,6 +75,16 @@ sealed class Screens(
         icon = R.drawable.accord_library,
     )
 
+    /**
+     * Charts, new releases and moods/genres — the discovery tab. Replaces
+     * [Settings] in the floating bar; settings stays behind the top-bar pill.
+     */
+    object Explore : Screens(
+        titleId = R.string.tab_explore,
+        route = "explore",
+        icon = R.drawable.sparks,
+    )
+
     object Settings : Screens(
         titleId = R.string.settings,
         route = "settings",
@@ -76,21 +92,17 @@ sealed class Screens(
     )
 
     companion object {
-        // Listen Together is reachable from the top bar and its own route, never as a
-        // tab: as a pager page it sat between Search and Library, so every tab switch
-        // that crossed it flashed the screen on the way past.
-        val MainScreens = listOf(Home, Search, Library)
+        // Keep Listen Together out of the tab pager to avoid showing it during tab switches.
+        // Lazy initialization avoids reading singleton routes before their objects initialize.
+        val MainScreens: List<Screens> by lazy { listOf(Home, Search, Radio, Library) }
 
         /**
-         * The bar's contents for the current mode. Local-only mode promotes [Songs] to a
-         * tab, sitting after Home; Search is filtered out of the row by the floating bar
-         * and drawn as the standalone circle on the right either way, so inserting here
-         * puts Songs second in the visible row.
+         * Local-only mode promotes [Songs] and omits online destinations.
          */
         fun mainScreens(localOnly: Boolean): List<Screens> =
             if (localOnly) listOf(Home, Songs, Search, Library) else MainScreens
 
         /** Every route that counts as a tab root, in either mode. */
-        val MainRoutes: Set<String> = (MainScreens + Songs).map { it.route }.toSet()
+        val MainRoutes: Set<String> by lazy { (MainScreens + Songs).map { it.route }.toSet() }
     }
 }

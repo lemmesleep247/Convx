@@ -36,7 +36,6 @@ object OpenRouterService {
     ): Result<List<String>> = withContext(Dispatchers.IO) {
         var currentAttempt = 0
         
-        // Validate input
         if (text.isBlank()) {
             return@withContext Result.failure(Exception("Input text is empty"))
         }
@@ -46,7 +45,6 @@ object OpenRouterService {
         
         while (currentAttempt < maxRetries) {
             try {
-                // Enhanced prompt with strict formatting requirements
                 val systemPrompt = """You are a precise lyrics translation assistant. Your output must ALWAYS be a valid JSON array of strings.
 
 CRITICAL RULES:
@@ -144,13 +142,13 @@ Output MUST be a JSON array with EXACTLY $lineCount strings."""
                         }
                     }
                     .addHeader("Content-Type", "application/json")
-                    .addHeader("HTTP-Referer", "https://github.com/CryptoLiveApp/vivimusic")
-                    .addHeader("X-Title", "vivimusic")
+                    .addHeader("HTTP-Referer", "https://github.com/cosmictaserdev-creator/Convx")
+                    .addHeader("X-Title", "convx")
                     .post(jsonBody.toString().toRequestBody(JSON))
                     .build()
 
                 val response = client.newCall(request).execute()
-                val responseBody = response.body?.string()
+                val responseBody = response.body.string()
 
                 if (!response.isSuccessful) {
                     // Retry on server errors (5xx)
@@ -160,78 +158,12 @@ Output MUST be a JSON array with EXACTLY $lineCount strings."""
                         continue
                     }
                     
-                    val errorMsg = try {
-                        JSONObject(responseBody ?: "").optJSONObject("error")?.optString("message") 
-                            ?: "HTTP ${response.code}: ${response.message}"
-                    } catch (e: Exception) {
-                        "HTTP ${response.code}: ${response.message}"
-                    }
+                    val errorMsg = errorMessage(responseBody, response.code, response.message)
                     return@withContext Result.failure(Exception("Translation failed: $errorMsg"))
                 }
 
-                if (responseBody == null) {
-                    currentAttempt++
-                    continue
-                }
-
-                val jsonResponse = JSONObject(responseBody)
-                val choices = jsonResponse.optJSONArray("choices")
-                if (choices != null && choices.length() > 0) {
-                    val message = choices.getJSONObject(0).optJSONObject("message")
-                    var content = message?.optString("content")?.trim()
-                    
-                    if (!content.isNullOrBlank()) {
-                        // Enhanced JSON extraction with multiple fallback strategies
-                        var translatedLines: List<String>? = null
-                        
-                        // Strategy 1: Try direct JSON parsing
-                        try {
-                            val jsonArray = JSONArray(content)
-                            translatedLines = (0 until jsonArray.length()).map { jsonArray.optString(it) }
-                        } catch (e: Exception) {
-                            // Strategy 2: Extract JSON from markdown code blocks
-                            content = content.replace("```json", "").replace("```", "").trim()
-                            
-                            try {
-                                val jsonArray = JSONArray(content)
-                                translatedLines = (0 until jsonArray.length()).map { jsonArray.optString(it) }
-                            } catch (e2: Exception) {
-                                // Strategy 3: Find first [ and last ]
-                                val startIdx = content.indexOf('[')
-                                val endIdx = content.lastIndexOf(']')
-                                
-                                if (startIdx != -1 && endIdx != -1 && endIdx > startIdx) {
-                                    val jsonString = content.substring(startIdx, endIdx + 1)
-                                    try {
-                                        val jsonArray = JSONArray(jsonString)
-                                        translatedLines = (0 until jsonArray.length()).map { jsonArray.optString(it) }
-                                    } catch (e3: Exception) {
-                                        // Strategy 4: Manual line-by-line parsing as last resort
-                                        translatedLines = content.lines()
-                                            .filter { it.trim().isNotEmpty() }
-                                            .map { it.trim().removeSurrounding("\"").removeSurrounding("'") }
-                                    }
-                                }
-                            }
-                        }
-                        
-                        if (translatedLines != null) {
-                            // Validate line count matches
-                            if (translatedLines.size == lineCount) {
-                                return@withContext Result.success(translatedLines)
-                            } else if (translatedLines.size > lineCount) {
-                                // If we got more lines, take first N
-                                return@withContext Result.success(translatedLines.take(lineCount))
-                            } else {
-                                // If we got fewer lines, pad with empty strings
-                                val paddedLines = translatedLines.toMutableList()
-                                while (paddedLines.size < lineCount) {
-                                    paddedLines.add("")
-                                }
-                                return@withContext Result.success(paddedLines)
-                            }
-                        }
-                    }
+                parseTranslationResponse(responseBody, lineCount)?.let { translatedLines ->
+                    return@withContext Result.success(translatedLines)
                 }
             } catch (e: Exception) {
                 if (currentAttempt == maxRetries - 1) {
@@ -243,4 +175,27 @@ Output MUST be a JSON array with EXACTLY $lineCount strings."""
         }
         return@withContext Result.failure(Exception("Max retries exceeded"))
     }
+
+    private fun errorMessage(responseBody: String, statusCode: Int, statusMessage: String): String = try {
+        JSONObject(responseBody).optJSONObject("error")?.optString("message")
+            ?: "HTTP $statusCode: $statusMessage"
+    } catch (e: Exception) {
+        "HTTP $statusCode: $statusMessage"
+    }
+
+    private fun parseTranslationResponse(responseBody: String, lineCount: Int): List<String>? {
+        val choices = JSONObject(responseBody).optJSONArray("choices") ?: return null
+        if (choices.length() == 0) return null
+
+        val content = choices.getJSONObject(0)
+            .optJSONObject("message")
+            ?.optString("content")
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: return null
+
+        val translatedLines = parseTranslationContent(content) ?: return null
+        return fitLineCount(translatedLines, lineCount)
+    }
+
 }

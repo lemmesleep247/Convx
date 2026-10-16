@@ -5,8 +5,8 @@
 
 package com.convx.music.ui.component
 
-import androidx.compose.material3.LocalTextStyle
-import androidx.compose.material3.Text
+import com.convx.music.ui.ios.compat.LocalTextStyle
+import com.convx.music.ui.ios.compat.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -67,18 +67,14 @@ fun AutoResizeText(
         fontSize = fontSizeValue.sp,
         onTextLayout = {
             if (it.didOverflowHeight && !readyToDraw) {
-                // Did Overflow height, calculate next font size value
                 val nextFontSizeValue = fontSizeValue - fontSizeRange.step.value
                 if (nextFontSizeValue <= fontSizeRange.min.value) {
-                    // Reached minimum, set minimum font size and it's readToDraw
                     fontSizeValue = fontSizeRange.min.value
                     readyToDraw = true
                 } else {
-                    // Text doesn't fit yet and haven't reached minimum text range, keep decreasing
                     fontSizeValue = nextFontSizeValue
                 }
             } else {
-                // Text fits before reaching the minimum, it's readyToDraw
                 readyToDraw = true
             }
         },

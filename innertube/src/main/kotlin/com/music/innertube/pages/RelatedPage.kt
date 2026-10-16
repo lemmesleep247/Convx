@@ -20,10 +20,8 @@ data class RelatedPage(
 ) {
     companion object {
         fun fromMusicResponsiveListItemRenderer(renderer: MusicResponsiveListItemRenderer): SongItem? {
-            // Extract library tokens using the new method that properly handles multiple toggle items
             val libraryTokens = PageHelper.extractLibraryTokensFromMenuItems(renderer.menu?.menuRenderer?.items)
 
-            // Split the secondary line by bullet separator to separate artists from other metadata (like views)
             val secondaryLineRuns = renderer.flexColumns
                 .getOrNull(1)
                 ?.musicResponsiveListItemFlexColumnRenderer
@@ -116,7 +114,7 @@ data class RelatedPage(
                             name = renderer.subtitle?.runs?.lastOrNull()?.text ?: return null,
                             id = null
                         ),
-                        songCountText = renderer.subtitle?.runs?.findLast {
+                        songCountText = renderer.subtitle.runs.findLast {
                             it.text.any { c -> c.isDigit() } && !it.text.contains("view", ignoreCase = true)
                         }?.text,
                         thumbnail = renderer.thumbnailRenderer.musicThumbnailRenderer?.getThumbnailUrl() ?: return null,

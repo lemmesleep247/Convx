@@ -5,6 +5,8 @@
 
 package com.convx.music.ui.screens.settings
 
+import com.convx.music.ui.component.sf
+import com.convx.music.ui.component.SymbolIcon
 import android.graphics.Bitmap
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -32,13 +34,13 @@ import coil3.request.SuccessResult
 import coil3.request.allowHardware
 import coil3.toBitmap
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
-import com.convx.music.ui.component.GlassSwitchCompat as Switch
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.Slider
+import com.convx.music.ui.ios.compat.Switch
 import androidx.compose.material3.SwitchDefaults
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.convx.music.ui.ios.compat.Text
+import com.convx.music.ui.ios.compat.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -67,8 +69,8 @@ import com.convx.music.constants.LibraryBackgroundModeKey
 import com.convx.music.ui.component.DefaultDialog
 import com.convx.music.ui.component.HomeVideoBackground
 import com.convx.music.ui.component.rememberHomeBackgroundTargetSize
-import com.convx.music.ui.component.Material3SettingsGroup
-import com.convx.music.ui.component.Material3SettingsItem
+import com.convx.music.ui.component.IosSettingsGroup
+import com.convx.music.ui.component.IosSettingsItem
 import com.convx.music.utils.rememberEnumPreference
 import com.convx.music.utils.rememberPreference
 import kotlinx.coroutines.Dispatchers
@@ -76,15 +78,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-/** Caps on a picked background file, so a stray 4K/multi-gigabyte video or GIF
- *  doesn't get copied into app storage and tank Home's scroll perf. Video gets
- *  a higher ceiling than image/GIF since it's expected to be the bigger file. */
+/** File size limits for picked background images and videos. */
 private const val MaxHomeBackgroundImageBytes = 20L * 1024 * 1024
 private const val MaxHomeBackgroundVideoBytes = 80L * 1024 * 1024
 
-/** Reads the picked Uri's size via the content resolver without opening the
- *  whole stream. -1 if the provider doesn't report a size (allowed through —
- *  can't enforce a cap it can't measure). */
+/** Reads the picked file size without opening its stream; returns -1 when unavailable. */
 private fun mediaSizeBytes(context: android.content.Context, uri: Uri): Long {
     return context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.SIZE), null, null, null)?.use { cursor ->
         val idx = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
@@ -92,23 +90,19 @@ private fun mediaSizeBytes(context: android.content.Context, uri: Uri): Long {
     } ?: -1L
 }
 
+private fun copyRawMedia(context: android.content.Context, source: Uri, destination: File): String? {
+    val input = context.contentResolver.openInputStream(source) ?: return null
+    input.use { stream ->
+        destination.outputStream().use { output -> stream.copyTo(output) }
+    }
+    return destination.absolutePath
+}
 
-/** Copies a picked image/video into app storage so the background survives
- *  without a persistable URI permission. Unique filename cache-busts Coil.
- *  Returns the absolute path, or null on failure.
- *
- *  Images are re-encoded down to [maxWidth]x[maxHeight] first. A modern phone
- *  camera or a downloaded wallpaper is routinely 20-50 MP, and keeping the raw
- *  bytes whole means every screen that shows the background pays a full-size
- *  decode and downsample, with the file sitting in app storage at its original
- *  size forever. [maxWidth]/[maxHeight] are the caller's target — see
- *  [rememberHomeBackgroundTargetSize] for how that's derived from the device's
- *  own screen resolution and the user's quality preference.
- *  Videos are copied as-is: transcoding one is not a per-pick cost worth paying.
- *
- *  Decoding through Coil rather than BitmapFactory deliberately: it already
- *  applies EXIF orientation, so a portrait photo taken sideways does not come out
- *  rotated the way a hand-rolled decode would.
+
+/**
+ * Copies picked media into app storage so it survives picker permission changes.
+ * Images are resized through Coil to preserve EXIF orientation; videos and GIFs are copied as-is.
+ * Returns the saved path, or null on failure.
  */
 private suspend fun copyBackgroundMedia(
     context: android.content.Context,
@@ -122,15 +116,8 @@ private suspend fun copyBackgroundMedia(
     val dest = File(context.filesDir, "home_background_${System.currentTimeMillis()}.$ext")
 
     if (isVideo || isGif) {
-        // Raw copy, no bake: decoding a GIF down to one frame and re-encoding it as a JPEG
-        // (the still-image path below) throws the animation away permanently. Coil already
-        // has a GIF decoder registered (App.kt), so the file plays as-is once HomeImageBackground
-        // points AsyncImage at it — animation is only lost again if blur bakes it to a static
-        // file, which is an intentional perf tradeoff there, not this copy step's problem.
-        context.contentResolver.openInputStream(source)?.use { input ->
-            dest.outputStream().use { output -> input.copyTo(output) }
-        } ?: return null
-        return@runCatching dest.absolutePath
+        // Preserve the original GIF and avoid transcoding video during the pick.
+        return@runCatching copyRawMedia(context, source, dest)
     }
 
     val request = ImageRequest.Builder(context)
@@ -141,30 +128,17 @@ private suspend fun copyBackgroundMedia(
     val bitmap = (context.imageLoader.execute(request) as? SuccessResult)?.image?.toBitmap()
 
     if (bitmap == null) {
-        // Decode failed (exotic format, corrupt file). The raw copy still renders
-        // through Coil's own decoders, so fall back rather than losing the pick.
-        context.contentResolver.openInputStream(source)?.use { input ->
-            dest.outputStream().use { output -> input.copyTo(output) }
-        } ?: return null
-        return@runCatching dest.absolutePath
+        // Keep the original when Coil cannot resize the image.
+        return@runCatching copyRawMedia(context, source, dest)
     }
 
     dest.outputStream().use { output ->
-        // Was 90 — fine at the old flat 1080x1920 cap, but now that the stored
-        // size can go up to full screen resolution, the same ratio leaves more
-        // visible blocking in smooth/gradient regions at the larger pixel
-        // count. Bump quality to match.
         bitmap.compress(Bitmap.CompressFormat.JPEG, 95, output)
     }
     dest.absolutePath
 }.getOrNull()
 
-/**
- * Background-image controls (preview + enable/pick/blur/dim/animate/remove) —
- * embedded inside [ThemeScreen] rather than its own settings screen, since it's
- * just another facet of the app's theme. See PLAN notes: moved out of
- * AppearanceSettings' standalone "settings/appearance/homebackground" route.
- */
+/** Settings for the custom background image and video used on Home. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeBackgroundControls() {
@@ -173,7 +147,7 @@ fun HomeBackgroundControls() {
 
     val (enabled, onEnabledChange) = rememberPreference(HomeBackgroundEnabledKey, defaultValue = false)
     val (path, onPathChange) = rememberPreference(HomeBackgroundPathKey, defaultValue = "")
-    val (blur, onBlurChange) = rememberPreference(HomeBackgroundBlurKey, defaultValue = 20f)
+    val (blur, onBlurChange) = rememberPreference(HomeBackgroundBlurKey, defaultValue = 48f)
     val (dim, onDimChange) = rememberPreference(HomeBackgroundDimKey, defaultValue = 0.4f)
     val (animate, onAnimateChange) = rememberPreference(HomeBackgroundAnimateKey, defaultValue = false)
     val (isVideo, onIsVideoChange) = rememberPreference(HomeBackgroundIsVideoKey, defaultValue = false)
@@ -228,20 +202,21 @@ fun HomeBackgroundControls() {
         }
     }
 
-    if (pendingVideoUri != null) {
+    val videoUriToConfirm = pendingVideoUri
+    if (videoUriToConfirm != null) {
         DefaultDialog(
             onDismiss = { pendingVideoUri = null },
             buttons = {
                 TextButton(onClick = { pendingVideoUri = null }) { Text(stringResource(android.R.string.cancel)) }
                 TextButton(onClick = {
-                    applyPickedMedia(pendingVideoUri!!, video = true)
+                    applyPickedMedia(videoUriToConfirm, video = true)
                     pendingVideoUri = null
                 }) { Text(stringResource(R.string.home_background_video_confirm)) }
             }
         ) {
             Text(
                 text = stringResource(R.string.home_background_video_warning),
-                style = MaterialTheme.typography.bodyMedium,
+                style = AppTheme.typography.bodyMedium,
                 modifier = Modifier.padding(16.dp),
             )
         }
@@ -257,13 +232,12 @@ fun HomeBackgroundControls() {
                 .aspectRatio(16f / 10f)
                 .padding(vertical = 12.dp)
                 .clip(RoundedCornerShape(20.dp))
-                .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                .background(AppTheme.colorScheme.surfaceContainerHighest),
         ) {
             if (path.isNotEmpty() && isVideo) {
                 HomeVideoBackground(path = path, blur = blur, dim = dim)
             } else if (path.isNotEmpty()) {
-                // Mirrors HomeImageBackground's own steady state: a real live
-                // RenderEffect blur, same as what the home screen actually shows.
+                // This preview uses a live blur; HomeImageBackground uses a cached blur.
                 val previewRequest = remember(path) {
                     ImageRequest.Builder(context)
                         .data(File(path))
@@ -285,37 +259,28 @@ fun HomeBackgroundControls() {
             } else {
                 Text(
                     text = stringResource(R.string.home_background_image_none),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = AppTheme.typography.bodyMedium,
+                    color = AppTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.align(Alignment.Center),
                 )
             }
         }
 
-        Material3SettingsGroup(
+        IosSettingsGroup(
             title = stringResource(R.string.home_background),
             items = listOf(
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.tune),
                     title = { Text(stringResource(R.string.home_background_enable)) },
                     trailingContent = {
                         Switch(
                             checked = enabled,
-                            onCheckedChange = onEnabledChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (enabled) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
+                            onCheckedChange = onEnabledChange
                         )
                     },
                     onClick = { onEnabledChange(!enabled) }
                 ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.image),
                     title = { Text(stringResource(R.string.home_background_image)) },
                     description = {
@@ -333,44 +298,35 @@ fun HomeBackgroundControls() {
                         )
                     }
                 ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.sliders),
                     title = { Text(stringResource(R.string.home_background_blur)) },
                     onClick = { showBlurDialog = true }
                 ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.tune),
                     title = { Text(stringResource(R.string.home_background_dim)) },
                     onClick = { showDimDialog = true }
                 ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.sliders),
                     title = { Text(stringResource(R.string.home_background_quality)) },
                     description = { Text(stringResource(R.string.home_background_quality_desc)) },
                     onClick = { showQualityDialog = true }
                 ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.tune),
                     title = { Text(stringResource(R.string.home_background_animate)) },
                     description = { Text(stringResource(R.string.home_background_animate_desc)) },
                     trailingContent = {
                         Switch(
                             checked = animate,
-                            onCheckedChange = onAnimateChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (animate) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
+                            onCheckedChange = onAnimateChange
                         )
                     },
                     onClick = { onAnimateChange(!animate) }
                 ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.delete),
                     title = { Text(stringResource(R.string.home_background_remove)) },
                     onClick = {
@@ -391,12 +347,12 @@ fun HomeBackgroundControls() {
         // pulled from the library's own content.
         val (libraryBackgroundMode, onLibraryBackgroundModeChange) = rememberEnumPreference(
             LibraryBackgroundModeKey,
-            LibraryBackgroundMode.THUMBNAIL_BLUR,
+            LibraryBackgroundMode.PLAIN,
         )
-        Material3SettingsGroup(
+        IosSettingsGroup(
             title = stringResource(R.string.library_background),
             items = LibraryBackgroundMode.entries.map { mode ->
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(
                         when (mode) {
                             LibraryBackgroundMode.PLAIN -> R.drawable.close
@@ -417,7 +373,7 @@ fun HomeBackgroundControls() {
                     },
                     trailingContent = {
                         if (mode == libraryBackgroundMode) {
-                            Icon(painter = painterResource(R.drawable.check), contentDescription = null)
+                            SymbolIcon(symbol = sf("checkmark"), contentDescription = null)
                         }
                     },
                     onClick = { onLibraryBackgroundModeChange(mode) }
@@ -433,16 +389,16 @@ fun HomeBackgroundControls() {
         DefaultDialog(
             onDismiss = { tempValue = blur; showBlurDialog = false },
             buttons = {
-                TextButton(onClick = { tempValue = 20f }) { Text(stringResource(R.string.reset)) }
+                TextButton(onClick = { tempValue = 48f }) { Text(stringResource(R.string.reset)) }
                 Spacer(modifier = Modifier.weight(1f))
                 TextButton(onClick = { tempValue = blur; showBlurDialog = false }) { Text(stringResource(android.R.string.cancel)) }
                 TextButton(onClick = { onBlurChange(tempValue); showBlurDialog = false }) { Text(stringResource(android.R.string.ok)) }
             }
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(16.dp)) {
-                Text(text = stringResource(R.string.home_background_blur), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 16.dp))
-                Text(text = "%.0f".format(tempValue), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(bottom = 16.dp))
-                Slider(value = tempValue, onValueChange = { tempValue = it }, valueRange = 0f..50f, modifier = Modifier.fillMaxWidth())
+                Text(text = stringResource(R.string.home_background_blur), style = AppTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 16.dp))
+                Text(text = "%.0f".format(tempValue), style = AppTheme.typography.bodyLarge, modifier = Modifier.padding(bottom = 16.dp))
+                Slider(value = tempValue, onValueChange = { tempValue = it }, valueRange = 0f..100f, modifier = Modifier.fillMaxWidth())
             }
         }
     }
@@ -459,8 +415,8 @@ fun HomeBackgroundControls() {
             }
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(16.dp)) {
-                Text(text = stringResource(R.string.home_background_dim), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 16.dp))
-                Text(text = "%.0f%%".format(tempValue * 100), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(bottom = 16.dp))
+                Text(text = stringResource(R.string.home_background_dim), style = AppTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 16.dp))
+                Text(text = "%.0f%%".format(tempValue * 100), style = AppTheme.typography.bodyLarge, modifier = Modifier.padding(bottom = 16.dp))
                 Slider(value = tempValue, onValueChange = { tempValue = it }, valueRange = 0f..1f, modifier = Modifier.fillMaxWidth())
             }
         }
@@ -478,13 +434,13 @@ fun HomeBackgroundControls() {
             }
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(16.dp)) {
-                Text(text = stringResource(R.string.home_background_quality), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 16.dp))
-                Text(text = "%.0f%%".format(tempValue * 100), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(bottom = 16.dp))
+                Text(text = stringResource(R.string.home_background_quality), style = AppTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 16.dp))
+                Text(text = "%.0f%%".format(tempValue * 100), style = AppTheme.typography.bodyLarge, modifier = Modifier.padding(bottom = 16.dp))
                 Slider(value = tempValue, onValueChange = { tempValue = it }, valueRange = 0.3f..1f, modifier = Modifier.fillMaxWidth())
                 Text(
                     text = stringResource(R.string.home_background_quality_reapply_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = AppTheme.typography.bodySmall,
+                    color = AppTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 8.dp),
                 )
             }

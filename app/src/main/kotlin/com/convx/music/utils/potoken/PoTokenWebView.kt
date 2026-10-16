@@ -49,13 +49,11 @@ class PoTokenWebView private constructor(
         webViewSettings.userAgentString = USER_AGENT
         webViewSettings.blockNetworkLoads = true // the WebView does not need internet access
 
-        // so that we can run async functions and get back the result
         webView.addJavascriptInterface(this, JS_INTERFACE)
 
         webView.webChromeClient = object : WebChromeClient() {
             override fun onConsoleMessage(m: ConsoleMessage): Boolean {
                 val msg = m.message()
-                // Log all console messages for debugging
                 when (m.messageLevel()) {
                     ConsoleMessage.MessageLevel.ERROR -> Timber.tag(TAG).e("JS: $msg")
                     ConsoleMessage.MessageLevel.WARNING -> Timber.tag(TAG).w("JS: $msg")
@@ -152,11 +150,10 @@ class PoTokenWebView private constructor(
                 val (integrityToken, expirationTimeInSeconds) = parseIntegrityTokenData(responseBody)
                 Timber.tag(TAG).d("Parsed integrityToken (${integrityToken.take(50)}...), expires in $expirationTimeInSeconds sec")
 
-                // leave 10 minutes of margin just to be sure
+                // Keep a ten-minute safety margin on the returned expiry.
                 expirationInstant = Instant.now().plusSeconds(expirationTimeInSeconds).minus(10, ChronoUnit.MINUTES)
 
                 // Store integrityToken and create the minter callback ONCE
-                // NOTE: createPoTokenMinter is now async, so we use .then()
                 Timber.tag(TAG).d("Evaluating createPoTokenMinter JavaScript...")
                 webView.evaluateJavascript(
                     """try {
@@ -198,7 +195,6 @@ class PoTokenWebView private constructor(
             suspendCancellableCoroutine { cont ->
                 Timber.tag(TAG).d("generatePoToken() called with identifier $identifier")
                 addPoTokenEmitter(identifier, cont)
-                // NOTE: obtainPoToken is now async, so we use .then()
                 webView.evaluateJavascript(
                     """try {
                         identifier = "$identifier"
@@ -293,7 +289,7 @@ class PoTokenWebView private constructor(
                 onInitializationErrorCloseAndCancel(PoTokenException("Invalid response code: $httpCode"))
             } else {
                 val body = withContext(Dispatchers.IO) {
-                    response.body!!.string()
+                    response.body.string()
                 }
                 handleResponseBody(body)
             }

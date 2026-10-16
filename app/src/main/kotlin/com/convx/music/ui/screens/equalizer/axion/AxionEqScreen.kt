@@ -1,5 +1,12 @@
 package com.convx.music.ui.screens.equalizer.axion
 
+import com.convx.music.ui.component.sf
+import com.convx.music.ui.component.SymbolIcon
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.SegmentedButton
+import com.convx.music.ui.ios.compat.SingleChoiceSegmentedButtonRow
+import com.convx.music.ui.ios.compat.OutlinedTextField as IosOutlinedTextField
+
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -15,6 +22,7 @@ import androidx.compose.foundation.lazy.items
 import com.convx.music.ui.utils.bounceClick
 import com.convx.music.ui.utils.combinedBounceClick
 import androidx.compose.material3.*
+import com.convx.music.ui.component.GlassSwitchCompat as Switch
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -22,9 +30,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.role
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -32,11 +37,19 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.convx.music.R
 import com.convx.music.eq.data.SavedEQProfile
-import com.convx.music.ui.component.Material3SettingsGroup
-import com.convx.music.ui.component.Material3SettingsItem
+import com.convx.music.ui.component.IosSettingsGroup
+import com.convx.music.ui.component.IosSettingsItem
 import com.convx.music.ui.utils.backToMain
 import kotlin.math.abs
 import racra.compose.smooth_corner_rect_library.AbsoluteSmoothCornerShape
+import com.convx.music.ui.component.ScreenPage
+import com.convx.music.constants.BitPerfectKey
+import com.convx.music.constants.SpatialAudioKey
+import com.convx.music.utils.rememberPreference
+import com.convx.music.eq.data.ParametricEQBand
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -44,39 +57,23 @@ fun AxionEqScreen(
     onBackClick: () -> Unit,
     viewModel: AxionEqViewModel = hiltViewModel()
 ) {
-    val enabled by viewModel.enabled.collectAsState()
-    val bandGains by viewModel.bandGains.collectAsState()
-    val mode by viewModel.mode.collectAsState()
+    val enabled by viewModel.enabled.collectAsStateWithLifecycle()
+    val bandGains by viewModel.bandGains.collectAsStateWithLifecycle()
+    val mode by viewModel.mode.collectAsStateWithLifecycle()
+    val bands by viewModel.bands.collectAsStateWithLifecycle()
+    val preamp by viewModel.preamp.collectAsStateWithLifecycle()
+    val (spatialAudio, onSpatialAudioChange) = rememberPreference(SpatialAudioKey, false)
+    val (bitPerfect) = rememberPreference(BitPerfectKey, false)
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.vivi_equalizer)) },
-                navigationIcon = {
-                    com.convx.music.ui.component.IconButton(
-                        onClick = onBackClick,
-                        onLongClick = {}
-                    ) {
-                        Icon(
-                            painter = androidx.compose.ui.res.painterResource(R.drawable.arrow_back),
-                            contentDescription = null
-                        )
-                    }
-                }
-            )
-        }
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(innerPadding)
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Material3SettingsGroup(
+    ScreenPage(
+        title = stringResource(R.string.convx_equalizer),
+        onBack = onBackClick,
+        horizontalPadding = 16.dp,
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+            IosSettingsGroup(
                 items = listOf(
-                    Material3SettingsItem(
+                    IosSettingsItem(
                         icon = androidx.compose.ui.res.painterResource(R.drawable.equalizer),
                         title = { Text(stringResource(R.string.eq_enable_title)) },
                         description = { Text(stringResource(R.string.eq_enable_summary)) },
@@ -85,41 +82,38 @@ fun AxionEqScreen(
                                 checked = enabled,
                                 onCheckedChange = { viewModel.setEnabled(it) },
                                 thumbContent = {
-                                    Icon(
-                                        painter = androidx.compose.ui.res.painterResource(
-                                            id = if (enabled) R.drawable.check else R.drawable.close
-                                        ),
-                                        contentDescription = null,
-                                        modifier = Modifier.size(SwitchDefaults.IconSize)
-                                    )
+                                    SymbolIcon(symbol = if (enabled) sf("checkmark") else sf("xmark")
+                                        , contentDescription = null, modifier = Modifier.size(SwitchDefaults.IconSize))
                                 }
                             )
                         },
                         onClick = { viewModel.setEnabled(!enabled) }
+                    ),
+                    IosSettingsItem(
+                        icon = painterResource(R.drawable.equalizer),
+                        title = { Text(stringResource(R.string.spatial_audio)) },
+                        description = { Text(stringResource(if (bitPerfect) R.string.spatial_audio_disabled_by_bit_perfect else R.string.spatial_audio_description)) },
+                        trailingContent = {
+                            Switch(checked = spatialAudio && !bitPerfect, onCheckedChange = onSpatialAudioChange, enabled = !bitPerfect)
+                        },
+                        onClick = { if (!bitPerfect) onSpatialAudioChange(!spatialAudio) },
                     )
                 )
             )
 
-            Row(
+            SingleChoiceSegmentedButtonRow(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween),
             ) {
-                ToggleButton(
-                    checked = mode == 0,
-                    onCheckedChange = { viewModel.setMode(0) },
-                    modifier = Modifier.weight(1f).semantics { role = Role.RadioButton },
-                    shapes = ButtonGroupDefaults.connectedLeadingButtonShapes(),
-                ) {
-                    Text(stringResource(R.string.eq_simple))
-                }
-                ToggleButton(
-                    checked = mode == 1,
-                    onCheckedChange = { viewModel.setMode(1) },
-                    modifier = Modifier.weight(1f).semantics { role = Role.RadioButton },
-                    shapes = ButtonGroupDefaults.connectedTrailingButtonShapes(),
-                ) {
-                    Text(stringResource(R.string.eq_advanced))
-                }
+                SegmentedButton(
+                    selected = mode == 0,
+                    onClick = { viewModel.setMode(0) },
+                    label = { Text(stringResource(R.string.eq_simple)) },
+                )
+                SegmentedButton(
+                    selected = mode == 1,
+                    onClick = { viewModel.setMode(1) },
+                    label = { Text(stringResource(R.string.eq_advanced)) },
+                )
             }
 
             AnimatedContent(
@@ -129,7 +123,7 @@ fun AxionEqScreen(
                 },
                 label = "eqMode",
             ) { currentMode ->
-                val isDirty by viewModel.isDirty.collectAsState()
+                val isDirty by viewModel.isDirty.collectAsStateWithLifecycle()
                 var showSaveDialog by remember { mutableStateOf(false) }
 
                 if (showSaveDialog) {
@@ -151,7 +145,11 @@ fun AxionEqScreen(
                         onSaveClick = { showSaveDialog = true }
                     )
                     else -> AdvancedEqMode(
-                        bandGains = bandGains,
+                        bands = bands,
+                        preamp = preamp,
+                        onPreampChange = { viewModel.setPreamp(it) },
+                        onParametersChange = viewModel::setBandParameters,
+                        onSaveClick = { showSaveDialog = true },
                         enabled = enabled,
                         onBandChange = { band, value ->
                             viewModel.setBandGain(band, value)
@@ -163,8 +161,21 @@ fun AxionEqScreen(
                 }
             }
 
+            if (mode == 1) {
+                val profiles by viewModel.customProfiles.collectAsStateWithLifecycle()
+                profiles.forEach { profile ->
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = { viewModel.selectProfile(profile) }, modifier = Modifier.weight(1f)) {
+                            Text(profile.name)
+                        }
+                        TextButton(onClick = { viewModel.deleteProfiles(listOf(profile.id)) }) {
+                            Text(stringResource(R.string.delete))
+                        }
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(60.dp))
-        }
     }
 }
 
@@ -213,9 +224,9 @@ private fun SimpleEqMode(
         syncFromBands()
     }
 
-    val viviPresets = listOf(
+    val convxPresets = listOf(
         R.string.eq_preset_flat to floatArrayOf(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f),
-        R.string.eq_preset_vivi_signature to floatArrayOf(150f, 100f, 50f, 0f, -20f, 0f, 80f, 150f, 200f, 150f),
+        R.string.eq_preset_convx_signature to floatArrayOf(150f, 100f, 50f, 0f, -20f, 0f, 80f, 150f, 200f, 150f),
         R.string.eq_preset_acoustic to floatArrayOf(150f, 150f, 50f, 75f, 100f, 75f, 125f, 175f, 150f, 75f),
         R.string.eq_preset_spatial to floatArrayOf(75f, 50f, 25f, -50f, -25f, 0f, 50f, 75f, 100f, 75f),
         R.string.eq_preset_bass_boost to floatArrayOf(500f, 400f, 250f, 100f, 0f, -50f, 0f, 100f, 200f, 300f),
@@ -240,7 +251,7 @@ private fun SimpleEqMode(
         R.string.eq_preset_dirac_game to floatArrayOf(150f, 250f, 200f, 0f, 80f, 150f, 300f, 450f, 400f, 280f),
     )
 
-    val customProfiles by viewModel.customProfiles.collectAsState()
+    val customProfiles by viewModel.customProfiles.collectAsStateWithLifecycle()
     var showManageDialog by remember { mutableStateOf(false) }
 
     if (showManageDialog) {
@@ -279,18 +290,14 @@ private fun SimpleEqMode(
             OutlinedButton(
                 onClick = onSaveClick,
                 modifier = Modifier.padding(bottom = 8.dp),
-                shape = MaterialTheme.shapes.medium,
+                shape = AppTheme.shapes.medium,
                 contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp)
             ) {
-                Icon(
-                    imageVector = androidx.compose.material.icons.Icons.Rounded.Check,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
+                SymbolIcon(symbol = sf("checkmark"), contentDescription = null, size = 18.dp)
                 Spacer(Modifier.width(8.dp))
                 Text(
                     text = stringResource(R.string.eq_save),
-                    style = MaterialTheme.typography.labelLarge
+                    style = AppTheme.typography.labelLarge
                 )
             }
         }
@@ -303,13 +310,14 @@ private fun SimpleEqMode(
                 enabled = enabled,
                 viewModel = viewModel,
                 bandGains = bandGains,
-                onEditClick = { showManageDialog = true }
+                onEditClick = { showManageDialog = true },
+                profiles = customProfiles,
             )
         }
 
-        viviPresets.chunked(4).forEach { chunk ->
+        convxPresets.chunked(4).forEach { chunk ->
             PresetSection(
-                title = if (viviPresets.first() in chunk) stringResource(R.string.eq_label_vivi) else "",
+                title = if (convxPresets.first() in chunk) stringResource(R.string.eq_label_convx) else "",
                 presets = chunk,
                 enabled = enabled,
                 viewModel = viewModel,
@@ -330,7 +338,8 @@ private fun PresetSection(
     enabled: Boolean,
     viewModel: AxionEqViewModel,
     bandGains: FloatArray,
-    onEditClick: (() -> Unit)? = null
+    onEditClick: (() -> Unit)? = null,
+    profiles: List<SavedEQProfile>? = null,
 ) {
     Column(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
@@ -344,8 +353,8 @@ private fun PresetSection(
             ) {
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary,
+                    style = AppTheme.typography.titleSmall,
+                    color = AppTheme.colorScheme.primary,
                     modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
                 )
                 
@@ -354,46 +363,39 @@ private fun PresetSection(
                         onClick = onEditClick,
                         modifier = Modifier.size(24.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Edit,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(16.dp)
-                        )
+                        SymbolIcon(symbol = sf("pencil"), contentDescription = null, size = 16.dp, tint = AppTheme.colorScheme.primary)
                     }
                 }
             }
         }
 
-        Row(
+        SingleChoiceSegmentedButtonRow(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween),
         ) {
             presets.forEachIndexed { index, (nameRes, bands) ->
                 val name = presetNames?.getOrNull(index) ?: stringResource(nameRes)
                 val isSelected = remember(bandGains) {
-                    bandGains.size == bands.size && 
+                    bandGains.size == bands.size &&
                     bandGains.zip(bands).all { (g, b) -> abs(g - b) < 10f }
                 }
 
-                ToggleButton(
-                    checked = isSelected,
-                    onCheckedChange = { if (enabled) viewModel.setBandsGains(bands) },
-                    enabled = enabled,
-                    shapes = when {
-                        presets.size == 1 || index == 0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
-                        index == presets.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
-                        else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                SegmentedButton(
+                    selected = isSelected,
+                    onClick = {
+                        if (enabled) {
+                            val profile = profiles?.getOrNull(index)
+                            if (profile != null) viewModel.selectProfile(profile) else viewModel.setBandsGains(bands)
+                        }
                     },
-                    modifier = Modifier.weight(1f).semantics { role = Role.RadioButton },
-                    contentPadding = PaddingValues(horizontal = 4.dp)
-                ) {
-                    Text(
-                        text = name,
-                        style = MaterialTheme.typography.labelSmall,
-                        maxLines = 1
-                    )
-                }
+                    enabled = enabled,
+                    label = {
+                        Text(
+                            text = name,
+                            style = AppTheme.typography.labelSmall,
+                            maxLines = 1
+                        )
+                    },
+                )
             }
         }
     }
@@ -417,7 +419,7 @@ private fun SavePresetDialog(
                 .padding(horizontal = 24.dp)
                 .widthIn(max = 320.dp),
             shape = cardShape,
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            color = AppTheme.colorScheme.surfaceContainerHigh,
             tonalElevation = 8.dp,
         ) {
             Column(
@@ -426,32 +428,27 @@ private fun SavePresetDialog(
             ) {
                 Surface(
                     shape = blockShape,
-                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    color = AppTheme.colorScheme.surfaceContainer,
                 ) {
                     Column(
                         modifier = Modifier.padding(14.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        // Header section removed redundant badge
                         Text(
                             text = stringResource(R.string.eq_save_dialog_title),
-                            style = MaterialTheme.typography.titleLarge,
+                            style = AppTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(top = 4.dp)
                         )
                         
-                        OutlinedTextField(
+                        IosOutlinedTextField(
                             value = name,
                             onValueChange = { name = it },
                             placeholder = { Text(stringResource(R.string.eq_save_name_hint)) },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
-                            shape = MaterialTheme.shapes.medium,
-                            textStyle = MaterialTheme.typography.bodyMedium,
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = MaterialTheme.colorScheme.primary,
-                                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
-                            )
+                            shape = AppTheme.shapes.medium,
+                            textStyle = AppTheme.typography.bodyMedium,
                         )
                     }
                 }
@@ -482,19 +479,33 @@ private fun SavePresetDialog(
 
 @Composable
 private fun AdvancedEqMode(
-    bandGains: FloatArray,
+    bands: List<ParametricEQBand>,
+    preamp: Double,
+    onPreampChange: (Double) -> Unit,
+    onParametersChange: (Int, Double, Double) -> Unit,
+    onSaveClick: () -> Unit,
     enabled: Boolean,
     onBandChange: (Int, Float) -> Unit,
     onReset: () -> Unit,
 ) {
-    val bandLabels = arrayOf("31", "62", "125", "250", "500", "1k", "2k", "4k", "8k", "16k")
+    var editingBand by remember { mutableStateOf<Int?>(null) }
+    editingBand?.let { index ->
+        BandParametersDialog(
+            band = bands[index],
+            onDismiss = { editingBand = null },
+            onApply = { frequency, q ->
+                onParametersChange(index, frequency, q)
+                editingBand = null
+            },
+        )
+    }
 
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(MaterialTheme.shapes.extraLarge)
-                .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                .clip(AppTheme.shapes.extraLarge)
+                .background(AppTheme.colorScheme.surfaceContainerLow)
                 .padding(vertical = 16.dp)
         ) {
             Row(
@@ -503,26 +514,33 @@ private fun AdvancedEqMode(
                     .padding(horizontal = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                for (band in 0..9) {
+                bands.forEachIndexed { band, parameters ->
                     EqBandSlider(
-                        label = bandLabels[band],
-                        value = bandGains[band],
+                        label = stringResource(R.string.eq_band_frequency, parameters.frequency),
+                        value = (parameters.gain * 50).toFloat(),
                         enabled = enabled,
                         onValueChange = { onBandChange(band, it) },
+                        onEdit = { editingBand = band },
+                        q = parameters.q,
                     )
                 }
             }
         }
+
+        Text(stringResource(R.string.eq_preamp_value, preamp), style = AppTheme.typography.bodyMedium)
+        Slider(value = preamp.toFloat().coerceIn(-24f, 0f), onValueChange = { onPreampChange(it.toDouble()) }, valueRange = -24f..0f, enabled = enabled)
 
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.Center,
         ) {
             OutlinedButton(onClick = onReset) {
-                Icon(Icons.Rounded.Replay, contentDescription = null)
+                SymbolIcon(symbol = sf("arrow.counterclockwise"), contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(stringResource(R.string.eq_reset))
             }
+            Spacer(Modifier.width(8.dp))
+            OutlinedButton(onClick = onSaveClick) { Text(stringResource(R.string.eq_save)) }
         }
     }
 }
@@ -533,16 +551,18 @@ private fun EqBandSlider(
     value: Float,
     enabled: Boolean,
     onValueChange: (Float) -> Unit,
+    onEdit: () -> Unit,
+    q: Double,
 ) {
     Column(
         modifier = Modifier.width(56.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            text = "%.1f".format(value / 10f),
-            style = MaterialTheme.typography.labelSmall,
-            color = if (enabled) MaterialTheme.colorScheme.primary
-            else MaterialTheme.colorScheme.outline,
+            text = "%.1f".format(value / 50f),
+            style = AppTheme.typography.labelSmall,
+            color = if (enabled) AppTheme.colorScheme.primary
+            else AppTheme.colorScheme.outline,
             textAlign = TextAlign.Center,
         )
 
@@ -579,13 +599,33 @@ private fun EqBandSlider(
 
         Spacer(modifier = Modifier.height(4.dp))
 
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-        )
+        TextButton(onClick = onEdit, enabled = enabled, contentPadding = PaddingValues(0.dp)) {
+            Text(label, style = AppTheme.typography.labelSmall, textAlign = TextAlign.Center)
+        }
+        Text(stringResource(R.string.eq_band_q, q), style = AppTheme.typography.labelSmall)
     }
+}
+
+@Composable
+private fun BandParametersDialog(band: ParametricEQBand, onDismiss: () -> Unit, onApply: (Double, Double) -> Unit) {
+    var frequency by remember(band) { mutableStateOf(band.frequency.toString()) }
+    var q by remember(band) { mutableStateOf(band.q.toString()) }
+    val frequencyValue = frequency.toDoubleOrNull()
+    val qValue = q.toDoubleOrNull()
+    val valid = frequencyValue != null && frequencyValue.isFinite() && frequencyValue in 20.0..20000.0 &&
+        qValue != null && qValue.isFinite() && qValue in 0.1..20.0
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.eq_edit_band)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                IosOutlinedTextField(value = frequency, onValueChange = { frequency = it }, label = { Text(stringResource(R.string.eq_frequency_hint)) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+                IosOutlinedTextField(value = q, onValueChange = { q = it }, label = { Text(stringResource(R.string.eq_q_hint)) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+            }
+        },
+        confirmButton = { TextButton(onClick = { if (valid) onApply(frequencyValue, qValue) }, enabled = valid) { Text(stringResource(R.string.eq_save)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -607,7 +647,7 @@ private fun ManagePresetsDialog(
                 .padding(horizontal = 24.dp)
                 .widthIn(max = 320.dp),
             shape = cardShape,
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            color = AppTheme.colorScheme.surfaceContainerHigh,
             tonalElevation = 8.dp,
         ) {
             Column(
@@ -616,7 +656,7 @@ private fun ManagePresetsDialog(
             ) {
                 Surface(
                     shape = blockShape,
-                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    color = AppTheme.colorScheme.surfaceContainer,
                 ) {
                     Column(
                         modifier = Modifier.padding(14.dp),
@@ -624,33 +664,33 @@ private fun ManagePresetsDialog(
                     ) {
                         Text(
                             text = stringResource(R.string.eq_manage_presets),
-                            style = MaterialTheme.typography.titleLarge,
+                            style = AppTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                         )
                         
                         HorizontalDivider(
                             modifier = Modifier.padding(vertical = 4.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                            color = AppTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                         )
 
                         if (customProfiles.isEmpty()) {
                             Text(
                                 text = stringResource(R.string.eq_no_custom_presets),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                style = AppTheme.typography.bodyMedium,
+                                color = AppTheme.colorScheme.onSurfaceVariant
                             )
                         } else {
                             LazyColumn(
                                 modifier = Modifier.heightIn(max = 300.dp),
                                 verticalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
-                                items(customProfiles) { profile ->
+                                items(customProfiles, key = { it.id }) { profile ->
                                     val isSelected = selectedIds.contains(profile.id)
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .clip(MaterialTheme.shapes.small)
+                                            .clip(AppTheme.shapes.small)
                                             .bounceClick {
                                                 if (isSelected) selectedIds.remove(profile.id)
                                                 else selectedIds.add(profile.id)
@@ -667,8 +707,8 @@ private fun ManagePresetsDialog(
                                         Spacer(Modifier.width(8.dp))
                                         Text(
                                             text = profile.name,
-                                            style = MaterialTheme.typography.bodyLarge,
-                                            color = MaterialTheme.colorScheme.onSurface
+                                            style = AppTheme.typography.bodyLarge,
+                                            color = AppTheme.colorScheme.onSurface
                                         )
                                     }
                                 }
@@ -679,7 +719,7 @@ private fun ManagePresetsDialog(
 
                 HorizontalDivider(
                     modifier = Modifier.padding(bottom = 4.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    color = AppTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                 )
 
                 Row(
@@ -695,7 +735,7 @@ private fun ManagePresetsDialog(
                             onClick = { onDeleteSelected(selectedIds.toList()) },
                             shape = actionShape,
                             colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = MaterialTheme.colorScheme.error
+                                contentColor = AppTheme.colorScheme.error
                             )
                         ) {
                             Text(text = stringResource(R.string.eq_delete_selected))

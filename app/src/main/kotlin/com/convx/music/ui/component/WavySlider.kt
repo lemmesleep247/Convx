@@ -82,7 +82,6 @@ fun WavySlider(
     val inactiveColor = colors.inactiveTrackColor
     val thumbColor = colors.thumbColor
     
-    // Calculate container height to accommodate thumb
     val containerHeight = maxOf(WavyProgressIndicatorDefaults.LinearContainerHeight, thumbRadius * 2)
     
     val baseModifier = modifier

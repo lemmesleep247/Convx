@@ -32,9 +32,8 @@ import java.time.LocalDateTime
 import java.time.ZoneOffset
 import javax.inject.Inject
 
-// Upper bound for the stats leaderboards. The UI shows the full counts of the
-// returned lists, so 1000 keeps the visible "N songs/artists/albums" intact for
-// any realistic library while bounding the query result size and list recomposition.
+// The UI displays list sizes as counts. A 1,000-item cap covers expected libraries while
+// bounding query results and recomposition cost.
 private const val STATS_LIMIT = 1000
 
 @OptIn(ExperimentalCoroutinesApi::class)

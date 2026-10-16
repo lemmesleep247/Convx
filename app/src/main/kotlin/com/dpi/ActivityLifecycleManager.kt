@@ -10,10 +10,6 @@ import timber.log.Timber
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 
-/**
- * Manages activity lifecycle events and associated logic.
- * Provides hooks for monitoring and responding to activity lifecycle changes.
- */
 abstract class ActivityLifecycleManager : BaseLifecycleContentProvider() {
 
     private val activeActivities: MutableSet<Activity> =

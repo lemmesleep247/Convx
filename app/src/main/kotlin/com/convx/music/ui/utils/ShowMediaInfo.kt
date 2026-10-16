@@ -5,6 +5,8 @@
 
 package com.convx.music.ui.utils
 
+import androidx.compose.runtime.collectAsState
+import com.convx.music.ui.player.agreesWith
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.text.format.Formatter
@@ -27,10 +29,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.LoadingIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.Text
+import com.convx.music.ui.ios.compat.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -64,6 +65,7 @@ import com.convx.music.db.entities.Song
 import com.convx.music.ui.component.LocalBottomSheetPageState
 import com.convx.music.ui.component.shimmer.ShimmerHost
 import com.convx.music.ui.component.shimmer.TextPlaceholder
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -72,7 +74,7 @@ fun ShowMediaInfo(videoId: String) {
 
     val windowInsets = WindowInsets.systemBars
     var info by remember { mutableStateOf<MediaInfo?>(null) }
-    val database = LocalDatabase.current
+    val database = LocalDatabase.current.get()
     var song by remember { mutableStateOf<Song?>(null) }
     var currentFormat by remember { mutableStateOf<FormatEntity?>(null) }
     val playerConnection = LocalPlayerConnection.current
@@ -90,11 +92,26 @@ fun ShowMediaInfo(videoId: String) {
         database.format(videoId).collect { currentFormat = it }
     }
 
-    // Local songs never get a FormatEntity row — only the YouTube playback/download path
-    // writes one — so contentLength was always null for them and the field read "N/A".
-    // A local song's id IS its MediaStore content URI, so the size can just be read off
-    // the file. Done on demand rather than stored: no schema change, and it stays right
-    // if the file is replaced.
+    // While this song is the one playing, the decoder's format wins over a stale stored row.
+    val playingId = playerConnection?.mediaMetadata?.collectAsStateWithLifecycle()?.value?.id
+    val liveFormat = com.convx.music.ui.player.rememberLiveAudioFormat(playerConnection.takeIf { playingId == videoId })
+    val shownFormat = currentFormat?.takeIf { it.agreesWith(liveFormat) }
+        ?: liveFormat?.sampleMimeType?.let { mime ->
+            FormatEntity(
+                id = videoId,
+                itag = currentFormat?.itag ?: 0,
+                mimeType = mime,
+                codecs = liveFormat.codecs ?: mime.substringAfterLast('/'),
+                bitrate = liveFormat.averageBitrate.takeIf { it > 0 } ?: liveFormat.bitrate.coerceAtLeast(0),
+                sampleRate = liveFormat.sampleRate.takeIf { it > 0 },
+                contentLength = currentFormat?.contentLength ?: 0L,
+                loudnessDb = currentFormat?.loudnessDb,
+                playbackUrl = null,
+            )
+        }
+
+    // Local songs have no FormatEntity row; their IDs are MediaStore URIs. Read the file size
+    // on demand so it stays current if the file is replaced.
     var localFileSize by remember { mutableStateOf<Long?>(null) }
     LaunchedEffect(song?.song?.isLocal, videoId) {
         localFileSize = if (song?.song?.isLocal != true) {
@@ -123,19 +140,16 @@ fun ShowMediaInfo(videoId: String) {
         }
     }
 
-    // Shapes
     val albumArtShape = RoundedCornerShape(24.dp)
 
     LazyColumn(
         state = rememberLazyListState(),
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
             .padding(bottom = windowInsets.asPaddingValues().calculateBottomPadding())
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
-        // Header: "Song Info" title + Done button
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -144,9 +158,9 @@ fun ShowMediaInfo(videoId: String) {
             ) {
                 Text(
                     text = stringResource(R.string.song_info),
-                    style = MaterialTheme.typography.headlineMedium,
+                    style = AppTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground
+                    color = AppTheme.colorScheme.onBackground
                 )
                 TextButton(onClick = { sheetState.dismiss() }) {
                     Text(stringResource(R.string.done))
@@ -154,14 +168,13 @@ fun ShowMediaInfo(videoId: String) {
             }
         }
 
-        // Large Album Art Card
         item {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(200.dp)
                     .clip(albumArtShape)
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .background(AppTheme.colorScheme.surfaceVariant)
             ) {
                 val imageUrl = song?.thumbnailUrl
                     ?: "https://i.ytimg.com/vi/$videoId/maxresdefault.jpg"
@@ -175,13 +188,11 @@ fun ShowMediaInfo(videoId: String) {
             }
         }
 
-        // Info Grid
         if (song != null || info != null) {
             item {
                 Column(
                     verticalArrangement = Arrangement.spacedBy(24.dp)
                 ) {
-                    // Row 1: Title / Artist
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
@@ -200,7 +211,6 @@ fun ShowMediaInfo(videoId: String) {
                         )
                     }
 
-                    // Row 2: Duration / Media ID
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
@@ -222,18 +232,17 @@ fun ShowMediaInfo(videoId: String) {
                         )
                     }
 
-                    // Row 3: Views / Likes
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        val viewCount = info?.viewCount?.toInt()?.let { shortNumberFormatter(it) } ?: "N/A"
+                        val viewCount = info?.viewCount?.let { shortNumberFormatter(it) } ?: "N/A"
                         InfoItem(
                             label = stringResource(R.string.views),
                             value = stringResource(R.string.song_info_views_count, viewCount),
                             modifier = Modifier.weight(1f)
                         )
-                        val likeCount = info?.like?.toInt()?.let { shortNumberFormatter(it) } ?: "N/A"
+                        val likeCount = info?.like?.let { shortNumberFormatter(it) } ?: "N/A"
                         InfoItem(
                             label = stringResource(R.string.likes),
                             value = stringResource(R.string.song_info_likes_count, likeCount),
@@ -241,14 +250,13 @@ fun ShowMediaInfo(videoId: String) {
                         )
                     }
 
-                    // Row 4: Dislikes / Subscribers
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         InfoItem(
                             label = stringResource(R.string.dislikes),
-                            value = info?.dislike?.let { shortNumberFormatter(it.toInt()) } ?: "N/A",
+                            value = info?.dislike?.let { shortNumberFormatter(it) } ?: "N/A",
                             modifier = Modifier.weight(1f)
                         )
                         InfoItem(
@@ -258,7 +266,6 @@ fun ShowMediaInfo(videoId: String) {
                         )
                     }
 
-                    // Row 5: Itag / Loudness
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
@@ -275,27 +282,25 @@ fun ShowMediaInfo(videoId: String) {
                         )
                     }
 
-                    // Row 6: Format / Bitrate
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         InfoItem(
                             label = stringResource(R.string.mime_type),
-                            value = currentFormat?.mimeType?.substringBefore(";")
+                            value = shownFormat?.mimeType?.substringBefore(";")
                                 ?: localProperties?.mimeType
                                 ?: stringResource(R.string.song_info_standard),
                             modifier = Modifier.weight(1f)
                         )
                         InfoItem(
                             label = stringResource(R.string.bitrate),
-                            value = (currentFormat?.bitrate ?: localProperties?.bitrateBps)
+                            value = (shownFormat?.bitrate?.takeIf { it > 0 } ?: localProperties?.bitrateBps)
                                 ?.let { "${it / 1000} Kbps" } ?: "N/A",
                             modifier = Modifier.weight(1f)
                         )
                     }
 
-                    // Row 7: Codecs / Sample Rate
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
@@ -305,7 +310,7 @@ fun ShowMediaInfo(videoId: String) {
                             // A local file has no "codecs" string of its own, so the
                             // container subtype stands in for it, with the bit depth
                             // appended when the format declares one.
-                            value = currentFormat?.codecs
+                            value = shownFormat?.codecs
                                 ?: localProperties?.let { props ->
                                     val codec = props.mimeType?.substringAfterLast('/')?.uppercase()
                                     val depth = props.bitsPerSample?.let { "${'$'}it-bit " }.orEmpty()
@@ -316,7 +321,7 @@ fun ShowMediaInfo(videoId: String) {
                         )
                         InfoItem(
                             label = stringResource(R.string.sample_rate),
-                            value = (currentFormat?.sampleRate ?: localProperties?.sampleRateHz)
+                            value = (shownFormat?.sampleRate ?: localProperties?.sampleRateHz)
                                 ?.let { rate ->
                                     val channels = localProperties?.channelCount
                                         ?.let { " \u00b7 ${it}ch" }.orEmpty()
@@ -326,14 +331,13 @@ fun ShowMediaInfo(videoId: String) {
                         )
                     }
 
-                    // Row 8: File Size / Volume
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         InfoItem(
                             label = stringResource(R.string.file_size),
-                            value = (localFileSize ?: currentFormat?.contentLength)?.let {
+                            value = (localFileSize ?: shownFormat?.contentLength)?.let {
                                 Formatter.formatShortFileSize(context, it)
                             } ?: "N/A",
                             modifier = Modifier.weight(1f)
@@ -354,26 +358,26 @@ fun ShowMediaInfo(videoId: String) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
                         text = stringResource(R.string.description),
-                        style = MaterialTheme.typography.labelMedium.copy(
+                        style = AppTheme.typography.labelMedium.copy(
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Bold
                         ),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = AppTheme.colorScheme.onSurfaceVariant
                     )
                     if (info == null) {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(100.dp),
-                            contentAlignment = Alignment.Center
+                            contentAlignment = Alignment.CenterStart
                         ) {
-                            LoadingIndicator()
+                            com.convx.music.ui.component.TextBlockSkeleton(lines = 3)
                         }
                     } else {
                         Text(
                             text = info?.description ?: stringResource(R.string.song_info_no_description),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onBackground
+                            style = AppTheme.typography.bodyMedium,
+                            color = AppTheme.colorScheme.onBackground
                         )
                     }
                 }
@@ -424,19 +428,19 @@ fun InfoItem(
     ) {
         Text(
             text = label,
-            style = MaterialTheme.typography.labelMedium.copy(
+            style = AppTheme.typography.labelMedium.copy(
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 0.5.sp
             ),
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = AppTheme.colorScheme.onSurfaceVariant
         )
         Text(
             text = value,
-            style = MaterialTheme.typography.titleMedium.copy(
+            style = AppTheme.typography.titleMedium.copy(
                 fontWeight = FontWeight.SemiBold
             ),
-            color = MaterialTheme.colorScheme.onBackground
+            color = AppTheme.colorScheme.onBackground
         )
     }
 }

@@ -5,6 +5,9 @@
 
 package com.convx.music.ui.screens.search
 
+import com.convx.music.ui.component.sf
+import com.convx.music.ui.component.SymbolIcon
+import androidx.compose.ui.res.painterResource
 import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -27,11 +30,11 @@ import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.IconButton
+import com.convx.music.ui.ios.compat.AppTheme
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.material3.Text
+import com.convx.music.ui.ios.compat.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -44,41 +47,44 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavController
-import com.music.innertube.YouTube.SearchFilter.Companion.FILTER_ALBUM
-import com.music.innertube.YouTube.SearchFilter.Companion.FILTER_ARTIST
-import com.music.innertube.YouTube.SearchFilter.Companion.FILTER_COMMUNITY_PLAYLIST
-import com.music.innertube.YouTube.SearchFilter.Companion.FILTER_FEATURED_PLAYLIST
-import com.music.innertube.YouTube.SearchFilter.Companion.FILTER_SONG
-import com.music.innertube.YouTube.SearchFilter.Companion.FILTER_VIDEO
+import com.composables.sfsymbols.SfSymbols
+import com.music.innertube.SearchFilter.Companion.FILTER_ALBUM
+import com.music.innertube.SearchFilter.Companion.FILTER_ARTIST
+import com.music.innertube.SearchFilter.Companion.FILTER_COMMUNITY_PLAYLIST
+import com.music.innertube.SearchFilter.Companion.FILTER_FEATURED_PLAYLIST
+import com.music.innertube.SearchFilter.Companion.FILTER_SONG
+import com.music.innertube.SearchFilter.Companion.FILTER_VIDEO
 import com.music.innertube.models.AlbumItem
 import com.music.innertube.models.ArtistItem
 import com.music.innertube.models.PlaylistItem
 import com.music.innertube.models.SongItem
-import com.music.innertube.models.WatchEndpoint
 import com.music.innertube.models.YTItem
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.allowHardware
 import com.convx.music.ui.utils.bounceClick
 import com.convx.music.ui.utils.combinedBounceClick
+import com.convx.music.ui.utils.albumRoute
+import com.convx.music.ui.utils.artistRoute
+import com.convx.music.ui.utils.onlinePlaylistRoute
 import com.convx.music.LocalPlayerConnection
 import com.convx.music.R
 import com.convx.music.constants.MiniPlayerBottomSpacing
 import com.convx.music.constants.MiniPlayerHeight
 import com.convx.music.constants.NavigationBarHeight
-import com.convx.music.models.toMediaMetadata
-import com.convx.music.playback.queues.YouTubeQueue
+import com.convx.music.playback.queues.searchResultQueue
 import com.convx.music.ui.component.ChipsRow
 import com.convx.music.ui.component.EmptyPlaceholder
 import com.convx.music.ui.component.LocalMenuState
@@ -106,6 +112,7 @@ import java.net.URLDecoder
 import com.convx.music.ui.utils.heroPullZoom
 import com.convx.music.ui.utils.listOverscroll
 import com.convx.music.ui.utils.rememberHeroZoom
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -117,8 +124,8 @@ fun OnlineSearchResult(
     val menuState = LocalMenuState.current
     val playerConnection = LocalPlayerConnection.current ?: return
     val haptic = LocalHapticFeedback.current
-    val isPlaying by playerConnection.isEffectivelyPlaying.collectAsState()
-    val mediaMetadata by playerConnection.mediaMetadata.collectAsState()
+    val isPlaying by playerConnection.isEffectivelyPlaying.collectAsStateWithLifecycle()
+    val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
 
     val coroutineScope = rememberCoroutineScope()
     val lazyListState = rememberLazyListState()
@@ -149,7 +156,7 @@ fun OnlineSearchResult(
         }
     }
 
-    val searchFilter by viewModel.filter.collectAsState()
+    val searchFilter by viewModel.filter.collectAsStateWithLifecycle()
     val searchSummary = viewModel.summaryPage
     val itemsPage by remember(searchFilter) {
         derivedStateOf {
@@ -158,9 +165,11 @@ fun OnlineSearchResult(
             }
         }
     }
-    
-    // Suggestion states
-
+    val isLoadingResults = if (searchFilter == null) {
+        searchSummary == null
+    } else {
+        itemsPage == null
+    }
 
     LaunchedEffect(lazyListState) {
         snapshotFlow {
@@ -171,7 +180,10 @@ fun OnlineSearchResult(
         }
     }
 
-    val ytItemContent: @Composable LazyItemScope.(YTItem, Int, Int) -> Unit = { item: YTItem, index: Int, size: Int ->
+    // Sibling results let a song tap queue this result set instead of starting one-song radio.
+    val searchedSongsTitle = stringResource(R.string.queue_searched_songs)
+    val ytItemContent: @Composable LazyItemScope.(YTItem, Int, List<YTItem>) -> Unit = { item: YTItem, index: Int, siblings: List<YTItem> ->
+        val size = siblings.size
         val longClick = {
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
             menuState.show {
@@ -207,8 +219,7 @@ fun OnlineSearchResult(
         }
         YouTubeListItem(
             item = item,
-            isActive =
-            when (item) {
+            isActive = when (item) {
                 is SongItem -> mediaMetadata?.id == item.id
                 is AlbumItem -> mediaMetadata?.album?.id == item.id
                 else -> false
@@ -220,10 +231,7 @@ fun OnlineSearchResult(
                 IconButton(
                     onClick = longClick,
                 ) {
-                    Icon(
-                        painter = painterResource(R.drawable.more_vert),
-                        contentDescription = null,
-                    )
+                    SymbolIcon(symbol = sf("ellipsis"), contentDescription = null)
                 }
             },
             modifier =
@@ -235,18 +243,13 @@ fun OnlineSearchResult(
                                 if (item.id == mediaMetadata?.id) {
                                     playerConnection.togglePlayPause()
                                 } else {
-                                    playerConnection.playQueue(
-                                        YouTubeQueue(
-                                            WatchEndpoint(videoId = item.id),
-                                            item.toMediaMetadata()
-                                        )
-                                    )
+                                    playerConnection.playQueue(searchResultQueue(item, siblings, searchedSongsTitle))
                                 }
                             }
 
-                            is AlbumItem -> navController.navigate("album/${item.id}")
-                            is ArtistItem -> navController.navigate("artist/${item.id}")
-                            is PlaylistItem -> navController.navigate("online_playlist/${item.id}")
+                            is AlbumItem -> navController.navigate(albumRoute(item.id, item.thumbnail))
+                            is ArtistItem -> navController.navigate(artistRoute(item.id, item.thumbnail))
+                            is PlaylistItem -> navController.navigate(onlinePlaylistRoute(item.id, item.title, item.thumbnail))
                         }
                     },
                     onLongClick = longClick,
@@ -268,7 +271,7 @@ fun OnlineSearchResult(
     // The suggestions/"hint" overlay below (shown while re-typing on this results
     // page) tints from the app's home background image, not this page's own
     // search-result hero — matching the initial SearchScreen's header tint.
-    val hintTint = rememberAppBackgroundColor(AppleTokens.BgElevated)
+    val hintTint = rememberAppBackgroundColor(AppTheme.colorScheme.background)
     val hintOnTint = AppleTokens.onColor(hintTint)
 
     val heroBackdrop = rememberLayerBackdrop()
@@ -278,44 +281,38 @@ fun OnlineSearchResult(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(tint)
+            .background(AppTheme.colorScheme.background)
     ) {
         if (hasCustomHomeBackground()) {
             // Matches Home/Library: the user's own picture, not this screen's
             // auto-generated hero blur, once a custom background is set.
             HomeImageBackground(withGradient = true)
         } else {
-            // Blurred hero artwork background
+            // Blurred hero artwork background with smooth unified tone
             if (heroUrl != null) {
                 AsyncImage(
                     model = ImageRequest.Builder(context)
                         .data(heroUrl)
-                        .size(100, 100)
+                        .size(544, 544)
                         .allowHardware(false)
                         .build(),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .fillMaxSize()
-                        .blur(150.dp)
+                        // Bake the blur once: HWUI re-runs a RenderEffect whenever the clip
+                        // it is drawn under changes, and with glass on this backdrop is
+                        // drawn under two (screen + glass capture) every frame.
+                        .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                        .blur(120.dp)
+                        .graphicsLayer { alpha = 0.55f }
                 )
             }
-            // Dark overlay for readability
+            // Smooth uniform dark overlay for clean contrast across entire screen
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.4f))
-            )
-            // Primary-color wash at the bottom
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            0.55f to Color.Transparent,
-                            1f to MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
-                        )
-                    )
+                    .background(Color.Black.copy(alpha = 0.45f))
             )
         }
 
@@ -325,19 +322,16 @@ fun OnlineSearchResult(
                 .fillMaxSize()
                 .windowInsetsPadding(appTopBarWindowInsets())
         ) {
-            // The search bar used to live here — now it's part of the floating nav
-            // bar itself (NavBarSearchInputBar in FloatingNavBar.kt), which stays
-            // mounted across this whole screen. See PLAN_search_navbar.md.
+            // Search input is owned by the persistent floating nav bar.
 
-            // Main content area
             Box(modifier = Modifier.weight(1f)) {
                 Column(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     // No opaque wrapper, no Material chip fills — just the row over
                     // the screen's own blurred hero backdrop, tinted to match.
-                    ChipsRow(
-                        chips = listOf(
+                    AppleScopePills(
+                        pills = listOf(
                             null to stringResource(R.string.filter_all),
                             FILTER_SONG to stringResource(R.string.filter_songs),
                             FILTER_VIDEO to stringResource(R.string.filter_videos),
@@ -346,8 +340,8 @@ fun OnlineSearchResult(
                             FILTER_COMMUNITY_PLAYLIST to stringResource(R.string.filter_community_playlists),
                             FILTER_FEATURED_PLAYLIST to stringResource(R.string.filter_featured_playlists),
                         ),
-                        currentValue = searchFilter,
-                        onValueUpdate = {
+                        selected = searchFilter,
+                        onSelect = {
                             if (viewModel.filter.value != it) {
                                 viewModel.filter.value = it
                             }
@@ -355,11 +349,6 @@ fun OnlineSearchResult(
                                 lazyListState.animateScrollToItem(0)
                             }
                         },
-                        containerColor = Color.Transparent,
-                        selectedContainerColor = onTint.copy(alpha = 0.2f),
-                        labelColor = onTint.copy(alpha = 0.8f),
-                        selectedLabelColor = onTint,
-                        modifier = Modifier.fillMaxWidth()
                     )
 
                     LazyColumn(
@@ -383,7 +372,7 @@ fun OnlineSearchResult(
                                     key = { index, item -> "${summary.title}/${item.id}/$index" },
                                     contentType = { _, _ -> "yt_item_row" },
                                 ) { index, item ->
-                                    ytItemContent(item, index, summary.items.size)
+                                    ytItemContent(item, index, summary.items)
                                 }
                             }
 
@@ -405,7 +394,7 @@ fun OnlineSearchResult(
                                 key = { _, it -> "filtered_${it.id}" },
                                 contentType = { _, _ -> "yt_item_row" },
                             ) { index, item ->
-                                ytItemContent(item, index, distinctItems.size)
+                                ytItemContent(item, index, distinctItems)
                             }
 
                             if (itemsPage?.continuation != null) {
@@ -429,7 +418,7 @@ fun OnlineSearchResult(
                             }
                         }
 
-                        if (searchFilter == null && searchSummary == null || searchFilter != null && itemsPage == null) {
+                        if (isLoadingResults) {
                             item {
                                 ShimmerHost {
                                     repeat(8) {
@@ -445,12 +434,7 @@ fun OnlineSearchResult(
                     }
                 }
                 if (navSearch.keyboardActive) {
-                    // OnlineSearchScreen renders transparent by design (it overlays
-                    // straight onto a screen's own hero blur on SearchScreen) — but
-                    // here it overlays on top of the results list, not empty space,
-                    // so it needs its own opaque backing or the list bleeds through.
-                    // Tinted from the app's home background image (like the initial
-                    // SearchScreen), not from this results page's search-result hero.
+                    // This search overlay covers the results list, so give it an opaque background.
                     Box(
                         modifier = Modifier
                             .fillMaxSize()

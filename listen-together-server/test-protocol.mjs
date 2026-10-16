@@ -88,7 +88,7 @@ send(guest, 'set_control_mode', { control_mode: 'owner' });
 const stillForbidden = await waitFor(guest, 'error', 2500);
 check(stillForbidden?.payload?.code === 'forbidden', 'guest cannot change control mode');
 
-// --- The bits the Android fix actually depends on -------------------------
+// Bits the Android fix depends on.
 // The host must be able to tell a member's action from its own echo. Without a
 // correct from_user_id the client either ignores real commands or feeds back
 // on itself, which is exactly the "controls do nothing" symptom.

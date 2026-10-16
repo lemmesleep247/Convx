@@ -15,15 +15,17 @@ class GlassEffectConfigTest {
     }
 
     @Test
-    fun `default config has white text color`() {
+    fun `default config text color is adaptive unspecified`() {
+        // Monochromatic by default: resolved to the semantic label at the call
+        // site (dark over light content, light over dark), never hard-coded
+        // white — white vanishes on light-tinted glass.
         val config = GlassEffectConfig()
-        assertEquals(Color.White, config.textColor)
+        assertEquals(Color.Unspecified, config.textColor)
     }
 
     @Test
     fun `default config enables all components`() {
         val config = GlassEffectConfig()
-        assertTrue(config.playerEnabled)
         assertTrue(config.miniPlayerEnabled)
         assertTrue(config.navBarEnabled)
     }
@@ -65,18 +67,18 @@ class GlassEffectConfigTest {
     }
 
     @Test
-    fun `surface tint defaults to dark grey`() {
+    fun `surface tint defaults to unspecified for adaptive theming`() {
         val config = GlassEffectConfig()
-        assertEquals(Color(0xFF1A1A1A), config.surfaceTintColor)
+        assertEquals(Color.Unspecified, config.surfaceTintColor)
     }
 
     @Test
     fun `defaults follow the Apple liquid glass recipe`() {
         val config = GlassEffectConfig()
-        // 2dp blur, 0.4 lens height, 0.6 lens amount, 50% tint.
-        assertEquals(2f, config.blurRadius, 0.001f)
-        assertEquals(19.2f, config.lensHeight * LENS_MAX_DP, 0.001f)
-        assertEquals(28.8f, config.lensAmount * LENS_MAX_DP, 0.001f)
+        // Nav spec (Q16): 3dp blur, 0.60 lens height, 0.69 lens amount, 50% tint.
+        assertEquals(3f, config.blurRadius, 0.001f)
+        assertEquals(28.8f, config.lensHeight * LENS_MAX_DP, 0.001f)
+        assertEquals(33.12f, config.lensAmount * LENS_MAX_DP, 0.001f)
         assertEquals(0.5f, config.surfaceOpacity, 0.001f)
     }
 
@@ -91,7 +93,6 @@ class GlassEffectConfigTest {
     fun `isEnabledFor returns false for every component when global switch is off`() {
         val config = GlassEffectConfig(
             globalEnabled = false,
-            playerEnabled = true,
             miniPlayerEnabled = true,
             navBarEnabled = true,
         )
@@ -104,11 +105,9 @@ class GlassEffectConfigTest {
     fun `isEnabledFor respects per-component switches when global switch is on`() {
         val config = GlassEffectConfig(
             globalEnabled = true,
-            playerEnabled = true,
             miniPlayerEnabled = false,
             navBarEnabled = true,
         )
-        assertTrue(config.isEnabledFor(GlassComponent.PLAYER))
         assertFalse(config.isEnabledFor(GlassComponent.MINI_PLAYER))
         assertTrue(config.isEnabledFor(GlassComponent.NAV_BAR))
     }

@@ -5,6 +5,9 @@
 
 package com.convx.music.ui.menu
 
+import com.convx.music.ui.component.sf
+import com.convx.music.ui.component.SymbolIcon
+import com.convx.music.ui.component.menuBottomInset
 import android.content.Intent
 import android.content.res.Configuration
 import androidx.compose.foundation.layout.PaddingValues
@@ -16,10 +19,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import com.convx.music.ui.ios.compat.HorizontalDivider
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -39,8 +42,8 @@ import com.convx.music.db.entities.Artist
 import com.convx.music.extensions.toMediaItem
 import com.convx.music.playback.queues.ListQueue
 import com.convx.music.ui.component.ArtistListItem
-import com.convx.music.ui.component.Material3MenuGroup
-import com.convx.music.ui.component.Material3MenuItemData
+import com.convx.music.ui.component.IosMenuGroup
+import com.convx.music.ui.component.IosMenuItemData
 import com.convx.music.ui.component.NewAction
 import com.convx.music.ui.component.NewActionGrid
 import kotlinx.coroutines.CoroutineScope
@@ -56,7 +59,7 @@ fun ArtistMenu(
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
-    val database = LocalDatabase.current
+    val database = LocalDatabase.current.get()
     val playerConnection = LocalPlayerConnection.current ?: return
     val listenTogetherManager = LocalListenTogetherManager.current
     val isGuest = listenTogetherManager?.isInRoom == true && !listenTogetherManager.isHost
@@ -82,7 +85,7 @@ fun ArtistMenu(
             start = 0.dp,
             top = 0.dp,
             end = 0.dp,
-            bottom = 8.dp + WindowInsets.systemBars.asPaddingValues().calculateBottomPadding(),
+            bottom = 8.dp + menuBottomInset(),
         ),
     ) {
         item {
@@ -93,12 +96,7 @@ fun ArtistMenu(
                             add(
                                 NewAction(
                                     icon = {
-                                        Icon(
-                                            painter = painterResource(R.drawable.play),
-                                            contentDescription = null,
-                                            modifier = Modifier.size(28.dp),
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
+                                        SymbolIcon(symbol = sf("play.fill"), contentDescription = null, size = 28.dp, tint = AppTheme.colorScheme.onSurfaceVariant)
                                     },
                                     text = stringResource(R.string.play),
                                     onClick = {
@@ -124,12 +122,7 @@ fun ArtistMenu(
                             add(
                                 NewAction(
                                     icon = {
-                                        Icon(
-                                            painter = painterResource(R.drawable.shuffle),
-                                            contentDescription = null,
-                                            modifier = Modifier.size(28.dp),
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
+                                        SymbolIcon(symbol = sf("shuffle"), contentDescription = null, size = 28.dp, tint = AppTheme.colorScheme.onSurfaceVariant)
                                     },
                                     text = stringResource(R.string.shuffle),
                                     onClick = {
@@ -158,12 +151,7 @@ fun ArtistMenu(
                     add(
                         NewAction(
                             icon = {
-                                Icon(
-                                    painter = painterResource(if (isPinned) R.drawable.remove else R.drawable.add),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(28.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                                SymbolIcon(symbol = if (isPinned) sf("minus") else sf("plus"), contentDescription = null, size = 28.dp, tint = AppTheme.colorScheme.onSurfaceVariant)
                             },
                             text = if (isPinned) "Unpin" else "Pin",
                             onClick = {
@@ -191,12 +179,7 @@ fun ArtistMenu(
                         add(
                             NewAction(
                                 icon = {
-                                    Icon(
-                                        painter = painterResource(R.drawable.share),
-                                        contentDescription = null,
-                                        modifier = Modifier.size(28.dp),
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                                    SymbolIcon(symbol = sf("square.and.arrow.up"), contentDescription = null, size = 28.dp, tint = AppTheme.colorScheme.onSurfaceVariant)
                                 },
                                 text = stringResource(R.string.share),
                                 onClick = {
@@ -221,17 +204,14 @@ fun ArtistMenu(
         }
 
         item {
-            Material3MenuGroup(
+            IosMenuGroup(
                 items = listOf(
-                    Material3MenuItemData(
+                    IosMenuItemData(
                         title = {
                             Text(text = if (artist.artist.bookmarkedAt != null) stringResource(R.string.subscribed) else stringResource(R.string.subscribe))
                         },
                         icon = {
-                            Icon(
-                                painter = painterResource(if (artist.artist.bookmarkedAt != null) R.drawable.subscribed else R.drawable.subscribe),
-                                contentDescription = null,
-                            )
+                            SymbolIcon(symbol = if (artist.artist.bookmarkedAt != null) sf("bell.fill") else sf("bell.badge"), contentDescription = null)
                         },
                         onClick = {
                             database.transaction {

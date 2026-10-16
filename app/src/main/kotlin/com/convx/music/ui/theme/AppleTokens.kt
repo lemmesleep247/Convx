@@ -3,9 +3,10 @@ package com.convx.music.ui.theme
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.material3.LocalContentColor
+import com.convx.music.ui.ios.compat.LocalContentColor
 import androidx.compose.material3.Shapes
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import com.convx.music.ui.component.shapes.ContinuousRoundedRectangle
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
@@ -14,37 +15,27 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * Apple Music design tokens — the single source of truth for colors, shapes, and
- * adaptive contrast helpers. Every screen references these instead of hardcoding values.
+ * Apple Music design tokens — single source of truth for colors, shapes, motion, and contrast helpers.
  */
 object AppleTokens {
-    // Accent
     val AccentRed = Color(0xFFFA2D48)
 
-    // Surfaces — Apple-style soft dark greys, not pure black (pure black stays an
-    // opt-in via the PureBlack setting for OLED). Monotonic elevation ladder.
+    // Surfaces — Apple-style soft dark greys, not pure black (pure black is an OLED opt-in via PureBlack).
     val Bg = Color(0xFF121212)
     val BgElevated = Color(0xFF1A1A1A)
     val Card = Color(0xFF1C1C1E)
     val CardSecondary = Color(0xFF2C2C2E)
 
     /**
-     * Hairline rule on whatever surface the caller sits on. Derived from the
-     * content colour rather than fixed to white: a constant white rule is
-     * invisible on the light theme, and on an artwork-tinted screen it reads as
-     * a foreign line instead of one belonging to the surface.
+     * Hairline rule derived from the current content color, so it stays visible on light and
+     * artwork-tinted surfaces.
      */
     val divider: Color
         @Composable get() = LocalContentColor.current.copy(alpha = 0.12f)
 
-    /**
-     * Metadata text — artist names, subtitles, durations. One step down from
-     * on-surface, never full white: the hierarchy on Home is carried by this
-     * contrast step rather than by size, since title and subtitle share a size.
-     */
-    val Metadata = Color(0xFF8E8E93)
-
-    // Spacing — the whole scale. Screens reference these, never a dp literal.
+    /** Metadata text color on artwork-tinted screens. */
+    val Metadata: Color
+        @Composable get() = LocalMetadataColor.current
 
     /** Horizontal screen gutter. The only gutter. */
     val Gutter = 20.dp
@@ -55,13 +46,9 @@ object AppleTokens {
     /** Gap between stacked text lines inside one item. */
     val TextGap = 2.dp
 
-    // Type scale — Home's headers and tile text. Sizes are fixed rather than
-    // taken from the Material scale: the design pins them to specific values and
-    // the tile grid's alignment depends on title and subtitle matching exactly.
+    // Type scale — design-pinned sizes, not Material scale: tile-grid alignment depends on title/subtitle matching exactly.
 
-    // Each size carries its own line height. Compose otherwise derives leading from
-    // the font's own metrics, which lands taller than the design at every step and
-    // shows up as sections that drift out of alignment the further down you scroll.
+    // Each size carries its own line height — Compose's derived leading lands taller than the design at every step.
 
     /** Screen title ("Listen Now"). */
     val TitleLarge = 34.sp
@@ -79,25 +66,14 @@ object AppleTokens {
     val Caption = 12.sp
     val CaptionLineHeight = 16.sp
 
-    // Shapes — four corners, no more. Artwork is the only rounded thing on a
-    // content tile; a card corner means the object is genuinely a card.
-    // Every one of them is drawn with continuous (squircle) curvature — see
-    // [AppShapes] — so nothing in the app mixes circular and continuous corners.
-    val Artwork = 12.dp
-    val Control = 12.dp
-    val CardCorner = 22.dp
-    val CardCornerLarge = 28.dp
+    // Shapes — four corners, no more. All continuous (squircle) curvature — see [AppShapes].
+    val Artwork = 8.dp
+    val Control = 8.dp
+    val CardCorner = 14.dp
+    val CardCornerLarge = 18.dp
 
-    // Motion — one spring, three tempers, modelled on SwiftUI's `.smooth`: a spring
-    // with a 0.5s natural period and zero bounce. That is the default here, and
-    // bounce is reserved for selection feedback and hero entrances.
-    //
-    // Compose takes stiffness where SwiftUI takes a period: stiffness =
-    // (2*pi / period)^2. SwiftUI `bounce` maps to `1 - dampingRatio`.
-    //
-    // Not yet adopted app-wide — motion is currently scattered across
-    // Spring.StiffnessMedium, tween(200) and hand-picked specs. Convert call
-    // sites deliberately, checking each one, rather than sweeping them.
+    // Motion — modelled on SwiftUI `.smooth` (0.5s natural period, zero bounce).
+    // Compose takes stiffness where SwiftUI takes a period: stiffness = (2*pi / period)^2.
     object Motion {
         /** (2*pi / 0.5s)^2. The period behind every spec below. */
         const val Stiffness = 158f
@@ -149,10 +125,27 @@ object AppleTokens {
     /**
      * @param lightness (on-dark, on-light) target lightness.
      */
+    /**
+     * Luminance where black and white text have equal WCAG contrast (~0.179). Above it black wins;
+     * the old 0.5 split gave mid-tone backgrounds white text at about 2.5:1.
+     */
+    const val LightContentMaxLuminance = 0.179f
+
+    /** True when light content reads better than dark content on this background. */
+    fun prefersLightContent(bg: Color): Boolean = bg.luminance() <= LightContentMaxLuminance
+
+    fun contrastRatio(a: Color, b: Color): Float {
+        val l1 = maxOf(a.luminance(), b.luminance())
+        val l2 = minOf(a.luminance(), b.luminance())
+        return (l1 + 0.05f) / (l2 + 0.05f)
+    }
+
+    private const val MinTextContrast = 4.5f
+
     private fun Color.shiftedForContrast(saturation: Float, lightness: Pair<Float, Float>): Color {
         val hsl = FloatArray(3)
         androidx.core.graphics.ColorUtils.colorToHSL(toArgb(), hsl)
-        val onDark = luminance() <= 0.5f
+        val onDark = prefersLightContent(this)
         val target = if (onDark) lightness.first else lightness.second
         // No artwork (the tint is still black) or a monochrome cover means there
         // is no hue to carry. For primary text, nudging lightness off the extreme
@@ -165,9 +158,23 @@ object AppleTokens {
             hsl[1] = minOf(hsl[1], saturation)
             hsl[2] = target
         }
-        return Color(androidx.core.graphics.ColorUtils.HSLToColor(hsl))
+        var result = Color(androidx.core.graphics.ColorUtils.HSLToColor(hsl))
+        // Secondary and heading targets sit back from the extreme; walk toward it until the text passes.
+        var steps = 0
+        while (contrastRatio(result, this) < MinTextContrast && steps++ < 12) {
+            hsl[2] = (hsl[2] + if (onDark) 0.04f else -0.04f).coerceIn(0f, 1f)
+            result = Color(androidx.core.graphics.ColorUtils.HSLToColor(hsl))
+        }
+        return result
     }
 }
+
+/**
+ * Backing local for [AppleTokens.Metadata]. Defaults to iOS `systemGray` — the value
+ * that token has always been — so only a screen that explicitly provides something
+ * else sees any change.
+ */
+val LocalMetadataColor = compositionLocalOf { Color(0xFF8E8E93) }
 
 /**
  * The M3 shape scale, bound to [AppleTokens]' four corners so that anything

@@ -2,11 +2,12 @@
  * Convx Project (C) 2026
  * Licensed under GPL-3.0 | See git history for contributors
  * 
- * Performance optimized MiniPlayer - prevents unnecessary recomposition
  */
 
 package com.convx.music.ui.player
 
+import com.convx.music.ui.component.sf
+import com.convx.music.ui.component.SymbolIcon
 import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
@@ -32,7 +33,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import com.convx.music.ui.component.BlurredBackdropImage
 import com.convx.music.ui.component.ScrollingWaveformSeekBar
+import com.convx.music.ui.component.rememberNoArtworkPainter
 import com.convx.music.ui.component.rememberPlaybackFraction
 import com.convx.music.ui.component.thumbnailPx
 import com.convx.music.constants.MiniPlayerWaveformKey
@@ -56,10 +59,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.IconButton
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableLongState
@@ -76,7 +79,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.drawWithContent
@@ -102,6 +104,16 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.composables.sfsymbols.SfSymbols
+import com.composables.sfsymbols.monochrome.SFAirplayAudio
+import com.composables.sfsymbols.monochrome.SFArrowCounterclockwise
+import com.composables.sfsymbols.monochrome.SFBackwardFill
+import com.composables.sfsymbols.monochrome.SFForwardFill
+import com.composables.sfsymbols.monochrome.SFInfoCircle
+import com.composables.sfsymbols.monochrome.SFPlayFill
+import com.composables.sfsymbols.monochrome.SFSpeakerSlashFill
+import com.composables.sfsymbols.monochrome.SFSpeakerWave2Fill
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
@@ -142,29 +154,27 @@ import com.convx.music.ui.screens.settings.DarkMode
 import com.convx.music.ui.component.AnimatedPlayPauseIcon
 import com.convx.music.ui.component.GlassComponent
 import com.convx.music.ui.component.LocalGlassEffectConfig
+import com.convx.music.ui.component.resolvedTextColor
 import com.convx.music.ui.component.backdrop.catalog.utils.InteractiveHighlight
+import com.convx.music.ui.component.elasticStretchLayerBlock
 import com.convx.music.ui.component.isGlassAllowed
 import com.convx.music.ui.component.liquidGlass
+import com.convx.music.ui.component.LocalAppMotionFrozen
 import com.convx.music.ui.theme.PlayerColorExtractor
+import com.convx.music.ui.theme.colorengine.ColorEngine
 import com.convx.music.utils.rememberEnumPreference
 import com.convx.music.utils.rememberPreference
-import com.convx.music.vivimusic.AudioDeviceBottomSheet
+import com.convx.music.core.AudioDeviceMenu
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
-import com.convx.music.vivimusic.isBluetoothHeadphoneConnected
+import com.convx.music.core.isBluetoothHeadphoneConnected
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Speaker
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.stringResource
-import kotlinx.coroutines.launch
 import kotlin.math.absoluteValue
-import kotlin.math.roundToInt
 import com.convx.music.ui.component.Icon as MIcon
 
 /**
@@ -191,7 +201,6 @@ fun MiniPlayer(
 ) {
     val useNewMiniPlayerDesign by rememberPreference(UseNewMiniPlayerDesignKey, true)
     
-    // Create stable progress state - doesn't cause recomposition on position changes
     val progressState = remember { ProgressState(positionState, durationState) }
 
     if (useNewMiniPlayerDesign) {
@@ -209,9 +218,11 @@ fun MiniPlayer(
     }
 }
 
-// ============================================================================
-// NEW MINI PLAYER DESIGN
-// ============================================================================
+// Sensitivity scales the release distance from 45% to 12% of the screen width.
+private fun calculateSwipeThresholdPx(screenWidthPx: Float, sensitivity: Float): Int {
+    val widthFraction = 0.45f - 0.33f * sensitivity.coerceIn(0f, 1f)
+    return (screenWidthPx * widthFraction).roundToInt()
+}
 
 @Composable
 private fun NewMiniPlayer(
@@ -220,26 +231,25 @@ private fun NewMiniPlayer(
 ) {
     val playerConnection = LocalPlayerConnection.current ?: return
     
-    // Theme settings - these rarely change
     val pureBlack by rememberPreference(PureBlackMiniPlayerKey, defaultValue = false)
     val isSystemInDarkTheme = isSystemInDarkTheme()
     val darkTheme by rememberEnumPreference(DarkModeKey, defaultValue = DarkMode.AUTO)
-    val useDarkTheme = remember(darkTheme, isSystemInDarkTheme) {
+    val preferredDark = remember(darkTheme, isSystemInDarkTheme) {
         if (darkTheme == DarkMode.AUTO) isSystemInDarkTheme else darkTheme == DarkMode.ON
     }
+    val useDarkTheme = com.convx.music.ui.theme.LocalForcedDark.current || preferredDark
     
     val miniPlayerBackground by rememberEnumPreference(MiniPlayerBackgroundStyleKey, defaultValue = PlayerBackgroundStyle.DEFAULT)
-    val miniPlayerWaveform by rememberPreference(MiniPlayerWaveformKey, defaultValue = true)
+    val miniPlayerWaveform by rememberPreference(MiniPlayerWaveformKey, defaultValue = false)
     val isPlaying by playerConnection.isPlaying.collectAsStateWithLifecycle()
     val waveFraction = rememberPlaybackFraction(playerConnection.player, isPlaying)
     
-    // Player states - only collect what's needed at this level
     val playbackState by playerConnection.playbackState.collectAsStateWithLifecycle()
     val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
     val canSkipNext by playerConnection.canSkipNext.collectAsStateWithLifecycle()
     val canSkipPrevious by playerConnection.canSkipPrevious.collectAsStateWithLifecycle()
     
-    // Cast state - safely access castConnectionHandler to prevent crashes during service lifecycle changes
+    // Casting can be unavailable while the service initializes.
     val castHandler = remember(playerConnection) {
         try {
             playerConnection.service.castConnectionHandler
@@ -249,12 +259,11 @@ private fun NewMiniPlayer(
     }
     val isCasting by castHandler?.isCasting?.collectAsStateWithLifecycle() ?: remember { mutableStateOf(false) }
 
-    // Audio Output State
     val context = LocalContext.current
     val isBluetoothConnected = isBluetoothHeadphoneConnected(context)
     var showAudioDeviceBottomSheet by remember { mutableStateOf(false) }
+    var showRoutePopover by remember { mutableStateOf(false) }
 
-    // Swipe settings
     val swipeSensitivity by rememberPreference(SwipeSensitivityKey, 0.73f)
     val swipeThumbnailPref by rememberPreference(SwipeThumbnailKey, true)
     
@@ -265,21 +274,15 @@ private fun NewMiniPlayer(
 
     val layoutDirection = LocalLayoutDirection.current
     val coroutineScope = rememberCoroutineScope()
-    // Swipe thresholds below were tuned as raw pixel counts, which is only ~14dp
-    // on a dense (~3.5x) screen — well within a tap's incidental finger drift,
-    // so plain taps on the mini player were misread as deliberate swipes and
-    // skipped the track. Scaling them by density makes them density-independent.
+    // Convert swipe thresholds to density-independent pixels so taps are not treated as swipes.
     val density = LocalDensity.current.density
 
     val configuration = LocalConfiguration.current
-    // Cap regardless of orientation — portrait tablets used to get a
-    // full-width stretched bar with unchanged small fixed-dp icons, which
-    // read as broken rather than intentional.
+    // Keep the player compact on tablets in either orientation.
     val isTablet = remember(configuration.screenWidthDp) {
         configuration.screenWidthDp >= 600
     }
 
-    // Swipe animation state
     val offsetXAnimatable = remember { Animatable(0f) }
     var dragStartTime by remember { mutableLongStateOf(0L) }
     var totalDragDistance by remember { mutableFloatStateOf(0f) }
@@ -288,16 +291,8 @@ private fun NewMiniPlayer(
         spring<Float>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow)
     }
 
-    // How far the card must travel before releasing changes track.
-    //
-    // This was a logistic curve that produced ~400dp — about 1200px at 3x, on a
-    // 1080px screen. It could never be reached, so releasing the card never
-    // changed the song no matter how far it was dragged. Expressed as a fraction
-    // of the screen instead, so it is reachable on every device: sensitivity 0
-    // needs 45% of the width, sensitivity 1 needs 12%.
     val autoSwipeThreshold = remember(swipeSensitivity, configuration.screenWidthDp, density) {
-        val screenWidthPx = configuration.screenWidthDp * density
-        (screenWidthPx * (0.45f - 0.33f * swipeSensitivity.coerceIn(0f, 1f))).roundToInt()
+        calculateSwipeThresholdPx(configuration.screenWidthDp * density, swipeSensitivity)
     }
 
     val (gradientColors, onGradientColorsChange) = remember { mutableStateOf<List<Color>>(emptyList()) }
@@ -308,19 +303,14 @@ private fun NewMiniPlayer(
         onGradientColorsChange = onGradientColorsChange
     )
     
-    // Memoize colors
     val miniPlayerGlass = LocalGlassEffectConfig.current
     val usesGlassSurface =
         miniPlayerGlass.isEnabledFor(GlassComponent.MINI_PLAYER) && isGlassAllowed()
-    // With glass on, liquidGlass paints the surface and this must stay clear or the
-    // capture is hidden behind an opaque fill. With glass off it used to paint a
-    // flat surfaceContainer, which over artwork reads as a black blob pasted on the
-    // screen — so fall back to a translucent elevated surface that still lets the
-    // content behind show, rather than an opaque one.
+    // Keep glass transparent; without glass, let artwork show through the elevated surface.
     val backgroundColor = when {
         usesGlassSurface -> Color.Transparent
         pureBlack && useDarkTheme -> Color.Black.copy(alpha = 0.82f)
-        else -> MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.88f)
+        else -> AppTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.88f)
     }
     val isDynamicBackground = miniPlayerBackground != PlayerBackgroundStyle.DEFAULT
 
@@ -329,18 +319,16 @@ private fun NewMiniPlayer(
         glassConfig.isEnabledFor(GlassComponent.MINI_PLAYER) &&
         isGlassAllowed()
     ) {
-        glassConfig.textColor
+        glassConfig.resolvedTextColor()
     } else {
         Color.White
     }
-    val primaryColor = if (isDynamicBackground) dynamicContentColor else MaterialTheme.colorScheme.primary
-    val outlineColor = if (isDynamicBackground) dynamicContentColor.copy(alpha = 0.5f) else MaterialTheme.colorScheme.outline
-    val onSurfaceColor = if (isDynamicBackground) dynamicContentColor else MaterialTheme.colorScheme.onSurface
-    val errorColor = MaterialTheme.colorScheme.error
+    val primaryColor = if (isDynamicBackground) dynamicContentColor else AppTheme.colorScheme.primary
+    val outlineColor = if (isDynamicBackground) dynamicContentColor.copy(alpha = 0.5f) else AppTheme.colorScheme.outline
+    val onSurfaceColor = if (isDynamicBackground) dynamicContentColor else AppTheme.colorScheme.onSurface
+    val errorColor = AppTheme.colorScheme.error
 
-    // Same finger-tracking glow as the nav bar's drag puck (ported from Kyant0's
-    // catalog). Its gesture tracking never consumes pointer events, so it's safe
-    // stacked alongside the swipe-to-skip drag detector.
+    // This highlight does not consume pointer events, so it can share the swipe gesture.
     val interactiveHighlight = remember(coroutineScope) { InteractiveHighlight(animationScope = coroutineScope) }
 
     Box(
@@ -385,23 +373,17 @@ private fun NewMiniPlayer(
                             },
                             onDragEnd = {
                                 val dragDuration = System.currentTimeMillis() - dragStartTime
-                                // Mean velocity across the gesture, px/ms. The old threshold
-                                // was ~7.4px/ms against a mean that is 1-3px/ms for a real
-                                // swipe, so this branch never fired either.
+                                // Average velocity separates a quick flick from a slow drag.
                                 val velocity = if (dragDuration > 0) totalDragDistance / dragDuration else 0f
                                 val currentOffset = offsetXAnimatable.value
                                 val dragged = kotlin.math.abs(currentOffset)
 
-                                // Either drag past the commit distance, or flick: a short
-                                // fast throw should not have to cross the full distance.
+                                // Let a fast flick skip without crossing the full distance.
                                 val shouldChangeSong = dragged > autoSwipeThreshold ||
                                     (velocity > 0.55f && dragged > autoSwipeThreshold * 0.25f)
 
                                 if (shouldChangeSong) {
-                                    // Through the connection, not player directly: the wrapper
-                                    // is what routes to Cast when casting, re-prepares a player
-                                    // sitting in ENDED/IDLE, and fires the skip callbacks. The
-                                    // raw calls silently did nothing in all of those states.
+                                    // The connection handles casting, ended players, and skip callbacks.
                                     if (currentOffset > 0 && canSkipPrevious) {
                                         playerConnection.seekToPrevious()
                                     } else if (currentOffset <= 0 && canSkipNext) {
@@ -422,13 +404,14 @@ private fun NewMiniPlayer(
                 .then(if (isTablet) Modifier.width(500.dp).align(Alignment.Center) else Modifier.fillMaxWidth())
                 .height(64.dp)
                 .offset { IntOffset(offsetXAnimatable.value.roundToInt(), 0) }
+                // Apply stretch before clipping so the whole pill deforms.
+                .graphicsLayer(elasticStretchLayerBlock(interactiveHighlight))
                 .clip(RoundedCornerShape(32.dp))
                 .background(color = backgroundColor)
                 .border(1.dp, outlineColor.copy(alpha = 0.3f), RoundedCornerShape(32.dp))
                 .then(interactiveHighlight.modifier)
                 .then(interactiveHighlight.gestureModifier)
         ) {
-            // Background Layers
             MiniPlayerBackgroundLayer(
                 style = miniPlayerBackground,
                 mediaMetadata = mediaMetadata,
@@ -442,7 +425,6 @@ private fun NewMiniPlayer(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
             ) {
-                // Thumbnail album art
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
@@ -459,8 +441,8 @@ private fun NewMiniPlayer(
                                 .build(),
                             contentDescription = null,
                             contentScale = ContentScale.Crop,
-                            placeholder = painterResource(R.drawable.thumbnail_fallback),
-                            error = painterResource(R.drawable.thumbnail_fallback),
+                            placeholder = rememberNoArtworkPainter(),
+                            error = rememberNoArtworkPainter(),
                             modifier = Modifier.fillMaxSize().clip(CircleShape)
                         )
                     }
@@ -468,7 +450,6 @@ private fun NewMiniPlayer(
 
                 Spacer(modifier = Modifier.width(12.dp))
 
-                // Center: song info + seek bar below
                 Column(modifier = Modifier.weight(1f)) {
                     NewMiniPlayerSongInfo(
                         mediaMetadata = mediaMetadata,
@@ -495,7 +476,6 @@ private fun NewMiniPlayer(
 
                 Spacer(modifier = Modifier.width(8.dp))
 
-                // Play button (compact - no album art)
                 NewMiniPlayerPlayButton(
                     progressState = progressState,
                     playbackState = playbackState,
@@ -511,7 +491,6 @@ private fun NewMiniPlayer(
 
                 Spacer(modifier = Modifier.width(4.dp))
 
-                // Skip next (Accord icon)
                 IconButton(
                     // Wrapper, not the raw player — same reason as the swipe above:
                     // this button did nothing while casting, and did not re-prepare
@@ -519,41 +498,25 @@ private fun NewMiniPlayer(
                     onClick = { if (canSkipNext) playerConnection.seekToNext() },
                     enabled = canSkipNext
                 ) {
-                    Icon(
-                        painter = painterResource(R.drawable.apple_skip_next),
-                        contentDescription = null,
-                        tint = if (canSkipNext) onSurfaceColor else onSurfaceColor.copy(alpha = 0.4f),
-                    )
+                    SymbolIcon(symbol = sf("SFForwardFill"), contentDescription = null, tint = if (canSkipNext) onSurfaceColor else onSurfaceColor.copy(alpha = 0.4f))
                 }
 
                 Spacer(modifier = Modifier.width(4.dp))
 
-                // Cast indicator
                 if (isCasting) {
-                    Icon(
-                        painter = painterResource(R.drawable.cast_connected),
-                        contentDescription = "Casting",
-                        tint = primaryColor,
-                        modifier = Modifier.size(20.dp)
-                    )
+                    SymbolIcon(symbol = sf("SFAirplayAudio"), contentDescription = "Casting", size = 20.dp, tint = primaryColor)
                     Spacer(modifier = Modifier.width(4.dp))
                 }
 
-                // Audio Device Button
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
                         .size(28.dp)
                         .clip(CircleShape)
                         .background(color = primaryColor.copy(alpha = 0.1f))
-                        .clickable { showAudioDeviceBottomSheet = true }
+                        .clickable { showRoutePopover = true }
                 ) {
-                    Icon(
-                        imageVector = if (isBluetoothConnected) Icons.Default.Headphones else Icons.Default.Speaker,
-                        contentDescription = stringResource(R.string.audio_devices),
-                        tint = primaryColor,
-                        modifier = Modifier.size(16.dp)
-                    )
+                    SymbolIcon(symbol = if (isBluetoothConnected) sf("headphones") else sf("hifispeaker.fill"), contentDescription = stringResource(R.string.audio_devices), size = 16.dp, tint = primaryColor)
                 }
 
                 Spacer(modifier = Modifier.width(4.dp))
@@ -571,8 +534,17 @@ private fun NewMiniPlayer(
         }
     }
 
+    if (showRoutePopover) {
+        V2RoutePopover(
+            onDismiss = { showRoutePopover = false },
+            title = mediaMetadata?.title.orEmpty(),
+            artist = mediaMetadata?.artists?.joinToString { it.name }.orEmpty(),
+            artworkUrl = mediaMetadata?.thumbnailUrl,
+            onMore = { showAudioDeviceBottomSheet = true },
+        )
+    }
     if (showAudioDeviceBottomSheet) {
-        AudioDeviceBottomSheet(onDismiss = { showAudioDeviceBottomSheet = false })
+        AudioDeviceMenu(onDismiss = { showAudioDeviceBottomSheet = false })
     }
 }
 
@@ -612,7 +584,6 @@ private fun NewMiniPlayerPlayButton(
             .size(buttonSize)
             .drawWithContent {
                 drawContent()
-                // Draw progress arc - this reads progressState.progress during draw phase only
                 val progress = progressState.progress
                 val stroke = Stroke(width = strokeWidth.toPx(), cap = StrokeCap.Round)
                 val startAngle = -90f
@@ -620,7 +591,6 @@ private fun NewMiniPlayerPlayButton(
                 val diameter = size.minDimension
                 val topLeft = Offset((size.width - diameter) / 2, (size.height - diameter) / 2)
                 
-                // Draw track
                 drawArc(
                     color = trackColor,
                     startAngle = 0f,
@@ -630,7 +600,6 @@ private fun NewMiniPlayerPlayButton(
                     size = Size(diameter, diameter),
                     style = stroke
                 )
-                // Draw progress
                 drawArc(
                     color = primaryColor,
                     startAngle = startAngle,
@@ -667,14 +636,14 @@ private fun NewMiniPlayerPlayButton(
                 }
         ) {
             if (compact) {
-                val iconRes = when {
-                    isListenTogetherGuest -> if (isMuted) R.drawable.volume_off else R.drawable.volume_up
-                    playbackState == Player.STATE_ENDED -> R.drawable.replay
+                val iconVector = when {
+                    isListenTogetherGuest -> if (isMuted) SfSymbols.Monochrome.SFSpeakerSlashFill else SfSymbols.Monochrome.SFSpeakerWave2Fill
+                    playbackState == Player.STATE_ENDED -> SfSymbols.Monochrome.SFArrowCounterclockwise
                     else -> null
                 }
-                if (iconRes != null) {
+                if (iconVector != null) {
                     Icon(
-                        painter = painterResource(iconRes),
+                        imageVector = iconVector,
                         contentDescription = null,
                         tint = primaryColor,
                         modifier = Modifier.size(iconSize)
@@ -696,8 +665,8 @@ private fun NewMiniPlayerPlayButton(
                             .build(),
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
-                        placeholder = painterResource(R.drawable.thumbnail_fallback),
-                        error = painterResource(R.drawable.thumbnail_fallback),
+                        placeholder = rememberNoArtworkPainter(),
+                        error = rememberNoArtworkPainter(),
                         modifier = Modifier.fillMaxSize().clip(CircleShape)
                     )
                 }
@@ -715,12 +684,12 @@ private fun NewMiniPlayerPlayButton(
                             playbackState == Player.STATE_ENDED -> PlayerIconSlot.REPLAY
                             else -> PlayerIconSlot.PLAY
                         },
-                        fallback = if (isListenTogetherGuest) {
-                            if (isMuted) R.drawable.volume_off else R.drawable.volume_up
+                        fallbackVector = if (isListenTogetherGuest) {
+                            if (isMuted) SfSymbols.Monochrome.SFSpeakerSlashFill else SfSymbols.Monochrome.SFSpeakerWave2Fill
                         } else if (playbackState == Player.STATE_ENDED) {
-                            R.drawable.replay
+                            SfSymbols.Monochrome.SFArrowCounterclockwise
                         } else {
-                            R.drawable.play
+                            SfSymbols.Monochrome.SFPlayFill
                         },
                         tint = Color.White,
                         modifier = Modifier.size(20.dp)
@@ -787,9 +756,7 @@ private fun NewMiniPlayerSongInfo(
     }
 }
 
-// ============================================================================
-// LEGACY MINI PLAYER DESIGN
-// ============================================================================
+// Legacy mini player design.
 
 @Composable
 private fun LegacyMiniPlayer(
@@ -838,20 +805,12 @@ private fun LegacyMiniPlayer(
         spring<Float>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow)
     }
 
-    // How far the card must travel before releasing changes track.
-    //
-    // This was a logistic curve that produced ~400dp — about 1200px at 3x, on a
-    // 1080px screen. It could never be reached, so releasing the card never
-    // changed the song no matter how far it was dragged. Expressed as a fraction
-    // of the screen instead, so it is reachable on every device: sensitivity 0
-    // needs 45% of the width, sensitivity 1 needs 12%.
     val autoSwipeThreshold = remember(swipeSensitivity, configuration.screenWidthDp, density) {
-        val screenWidthPx = configuration.screenWidthDp * density
-        (screenWidthPx * (0.45f - 0.33f * swipeSensitivity.coerceIn(0f, 1f))).roundToInt()
+        calculateSwipeThresholdPx(configuration.screenWidthDp * density, swipeSensitivity)
     }
 
-    val primaryColor = MaterialTheme.colorScheme.primary
-    val trackColor = MaterialTheme.colorScheme.surfaceVariant
+    val primaryColor = AppTheme.colorScheme.primary
+    val trackColor = AppTheme.colorScheme.surfaceVariant
 
     Box(
         modifier = modifier
@@ -861,7 +820,7 @@ private fun LegacyMiniPlayer(
             .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
             .background(
                 if (pureBlack && isSystemInDarkTheme()) Color.Black
-                else MaterialTheme.colorScheme.surfaceContainer
+                else AppTheme.colorScheme.surfaceContainer
             )
             .let { baseModifier ->
                 if (swipeThumbnail) {
@@ -897,23 +856,17 @@ private fun LegacyMiniPlayer(
                             },
                             onDragEnd = {
                                 val dragDuration = System.currentTimeMillis() - dragStartTime
-                                // Mean velocity across the gesture, px/ms. The old threshold
-                                // was ~7.4px/ms against a mean that is 1-3px/ms for a real
-                                // swipe, so this branch never fired either.
+                                // Average velocity separates a quick flick from a slow drag.
                                 val velocity = if (dragDuration > 0) totalDragDistance / dragDuration else 0f
                                 val currentOffset = offsetXAnimatable.value
                                 val dragged = kotlin.math.abs(currentOffset)
 
-                                // Either drag past the commit distance, or flick: a short
-                                // fast throw should not have to cross the full distance.
+                                // Let a fast flick skip without crossing the full distance.
                                 val shouldChangeSong = dragged > autoSwipeThreshold ||
                                     (velocity > 0.55f && dragged > autoSwipeThreshold * 0.25f)
 
                                 if (shouldChangeSong) {
-                                    // Through the connection, not player directly: the wrapper
-                                    // is what routes to Cast when casting, re-prepares a player
-                                    // sitting in ENDED/IDLE, and fires the skip callbacks. The
-                                    // raw calls silently did nothing in all of those states.
+                                    // The connection handles casting, ended players, and skip callbacks.
                                     if (currentOffset > 0 && canSkipPrevious) {
                                         playerConnection.seekToPrevious()
                                     } else if (currentOffset <= 0 && canSkipNext) {
@@ -969,7 +922,7 @@ private fun LegacyMiniPlayer(
                     enabled = canSkipNext && !isListenTogetherGuest,
                     onClick = if (isListenTogetherGuest) ({}) else ({ playerConnection.seekToNext() }),
             ) {
-                Icon(painter = painterResource(R.drawable.apple_skip_next), contentDescription = null)
+                SymbolIcon(symbol = sf("SFForwardFill"), contentDescription = null)
             }
         }
 
@@ -980,16 +933,9 @@ private fun LegacyMiniPlayer(
                     .align(if (offsetXAnimatable.value > 0) Alignment.CenterStart else Alignment.CenterEnd)
                     .padding(horizontal = 16.dp)
             ) {
-                Icon(
-                    painter = painterResource(
-                        if (offsetXAnimatable.value > 0) R.drawable.apple_skip_previous else R.drawable.apple_skip_next
-                    ),
-                    contentDescription = null,
-                    tint = primaryColor.copy(
+                SymbolIcon(symbol = if (offsetXAnimatable.value > 0) sf("SFBackwardFill") else sf("SFForwardFill"), contentDescription = null, size = 24.dp, tint = primaryColor.copy(
                         alpha = (offsetXAnimatable.value.absoluteValue / autoSwipeThreshold).coerceIn(0f, 1f)
-                    ),
-                    modifier = Modifier.size(24.dp)
-                )
+                    ))
             }
         }
     }
@@ -1027,14 +973,8 @@ private fun LegacyPlayPauseButton(
         },
     ) {
         when {
-            isListenTogetherGuest -> Icon(
-                painter = painterResource(if (isMuted) R.drawable.volume_off else R.drawable.volume_up),
-                contentDescription = null,
-            )
-            playbackState == Player.STATE_ENDED -> Icon(
-                painter = painterResource(R.drawable.replay),
-                contentDescription = null,
-            )
+            isListenTogetherGuest -> SymbolIcon(symbol = if (isMuted) sf("SFSpeakerSlashFill") else sf("SFSpeakerWave2Fill"), contentDescription = null)
+            playbackState == Player.STATE_ENDED -> SymbolIcon(symbol = sf("SFArrowCounterclockwise"), contentDescription = null)
             else -> AnimatedPlayPauseIcon(isPlaying = effectiveIsPlaying, size = 24.dp)
         }
     }
@@ -1062,7 +1002,7 @@ private fun LegacyMiniMediaInfo(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .background(AppTheme.colorScheme.surfaceVariant)
             )
 
             AsyncImage(
@@ -1073,8 +1013,8 @@ private fun LegacyMiniMediaInfo(
                     .build(),
                 contentDescription = null,
                 contentScale = if (cropAlbumArt) ContentScale.Crop else ContentScale.Fit,
-                placeholder = painterResource(R.drawable.thumbnail_fallback),
-                error = painterResource(R.drawable.thumbnail_fallback),
+                placeholder = rememberNoArtworkPainter(),
+                error = rememberNoArtworkPainter(),
                 modifier = Modifier
                     .fillMaxSize()
                     .clip(ContinuousRoundedRectangle(ThumbnailCornerRadius)),
@@ -1089,12 +1029,7 @@ private fun LegacyMiniMediaInfo(
                             shape = ContinuousRoundedRectangle(ThumbnailCornerRadius),
                         ),
                 ) {
-                    Icon(
-                        painter = painterResource(R.drawable.info),
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.align(Alignment.Center),
-                    )
+                    SymbolIcon(symbol = sf("SFInfoCircle"), contentDescription = null, modifier = Modifier.align(Alignment.Center), tint = AppTheme.colorScheme.error)
                 }
             }
         }
@@ -1106,7 +1041,7 @@ private fun LegacyMiniMediaInfo(
         ) {
             Text(
                 text = mediaMetadata.title,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = AppTheme.colorScheme.onSurface,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
@@ -1117,7 +1052,7 @@ private fun LegacyMiniMediaInfo(
             if (mediaMetadata.artists.any { it.name.isNotBlank() }) {
                 Text(
                     text = mediaMetadata.artists.joinToString { it.name },
-                    color = MaterialTheme.colorScheme.secondary,
+                    color = AppTheme.colorScheme.secondary,
                     fontSize = 12.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -1127,9 +1062,7 @@ private fun LegacyMiniMediaInfo(
     }
 }
 
-// ============================================================================
-// ISOLATED BUTTON COMPOSABLES - Prevent parent recomposition
-// ============================================================================
+// Isolated button composables to prevent parent recomposition.
 
 
 @Composable
@@ -1139,7 +1072,7 @@ private fun FavoriteButton(
     errorColor: Color,
     outlineColor: Color
 ) {
-    val database = LocalDatabase.current
+    val database = LocalDatabase.current.get()
     val playerConnection = LocalPlayerConnection.current ?: return
     val librarySongFlow = remember(songId) { database.song(songId) }
     val librarySong by librarySongFlow.collectAsStateWithLifecycle(initialValue =null)
@@ -1161,12 +1094,7 @@ private fun FavoriteButton(
             )
             .clickable { playerConnection.service.toggleLike() }
     ) {
-        Icon(
-            painter = painterResource(if (isLiked) R.drawable.favorite else R.drawable.favorite_border),
-            contentDescription = null,
-            tint = if (isLiked) errorColor else onSurfaceColor.copy(alpha = 0.7f),
-            modifier = Modifier.size(20.dp)
-        )
+        SymbolIcon(symbol = if (isLiked) sf("heart.fill") else sf("heart"), contentDescription = null, size = 20.dp, tint = if (isLiked) errorColor else onSurfaceColor.copy(alpha = 0.7f))
     }
 }
 @Composable
@@ -1176,7 +1104,7 @@ internal fun MiniPlayerColorExtractor(
     onGradientColorsChange: (List<Color>) -> Unit
 ) {
     val context = LocalContext.current
-    val fallbackColor = MaterialTheme.colorScheme.surfaceContainer.toArgb()
+    val fallbackColor = AppTheme.colorScheme.surfaceContainer.toArgb()
 
     LaunchedEffect(mediaMetadata?.id, miniPlayerBackground) {
         if (miniPlayerBackground == PlayerBackgroundStyle.GRADIENT || miniPlayerBackground == PlayerBackgroundStyle.GLOW_ANIMATED) {
@@ -1192,7 +1120,7 @@ internal fun MiniPlayerColorExtractor(
                 withContext(Dispatchers.IO) {
                     val request = ImageRequest.Builder(context)
                         .data(currentMetadata.thumbnailUrl)
-                        .size(100, 100)
+                        .size(200, 200)
                         .allowHardware(false)
                         .build()
 
@@ -1216,10 +1144,23 @@ internal fun MiniPlayerColorExtractor(
                                     palette.getDarkMutedColor(fallbackColor).let { Color(it) }
                                 ).distinct()
                             } else {
-                                PlayerColorExtractor.extractGradientColors(
-                                    palette = palette,
-                                    fallbackColor = fallbackColor
-                                )
+                                ColorEngine.analyze(bitmap, cacheKey = currentMetadata.thumbnailUrl)
+                                    ?.let { result ->
+                                        val dominant = result.palette.dominant
+                                        listOf(
+                                            dominant,
+                                            dominant.copy(
+                                                red = (dominant.red * 0.6f).coerceAtLeast(0f),
+                                                green = (dominant.green * 0.6f).coerceAtLeast(0f),
+                                                blue = (dominant.blue * 0.6f).coerceAtLeast(0f),
+                                            ),
+                                            Color.Black,
+                                        )
+                                    }
+                                    ?: PlayerColorExtractor.extractGradientColors(
+                                        palette = palette,
+                                        fallbackColor = fallbackColor
+                                    )
                             }
                             miniPlayerGradientCache.put(cacheKey, extractedColors)
                             withContext(Dispatchers.Main) { onGradientColorsChange(extractedColors) }
@@ -1251,29 +1192,19 @@ internal fun MiniPlayerBackgroundLayer(
     
     when (style) {
         PlayerBackgroundStyle.BLUR -> {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                AsyncImage(
-                    model = ImageRequest.Builder(context)
-                        .data(mediaMetadata?.thumbnailUrl)
-                        .size(128, 128)
-                        .allowHardware(false)
-                        .build(),
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .blur(30.dp)
-                )
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.45f))
-                )
-            } else {
-                // Modifier.blur no-ops below API 31 — without this fallback the
-                // gate above left nothing drawn at all. Solid black instead.
-                Box(modifier = Modifier.fillMaxSize().background(Color.Black))
-            }
+            // Baked blur on the 128px decode (see Player.kt BLUR branch): same
+            // look as Modifier.blur(3.dp), zero per-frame RenderEffect cost.
+            BlurredBackdropImage(
+                model = mediaMetadata?.thumbnailUrl,
+                screenBlurRadiusDp = 3f,
+                decodeSize = 128,
+                modifier = Modifier.fillMaxSize(),
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.45f))
+            )
         }
         PlayerBackgroundStyle.GRADIENT -> {
             if (gradientColors.isNotEmpty()) {
@@ -1287,7 +1218,11 @@ internal fun MiniPlayerBackgroundLayer(
         }
         PlayerBackgroundStyle.GLOW_ANIMATED -> {
             if (gradientColors.isNotEmpty()) {
-                val progress: ComposeState<Float> = if (isPlaying) {
+                // Gate on app motion freeze: this mini sits over Home while its
+                // infinite transition would otherwise invalidate every frame of
+                // every scroll. One recomposition per scroll start/end.
+                val motionFrozen = LocalAppMotionFrozen.current
+                val progress: ComposeState<Float> = if (isPlaying && !motionFrozen.value) {
                     val infiniteTransition = rememberInfiniteTransition(label = "GlowAnimation")
                     infiniteTransition.animateFloat(
                         initialValue = 0f,
@@ -1353,7 +1288,8 @@ internal fun MiniPlayerBackgroundLayer(
         }
 
         PlayerBackgroundStyle.LIVE_MESH -> {
-            val rotation: ComposeState<Float> = if (isPlaying) {
+            val motionFrozen = LocalAppMotionFrozen.current
+            val rotation: ComposeState<Float> = if (isPlaying && !motionFrozen.value) {
                 val infiniteTransition = rememberInfiniteTransition(label = "liveMesh")
                 infiniteTransition.animateFloat(
                     initialValue = 0f,
@@ -1376,30 +1312,28 @@ internal fun MiniPlayerBackgroundLayer(
                         scaleY = 1.5f
                     }
             ) {
-                // Modifier.blur no-ops below API 31 — an unblurred rotating 128x128
-                // crop is glitchy, so fall back to solid black there instead.
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    val matrix = remember { ColorMatrix().apply { setToSaturation(1.6f) } }
-                    AsyncImage(
-                        model = ImageRequest.Builder(context)
-                            .data(mediaMetadata?.thumbnailUrl)
-                            .size(128, 128)
-                            .allowHardware(false)
-                            .build(),
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        colorFilter = ColorFilter.colorMatrix(matrix),
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .blur(40.dp)
-                            .graphicsLayer { rotationZ = rotation.value }
-                    )
-                } else {
-                    Box(modifier = Modifier.fillMaxSize().background(Color.Black))
-                }
+                // Baked blur on the 128px decode (see Player.kt BLUR branch note).
+                val matrix = remember { ColorMatrix().apply { setToSaturation(1.6f) } }
+                BlurredBackdropImage(
+                    model = mediaMetadata?.thumbnailUrl,
+                    screenBlurRadiusDp = 3f,
+                    decodeSize = 128,
+                    colorFilter = ColorFilter.colorMatrix(matrix),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { rotationZ = rotation.value },
+                )
                 Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.3f)))
             }
         }
+        PlayerBackgroundStyle.FLUID_MESH -> {
+            MeshGradientBackground(
+                palette = rememberArtworkMeshPalette(mediaMetadata?.thumbnailUrl),
+                trackKey = mediaMetadata?.id,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+
         PlayerBackgroundStyle.STATIC -> {
             val staticColor by rememberPreference(PlayerStaticColorKey, defaultValue = 0xFF1A1A1A.toInt())
             Box(modifier = Modifier.fillMaxSize().background(Color(staticColor)))

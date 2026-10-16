@@ -38,17 +38,11 @@ fun CastPickerSheet(
             .fillMaxWidth()
             .padding(bottom = 24.dp)
     ) {
-        // Header
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(bottom = 16.dp)
         ) {
-            Icon(
-                painter = painterResource(R.drawable.cast),
-                contentDescription = null,
-                modifier = Modifier.size(28.dp),
-                tint = MaterialTheme.colorScheme.primary
-            )
+            SymbolIcon(symbol = sf("airplayvideo"), contentDescription = null, size = 28.dp, tint = MaterialTheme.colorScheme.primary)
             Spacer(modifier = Modifier.width(12.dp))
             Text(
                 text = if (currentlyConnectedRoute != null) "Casting" else "Cast to",
@@ -75,7 +69,6 @@ fun CastPickerSheet(
                 )
             }
         } else if (currentlyConnectedRoute != null) {
-            // Currently connected - show disconnect option
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
@@ -83,12 +76,7 @@ fun CastPickerSheet(
                     .clickable { onDisconnect() }
                     .padding(vertical = 12.dp)
             ) {
-                Icon(
-                    painter = painterResource(R.drawable.cast_connected),
-                    contentDescription = null,
-                    modifier = Modifier.size(24.dp),
-                    tint = MaterialTheme.colorScheme.primary
-                )
+                SymbolIcon(symbol = sf("airplayvideo"), contentDescription = null, size = 24.dp, tint = MaterialTheme.colorScheme.primary)
                 Spacer(modifier = Modifier.width(16.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
@@ -109,19 +97,13 @@ fun CastPickerSheet(
                 )
             }
         } else if (routes.isEmpty()) {
-            // No devices found
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Icon(
-                    painter = painterResource(R.drawable.cast),
-                    contentDescription = null,
-                    modifier = Modifier.size(48.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                )
+                SymbolIcon(symbol = sf("airplayvideo"), contentDescription = null, size = 48.dp, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
                     text = "No Cast devices found",
@@ -136,7 +118,6 @@ fun CastPickerSheet(
                 )
             }
         } else {
-            // Show available devices
             LazyColumn {
                 items(routes) { route ->
                     Row(
@@ -146,12 +127,7 @@ fun CastPickerSheet(
                             .clickable { onRouteSelected(route) }
                             .padding(vertical = 12.dp)
                     ) {
-                        Icon(
-                            painter = painterResource(R.drawable.cast),
-                            contentDescription = null,
-                            modifier = Modifier.size(24.dp),
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
+                        SymbolIcon(symbol = sf("airplayvideo"), contentDescription = null, size = 24.dp, tint = MaterialTheme.colorScheme.onSurface)
                         Spacer(modifier = Modifier.width(16.dp))
                         Text(
                             text = route.name,

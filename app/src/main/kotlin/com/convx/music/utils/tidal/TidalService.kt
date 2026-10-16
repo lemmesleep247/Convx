@@ -34,7 +34,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
-// ─── Data models (lenient — instances vary) ──────────────────────────────────
+// Data models (lenient because provider instances vary)
 
 @Serializable
 data class TidalArtist(
@@ -104,7 +104,7 @@ private data class BtsManifest(
     @SerialName("urls")     val urls: List<String> = emptyList(),
 )
 
-// ─── Live-instance discovery (uptime worker) ─────────────────────────────────
+// Live-instance discovery
 
 @Serializable
 private data class UptimeTarget(@SerialName("url") val url: String = "")
@@ -115,7 +115,6 @@ private data class UptimeResponse(
     @SerialName("streaming") val streaming: List<UptimeTarget> = emptyList(),
 )
 
-// ─── Service ─────────────────────────────────────────────────────────────────
 
 object TidalService {
 
@@ -144,7 +143,7 @@ object TidalService {
     )
 
     // Browser-ish identity so instances that block bots/datacenter UAs still answer.
-    private const val UA = "Mozilla/5.0 (compatible; ViviMusic/1.0)"
+    private const val UA = "Mozilla/5.0 (compatible; Convx/1.0)"
 
     @Volatile private var cachedLive: List<String> = emptyList()
     @Volatile private var cachedAt: Long = 0L

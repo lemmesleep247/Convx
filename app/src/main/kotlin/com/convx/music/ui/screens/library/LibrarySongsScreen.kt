@@ -5,6 +5,8 @@
 
 package com.convx.music.ui.screens.library
 
+import com.convx.music.ui.component.sf
+import com.convx.music.ui.component.SymbolIcon
 import android.Manifest
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -28,16 +30,19 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
+import com.convx.music.ui.ios.compat.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
+import com.convx.music.ui.ios.compat.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
+import com.convx.music.ui.ios.compat.FilterChip
 import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.IconButton
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.Text
+import com.composables.sfsymbols.SfSymbols
+import com.composables.sfsymbols.monochrome.SFArrowClockwise
+import com.composables.sfsymbols.monochrome.SFXmark
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -62,10 +67,11 @@ import com.convx.music.R
 import com.convx.music.constants.CONTENT_TYPE_HEADER
 import com.convx.music.constants.CONTENT_TYPE_SONG
 import com.convx.music.constants.HideExplicitKey
+import com.convx.music.constants.HideVideoSongsKey
+import com.convx.music.constants.DataSaverEnabledKey
 import com.convx.music.constants.LibraryIconsOnlyKey
 import com.convx.music.constants.SongFilter
 import com.convx.music.constants.SongFilterKey
-import com.convx.music.constants.LocalOnlyModeKey
 import com.convx.music.constants.SongSortDescendingKey
 import com.convx.music.constants.SongSortType
 import com.convx.music.constants.SongSortTypeKey
@@ -74,6 +80,9 @@ import com.convx.music.extensions.toMediaItem
 import com.convx.music.playback.queues.ListQueue
 import com.convx.music.ui.component.ListScrollRail
 import com.convx.music.ui.component.LargeScreenTitle
+import com.convx.music.ui.component.TopFadeBlur
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeSource
 import com.convx.music.ui.component.buildAlphabetSectionIndex
 import com.convx.music.ui.component.ChipsRow
 import com.convx.music.ui.component.HideOnScrollFAB
@@ -90,6 +99,7 @@ import com.convx.music.ui.theme.AppleTokens
 import com.convx.music.ui.utils.heroPullZoom
 import com.convx.music.ui.utils.listOverscroll
 import com.convx.music.ui.utils.rememberHeroZoom
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -101,8 +111,8 @@ fun LibrarySongsScreen(
     val context = LocalContext.current
     val menuState = LocalMenuState.current
     val playerConnection = LocalPlayerConnection.current ?: return
-    val isPlaying by playerConnection.isEffectivelyPlaying.collectAsState()
-    val mediaMetadata by playerConnection.mediaMetadata.collectAsState()
+    val isPlaying by playerConnection.isEffectivelyPlaying.collectAsStateWithLifecycle()
+    val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
 
     val (sortType, onSortTypeChange) = rememberEnumPreference(
         SongSortTypeKey,
@@ -112,19 +122,24 @@ fun LibrarySongsScreen(
 
     val (ytmSync) = rememberPreference(YtmSyncKey, true)
     val hideExplicit by rememberPreference(key = HideExplicitKey, defaultValue = false)
+    val hideVideoSongs by rememberPreference(key = HideVideoSongsKey, defaultValue = false)
+    val dataSaverEnabled by rememberPreference(key = DataSaverEnabledKey, defaultValue = false)
     val (libraryIconsOnly) = rememberPreference(LibraryIconsOnlyKey, defaultValue = true)
 
-    val songs by viewModel.allSongs.collectAsState()
-    val isScanning by viewModel.isScanning.collectAsState()
-    val scanResult by viewModel.scanResult.collectAsState()
+    val songsSnapshot by viewModel.allSongs.collectAsStateWithLifecycle()
+    val isScanning by viewModel.isScanning.collectAsStateWithLifecycle()
+    val scanResult by viewModel.scanResult.collectAsStateWithLifecycle()
 
     var storedFilter by rememberEnumPreference(SongFilterKey, SongFilter.LIKED)
-    val (localOnly) = rememberPreference(LocalOnlyModeKey, false)
+    val localOnly = com.convx.music.LocalLocalOnlyMode.current
     // Mirrors what the view model actually queries while local-only mode is on.
     val filter = if (localOnly) SongFilter.LOCAL else storedFilter
     // Pull-to-refresh only: no hero artwork on this screen, so heroZoom.scale
     // goes unread and the modifier contributes just the rubber-band stretch.
     val heroZoom = rememberHeroZoom()
+    // Progressive top blur so the list dissolves under the status bar instead
+    // of cutting off hard — same technique as the rest of the app's screens.
+    val hazeState = remember { HazeState() }
 
 
     var hasStoragePermission by remember { mutableStateOf(false) }
@@ -162,7 +177,7 @@ fun LibrarySongsScreen(
 
     val backStackEntry by navController.currentBackStackEntryAsState()
     val scrollToTop =
-        backStackEntry?.savedStateHandle?.getStateFlow("scrollToTop", false)?.collectAsState()
+        backStackEntry?.savedStateHandle?.getStateFlow("scrollToTop", false)?.collectAsStateWithLifecycle()
 
     LaunchedEffect(scrollToTop?.value) {
         if (scrollToTop?.value == true) {
@@ -171,8 +186,21 @@ fun LibrarySongsScreen(
         }
     }
 
-    val filteredSongs = remember(songs, hideExplicit) {
-        if (hideExplicit) songs.filter { !it.song.explicit } else songs
+    val filteredSongs = remember(
+        songsSnapshot,
+        filter,
+        sortType,
+        sortDescending,
+        hideExplicit,
+        hideVideoSongs,
+        dataSaverEnabled,
+    ) {
+        val snapshotMatchesScreen = songsSnapshot.filter == filter &&
+            songsSnapshot.sortType == sortType &&
+            songsSnapshot.descending == sortDescending &&
+            songsSnapshot.hideExplicit == hideExplicit &&
+            songsSnapshot.hideVideoSongs == (hideVideoSongs || dataSaverEnabled)
+        if (snapshotMatchesScreen) songsSnapshot.songs else emptyList()
     }
 
     Box(
@@ -181,7 +209,7 @@ fun LibrarySongsScreen(
         LazyColumn(
             state = lazyListState,
             overscrollEffect = heroZoom.listOverscroll(),
-            modifier = Modifier.heroPullZoom(heroZoom),
+            modifier = Modifier.heroPullZoom(heroZoom).hazeSource(hazeState),
             contentPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues(),
         ) {
             item(
@@ -196,18 +224,15 @@ fun LibrarySongsScreen(
                 contentType = CONTENT_TYPE_HEADER,
             ) {
                 Row {
-                    Spacer(Modifier.width(12.dp))
+                    Spacer(Modifier.width(AppleTokens.Gutter))
                     FilterChip(
                         label = { Text(stringResource(R.string.songs)) },
                         selected = true,
-                        colors = FilterChipDefaults.filterChipColors(containerColor = MaterialTheme.colorScheme.surface),
+                        colors = FilterChipDefaults.filterChipColors(containerColor = AppTheme.colorScheme.surface),
                         onClick = onDeselect,
                         shape = RoundedCornerShape(16.dp),
                         leadingIcon = {
-                            Icon(
-                                painter = painterResource(R.drawable.close),
-                                contentDescription = ""
-                            )
+                            SymbolIcon(bounceOnEnter = true, symbol = sf("SFXmark"), contentDescription = "")
                         },
                     )
                     // Local-only mode pins the filter to LOCAL in the view model, so
@@ -247,8 +272,8 @@ fun LibrarySongsScreen(
                         if (!hasStoragePermission) {
                             Text(
                                 text = stringResource(R.string.local_audio_permission_needed),
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = AppTheme.typography.bodyLarge,
+                                color = AppTheme.colorScheme.onSurfaceVariant,
                                 textAlign = TextAlign.Center,
                             )
                             Spacer(Modifier.height(16.dp))
@@ -267,8 +292,8 @@ fun LibrarySongsScreen(
                         } else {
                             Text(
                                 text = stringResource(R.string.no_local_files),
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = AppTheme.typography.bodyLarge,
+                                color = AppTheme.colorScheme.onSurfaceVariant,
                                 textAlign = TextAlign.Center,
                             )
                             Spacer(Modifier.height(16.dp))
@@ -298,17 +323,14 @@ fun LibrarySongsScreen(
                         Spacer(Modifier.height(16.dp))
                         Text(
                             text = stringResource(R.string.scanning_local_files),
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = AppTheme.typography.bodyLarge,
+                            color = AppTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
             }
 
-            // Rescan is available whenever local files are already present —
-            // previously the only scan trigger was the empty-state button, so
-            // once anything was found there was no way to pick up newly added
-            // songs.
+            // Keep rescan available after the first local scan.
             if (filter == SongFilter.LOCAL && hasStoragePermission &&
                 filteredSongs.isNotEmpty() && !isScanning
             ) {
@@ -328,17 +350,13 @@ fun LibrarySongsScreen(
                                     R.string.local_files_found,
                                     result.totalFound
                                 ),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.primary,
+                                style = AppTheme.typography.bodyMedium,
+                                color = AppTheme.colorScheme.primary,
                             )
                         }
                         Spacer(Modifier.weight(1f))
                         Button(onClick = { viewModel.scanLocalFiles() }) {
-                            Icon(
-                                painter = painterResource(R.drawable.refresh),
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                            )
+                            SymbolIcon(bounceOnEnter = true, symbol = sf("SFArrowClockwise"), contentDescription = null, size = 18.dp)
                             Spacer(Modifier.width(8.dp))
                             Text(stringResource(R.string.scan_local_files))
                         }
@@ -368,8 +386,8 @@ fun LibrarySongsScreen(
                                 SongSortType.PLAY_TIME -> R.string.sort_by_play_time
                             }
                         ),
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        style = AppTheme.typography.titleSmall,
+                        color = AppTheme.colorScheme.onSurface,
                     )
 
                     Spacer(Modifier.weight(1f))
@@ -380,8 +398,8 @@ fun LibrarySongsScreen(
                             filteredSongs.size,
                             filteredSongs.size
                         ),
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.secondary,
+                        style = AppTheme.typography.titleSmall,
+                        color = AppTheme.colorScheme.secondary,
                     )
 
                     SortPopupButton(
@@ -420,10 +438,7 @@ fun LibrarySongsScreen(
                                 }
                             },
                         ) {
-                            Icon(
-                                painter = painterResource(R.drawable.more_vert),
-                                contentDescription = null,
-                            )
+                            SymbolIcon(bounceOnEnter = true, symbol = sf("ellipsis"), contentDescription = null)
                         }
                     },
                     modifier =
@@ -445,6 +460,12 @@ fun LibrarySongsScreen(
                 )
             }
         }
+
+        TopFadeBlur(
+            hazeState = hazeState,
+            pageColor = AppTheme.colorScheme.background,
+            modifier = Modifier.align(Alignment.TopCenter),
+        )
 
         // Fast-scrub rail. Present at every sort: letters when the list is ordered by
         // name, a proportional thumb otherwise. A scrubber that vanishes when you change
@@ -471,6 +492,7 @@ fun LibrarySongsScreen(
                     ),
                 )
             },
+            hazeState = hazeState,
         )
     }
 }

@@ -16,7 +16,6 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
@@ -145,43 +144,34 @@ fun ScrollingWaveformSeekBar(
 }
 
 /**
- * Playback position as a 0..1 fraction. While playing it refreshes once per frame
- * straight off the player's clock — polling on a timer makes the waveform advance in
- * visible steps; this keeps it gliding. Backed by a float state, so callers that read
- * it inside a draw lambda repaint without recomposing.
+ * Playback position as a 0..1 fraction, read straight off the player's clock.
+ * Backed by a float state, so callers that read it
+ * inside a draw lambda repaint without recomposing.
  *
- * While paused it drops to a slow poll. withFrameMillis keeps Compose's frame clock
- * running for as long as it is awaited, so leaving the per-frame loop on while paused
- * kept the whole app rendering at display rate with nothing on screen changing — and
- * anything sampling a backdrop (the floating tab bar) then re-recorded the screen on
- * every one of those ticks. The slow poll still tracks a scrub made while paused;
- * writing an unchanged float doesn't invalidate, so it costs nothing when idle.
+ * Polled, not per-frame: a withFrameMillis loop kept the whole app — and the glass
+ * behind the floating tab bar — redrawing at display rate for as long as music played,
+ * to move a bar by fractions of a pixel. At 100ms a full-width bar steps about half a
+ * pixel, which still reads as gliding. Writing an unchanged float doesn't invalidate.
  */
 @Composable
 fun rememberPlaybackFraction(player: Player, isPlaying: Boolean): State<Float> {
     val fraction = remember { mutableFloatStateOf(0f) }
     LaunchedEffect(player, isPlaying) {
-        fun sample() {
+        val interval = if (isPlaying) PlayingPollIntervalMs else PausedPollIntervalMs
+        while (isActive) {
             val duration = player.duration
             fraction.floatValue = if (duration > 0L) {
                 (player.currentPosition.toFloat() / duration).coerceIn(0f, 1f)
             } else {
                 0f
             }
-        }
-        if (isPlaying) {
-            while (isActive) {
-                withFrameMillis { sample() }
-            }
-        } else {
-            while (isActive) {
-                sample()
-                delay(PausedPollIntervalMs)
-            }
+            delay(interval)
         }
     }
     return fraction
 }
+
+private const val PlayingPollIntervalMs = 100L
 
 /** Slow enough to keep the app idle, fast enough that a scrub while paused tracks. */
 private const val PausedPollIntervalMs = 250L

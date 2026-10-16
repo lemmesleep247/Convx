@@ -14,7 +14,11 @@ import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.withContext
 
 class YouTubeAlbumRadio(
-    private var playlistId: String,
+    @Volatile private var playlistId: String,
+    @Volatile private var albumSongCount: Int = 0,
+    @Volatile private var continuation: String? = null,
+    @Volatile private var firstTimeLoaded: Boolean = false,
+    private var restoredStatus: Queue.Status? = null,
 ) : Queue {
     override val preloadItem: MediaMetadata? = null
 
@@ -23,30 +27,43 @@ class YouTubeAlbumRadio(
             playlistId = playlistId
         )
 
-    private var albumSongCount = 0
-    private var continuation: String? = null
-    private var firstTimeLoaded: Boolean = false
+    override suspend fun getInitialStatus(): Queue.Status {
+        restoredStatus?.let {
+            restoredStatus = null
+            return it
+        }
 
-    override suspend fun getInitialStatus(): Queue.Status = withContext(IO) {
-        val albumSongs = YouTube.albumSongs(playlistId).getOrThrow()
-        albumSongCount = albumSongs.size
-        Queue.Status(
-            title = albumSongs.first().album?.name.orEmpty(),
-            items = albumSongs.map { it.toMediaItem() },
-            mediaItemIndex = 0
-        )
+        return withContext(IO) {
+            val albumSongs = YouTube.albumSongs(playlistId).getOrThrow()
+            albumSongCount = albumSongs.size
+            Queue.Status(
+                title = albumSongs.firstOrNull()?.album?.name.orEmpty(),
+                items = albumSongs.map { it.toMediaItem() },
+                mediaItemIndex = 0
+            )
+        }
     }
 
     override fun hasNextPage(): Boolean = !firstTimeLoaded || continuation != null
+
+    fun persistenceData() = QueueState(playlistId, albumSongCount, continuation, firstTimeLoaded)
 
     override suspend fun nextPage(): List<MediaItem> = withContext(IO) {
         val nextResult = YouTube.next(endpoint, continuation).getOrThrow()
         continuation = nextResult.continuation
         if (!firstTimeLoaded) {
             firstTimeLoaded = true
-            nextResult.items.subList(albumSongCount, nextResult.items.size).map { it.toMediaItem() }
+            nextResult.items.subList(albumSongCount.coerceIn(0, nextResult.items.size), nextResult.items.size)
+                .map { it.toMediaItem() }
         } else {
             nextResult.items.map { it.toMediaItem() }
         }
     }
+
+    data class QueueState(
+        val playlistId: String,
+        val albumSongCount: Int,
+        val continuation: String?,
+        val firstTimeLoaded: Boolean,
+    )
 }

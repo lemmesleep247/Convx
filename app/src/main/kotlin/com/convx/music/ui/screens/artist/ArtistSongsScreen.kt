@@ -5,119 +5,72 @@
 
 package com.convx.music.ui.screens.artist
 
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import com.convx.music.ui.component.sf
+import com.convx.music.ui.component.SymbolIcon
+import androidx.compose.ui.res.painterResource
 import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.ExperimentalFoundationApi
 
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.Box
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.Row
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.Spacer
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.padding
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.lazy.LazyColumn
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.lazy.itemsIndexed
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.lazy.rememberLazyListState
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.material3.ExperimentalMaterial3Api
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.Icon
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.IconButton
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.MaterialTheme
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.Text
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.TopAppBar
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.IconButton
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.Text
+import com.convx.music.ui.ios.compat.TopAppBar
 import androidx.compose.material3.TopAppBarScrollBehavior
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.Composable
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.collectAsState
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.Alignment
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.Modifier
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.platform.LocalContext
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.platform.LocalHapticFeedback
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.ui.res.painterResource
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.res.pluralStringResource
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.unit.dp
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.navigation.NavController
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import com.composables.sfsymbols.SfSymbols
 import com.convx.music.LocalPlayerAwareWindowInsets
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.LocalPlayerConnection
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.R
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.ArtistSongSortDescendingKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.ArtistSongSortType
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.ArtistSongSortTypeKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.CONTENT_TYPE_HEADER
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.HideExplicitKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.extensions.toMediaItem
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.playback.queues.ListQueue
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.component.buildAlphabetSectionIndex
 import com.convx.music.ui.component.ListScrollRail
 import com.convx.music.ui.component.HideOnScrollFAB
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.component.IconButton
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.component.LocalMenuState
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.component.SongListItem
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.component.SortHeader
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.menu.SongMenu
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.utils.backToMain
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.utils.bounceClick
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.utils.combinedBounceClick
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.utils.listItemShape
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.utils.rememberEnumPreference
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.utils.rememberPreference
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.viewmodels.ArtistSongsViewModel
+import com.convx.music.ui.component.ScreenLargeTitle
+import com.convx.music.ui.component.ScreenScaffold
+import com.convx.music.ui.component.rememberTitleCollapseProgressState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -130,8 +83,8 @@ fun ArtistSongsScreen(
     val menuState = LocalMenuState.current
     val haptic = LocalHapticFeedback.current
     val playerConnection = LocalPlayerConnection.current ?: return
-    val isPlaying by playerConnection.isEffectivelyPlaying.collectAsState()
-    val mediaMetadata by playerConnection.mediaMetadata.collectAsState()
+    val isPlaying by playerConnection.isEffectivelyPlaying.collectAsStateWithLifecycle()
+    val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
 
     val (sortType, onSortTypeChange) = rememberEnumPreference(
         ArtistSongSortTypeKey,
@@ -142,17 +95,27 @@ fun ArtistSongsScreen(
         true
     )
     val hideExplicit by rememberPreference(key = HideExplicitKey, defaultValue = false)
-    val artist by viewModel.artist.collectAsState()
-    val songs by viewModel.songs.collectAsState()
+    val artist by viewModel.artist.collectAsStateWithLifecycle()
+    val songs by viewModel.songs.collectAsStateWithLifecycle()
     val lazyListState = rememberLazyListState()
+    val artistSongsTitleProgress = rememberTitleCollapseProgressState(lazyListState, titleItemKey = "title")
 
-    Box(
-        modifier = Modifier.fillMaxSize(),
-    ) {
+    ScreenScaffold(
+        title = artist?.artist?.name.orEmpty(),
+        titleAlpha = 0f,
+        titleAlphaProvider = { artistSongsTitleProgress.value },
+        onBack = navController::navigateUp,
+        onBackLongClick = navController::backToMain,
+    ) { chrome ->
         LazyColumn(
             state = lazyListState,
+            modifier = chrome.contentModifier(),
             contentPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues(),
         ) {
+            item(key = "title") {
+                ScreenLargeTitle(artist?.artist?.name.orEmpty())
+            }
+
             item(
                 key = "header",
                 contentType = CONTENT_TYPE_HEADER,
@@ -179,8 +142,8 @@ fun ArtistSongsScreen(
 
                     Text(
                         text = pluralStringResource(R.plurals.n_song, songs.size, songs.size),
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.secondary,
+                        style = AppTheme.typography.titleSmall,
+                        color = AppTheme.colorScheme.secondary,
                     )
                 }
             }
@@ -207,10 +170,7 @@ fun ArtistSongsScreen(
                                 }
                             },
                         ) {
-                            Icon(
-                                painter = painterResource(R.drawable.more_vert),
-                                contentDescription = null,
-                            )
+                            SymbolIcon(symbol = sf("ellipsis"), contentDescription = null)
                         }
                     },
                     modifier =
@@ -245,22 +205,6 @@ fun ArtistSongsScreen(
                 )
             }
         }
-
-        TopAppBar(
-            windowInsets = appTopBarWindowInsets(),
-            title = { Text(artist?.artist?.name.orEmpty()) },
-            navigationIcon = {
-                IconButton(
-                    onClick = navController::navigateUp,
-                    onLongClick = navController::backToMain,
-                ) {
-                    Icon(
-                        painterResource(R.drawable.arrow_back),
-                        contentDescription = null,
-                    )
-                }
-            },
-        )
 
         ListScrollRail(
             lazyListState = lazyListState,

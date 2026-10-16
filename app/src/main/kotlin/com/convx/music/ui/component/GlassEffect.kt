@@ -7,11 +7,13 @@ package com.convx.music.ui.component
 
 import android.app.ActivityManager
 import android.os.Build
+import com.convx.music.LocalAmbientBackgroundColor
 import androidx.compose.foundation.shape.CornerBasedShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
+import com.convx.music.ui.ios.compat.AppTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.State
 import androidx.compose.foundation.background
 import androidx.compose.ui.draw.clip
 import androidx.compose.runtime.remember
@@ -20,22 +22,27 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.isSpecified
+import com.convx.music.ui.theme.isHueless
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
+import com.convx.music.ui.component.backdrop.Backdrop
 import com.convx.music.ui.component.backdrop.BackdropEffectScope
+import com.convx.music.ui.component.backdrop.backdrops.LayerBackdrop
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
-import com.convx.music.ui.component.backdrop.Backdrop
 import com.convx.music.ui.component.backdrop.drawBackdrop
 import com.convx.music.ui.component.backdrop.isRenderEffectSupported
 import com.convx.music.ui.component.backdrop.effects.blur
 import com.convx.music.ui.component.backdrop.effects.colorControls
 import com.convx.music.ui.component.backdrop.effects.lens
+import com.convx.music.ui.component.backdrop.poolLens
 import com.convx.music.ui.component.backdrop.highlight.Highlight
 import com.convx.music.ui.component.backdrop.highlight.HighlightStyle
 import com.convx.music.ui.component.backdrop.shadow.Shadow
+import com.convx.music.ui.utils.outerDarkRim
 
 /**
  * User-configurable parameters of the liquid glass effect, sourced from DataStore
@@ -45,17 +52,17 @@ import com.convx.music.ui.component.backdrop.shadow.Shadow
 @Stable
 data class GlassEffectConfig(
     val globalEnabled: Boolean = true,
-    val vibrancy: Float = 1.2f,
-    /** Blur in dp applied to glass pills. User requested 2dp for landscape fix. */
-    val blurRadius: Float = 2f,
-    /** 0..1, mapped to 0..[LENS_MAX_DP] dp of lens refraction height. 0.4 = 40%. */
-    val lensHeight: Float = 0.4f,
-    /** 0..1, mapped to 0..[LENS_MAX_DP] dp of lens refraction amount. 0.6 = 60%. */
-    val lensAmount: Float = 0.6f,
+    val vibrancy: Float = 2.0f,
+    /** Blur in dp applied to glass pills. Nav spec = 3dp (Q16). */
+    val blurRadius: Float = 3f,
+    /** 0..1, mapped to 0..[LENS_MAX_DP] dp of lens refraction height. Nav spec .60 (Q16). */
+    val lensHeight: Float = 0.60f,
+    /** 0..1, mapped to 0..[LENS_MAX_DP] dp of lens refraction amount. Nav spec .69 (Q16). */
+    val lensAmount: Float = 0.69f,
     val chromaticAberration: Boolean = false,
     val depthEffect: Boolean = false,
-    /** [Color.Unspecified] means adaptive: dark grey on dark. */
-    val surfaceTintColor: Color = Color(0xFF1A1A1A),
+    /** [Color.Unspecified] means adaptive: derived from the theme surface. */
+    val surfaceTintColor: Color = Color.Unspecified,
     /** Specular rim ("pluck") colour. [Color.Unspecified] keeps the default white. */
     val highlightColor: Color = Color.Unspecified,
     /** Specular rim opacity, 0..1. */
@@ -68,8 +75,9 @@ data class GlassEffectConfig(
     /** Puck wash opacity at rest. It eases toward clear while pressed. */
     val puckOpacity: Float = 0.8f,
     val surfaceOpacity: Float = 0.5f,
-    val textColor: Color = Color.White,
-    val playerEnabled: Boolean = true,
+    /** [Color.Unspecified] means adaptive monochromatic label (dark over light
+     *  content, light over dark) — resolved by [resolvedTextColor]. */
+    val textColor: Color = Color.Unspecified,
     val miniPlayerEnabled: Boolean = true,
     val navBarEnabled: Boolean = true,
     /** Tablet side panel — split from [navBarEnabled] so it can differ from the
@@ -84,127 +92,72 @@ data class GlassEffectConfig(
     val sidePanelLensHeight: Float = 0.4f,
     val sidePanelLensAmount: Float = 0.6f,
     val sidePanelColor: Color = Color.Unspecified,
-    val sidePanelSurfaceOpacity: Float = 0.5f,
-    val sidePanelTextColor: Color = Color.White,
+    val sidePanelSurfaceOpacity: Float = 0.75f,
+    val sidePanelTextColor: Color = Color.Unspecified,
 ) {
-    /** A copy of this config with the shared effect fields swapped for the
-     *  side panel's own — pass this to Modifier.liquidGlass for the side
-     *  panel instead of the raw config, since liquidGlass always reads the
-     *  shared fields generically. */
-    fun forSidePanel(): GlassEffectConfig = copy(
+    /** Copies the side panel's effect settings into the shared fields. */
+    fun forSidePanel(isDark: Boolean? = null): GlassEffectConfig = copy(
         vibrancy = sidePanelVibrancy,
         blurRadius = sidePanelBlurRadius,
         lensHeight = sidePanelLensHeight,
         lensAmount = sidePanelLensAmount,
-        surfaceTintColor = sidePanelColor,
+        surfaceTintColor = if (sidePanelColor.isSpecified || isDark == null) sidePanelColor
+            else if (isDark) Color.Black else Color.White,
         surfaceOpacity = sidePanelSurfaceOpacity,
         textColor = sidePanelTextColor,
     )
-    /**
-     * Whether the glass effect should be rendered for [component], taking the master
-     * switch and the per-component switch into account.
-     */
+    /** Uses the shared blur and lens settings for accessory glass. */
+    fun forAccessory(): GlassEffectConfig = this
+    /** Whether glass is enabled globally and for [component]. */
     fun isEnabledFor(component: GlassComponent): Boolean =
         globalEnabled && when (component) {
-            GlassComponent.PLAYER -> playerEnabled
             GlassComponent.MINI_PLAYER -> miniPlayerEnabled
             GlassComponent.NAV_BAR -> navBarEnabled
             GlassComponent.SIDE_PANEL -> sidePanelEnabled
         }
 
-    /**
-     * True when at least one surface would render glass. Used to decide whether
-     * capturing the app backdrop is worth anything at all — with every component
-     * off, nothing samples it and recording it is pure cost.
-     */
+    /** Whether any glass surface may use the captured app backdrop. */
     val anyComponentEnabled: Boolean
-        get() = globalEnabled &&
-            (playerEnabled || miniPlayerEnabled || navBarEnabled || sidePanelEnabled)
+        get() = globalEnabled
 }
 
-/** UI surfaces that can individually opt in or out of the liquid glass effect. */
 /**
- * How a glass surface is rendered.
- *
- * The full liquid treatment costs a screen capture plus a RenderEffect chain per
- * surface. The cheaper styles exist both as a performance escape hatch and as a
- * look in their own right — and because with glass off entirely the chrome fell
- * back to an opaque fill, which reads as a black blob over content.
+ * Rendering modes for glass surfaces, from refractive liquid to a translucent fill.
  */
 enum class GlassStyle {
     /** Blur + saturation + lens refraction + specular rim. The default. */
     LIQUID,
 
-    /** Blur and saturation only: no lens, no rim, no chromatic aberration.
-     *  Still captures the backdrop, so it is frosted, just not refractive. */
+    /** Blur and saturation without lens refraction or an edge rim. */
     BLUR,
 
-    /** No capture at all — a translucent tinted fill at the configured opacity.
-     *  Cheapest by a wide margin: nothing is sampled, nothing is blurred. */
+    /** Translucent tint without backdrop capture or blur. */
     TRANSPARENT,
 }
 
-/**
- * True when [Modifier.liquidGlass] should take its cheap translucent-tint path
- * (no backdrop capture, no RenderEffect) instead of the full liquid treatment:
- * either the user explicitly chose [GlassStyle.TRANSPARENT], or the platform
- * can't do the real blur at all ([renderEffectSupported] false, below Android
- * 12). The unsupported-platform case used to fall through to a hardcoded
- * opaque-black surface instead — the "solid black instead of any
- * transparency" bug reported on older/low-end devices. Pulled out as a plain
- * function so the fallback decision is unit-testable without a Composition.
- */
+/** Uses a translucent tint when selected or when RenderEffect is unsupported. */
 fun shouldUseTranslucentGlassFallback(style: GlassStyle, renderEffectSupported: Boolean): Boolean =
     style == GlassStyle.TRANSPARENT || !renderEffectSupported
 
 enum class GlassComponent {
-    PLAYER,
     MINI_PLAYER,
     NAV_BAR,
     SIDE_PANEL,
 }
 
-/**
- * Maximum lens refraction in dp when the 0..1 preference sliders are at 1. The
- * defaults (0.5) land on the 24dp height/amount used by the library author's
- * Apple-matched LiquidBottomTabs recipe.
- */
+/** Maximum lens height and amount at a preference value of 1. */
 internal const val LENS_MAX_DP = 48f
 
-/**
- * The full screen player uses a much heavier blur than the glass pills, matching
- * Apple Music where the now playing background is a deep-blurred material while
- * only the small controls are clear liquid glass.
- */
+/** Extra blur applied to the full-screen player's background. */
 internal const val PLAYER_BLUR_MULTIPLIER = 4f
 
-/**
- * Lowest resolution fraction glass surfaces are rendered at (heavy blur hides it).
- *
- * Measured empirically: flattening this across all surfaces and pushing it to
- * 0.05 was tried and reverted. Two findings worth not re-deriving. First, the
- * scale is only safe in proportion to the blur — pixel-sized effect params are
- * pre-multiplied by it, so at 0.05 the default 2dp blur collapsed to ~0.3px on a
- * 3x screen and the 20x upscale had nothing smoothing it, which reads as
- * pixelation, not frost. Second, applying it at zero blur softens surfaces whose
- * whole look is clear content, for no gain: the surfaces where compression
- * actually pays (the full screen player, 12x the nav bar's area at 4x the blur)
- * already reach this floor through the ramp.
- *
- * Keep the ramp in [glassResolutionScale] rather than a flat value.
- */
+/** Minimum backdrop resolution used for heavily blurred surfaces. */
 internal const val MIN_GLASS_RESOLUTION_SCALE = 0.30f
 
-/** Blur radius (dp) at or above which the minimum resolution scale is safe to use. */
-internal const val FULL_QUALITY_BLUR_DP = 8f
+/** Blur radius at which the capture can use [MIN_GLASS_RESOLUTION_SCALE]. */
+internal const val FULL_QUALITY_BLUR_DP = 2.5f
 
-/**
- * Resolution fraction at which a glass surface records and processes its backdrop.
- * Blur masks the upscaling, so the more blur, the lower the resolution can go: at
- * [FULL_QUALITY_BLUR_DP]+ dp of blur the surface renders at
- * [MIN_GLASS_RESOLUTION_SCALE]; with no blur it stays at full resolution so the
- * clear glass center remains crisp.
- */
+/** Scales capture resolution with blur; clear surfaces remain full resolution. */
 fun glassResolutionScale(blurRadiusDp: Float): Float {
     val t = (blurRadiusDp / FULL_QUALITY_BLUR_DP).coerceIn(0f, 1f)
     return 1f - t * (1f - MIN_GLASS_RESOLUTION_SCALE)
@@ -216,12 +169,7 @@ fun glassResolutionScale(blurRadiusDp: Float): Float {
  */
 fun isGlassSupported(sdkInt: Int = Build.VERSION.SDK_INT): Boolean = sdkInt >= Build.VERSION_CODES.S
 
-/**
- * Devices Android flags as low-RAM ([ActivityManager.isLowRamDevice]) can't push the
- * RenderEffect/RuntimeShader chain (blur + lens + vibrancy, several offscreen layers
- * per glass surface) without dropped frames, so glass is skipped there in favor of the
- * flat fallback color every glass call site already has for [isGlassSupported] == false.
- */
+/** Whether Android classifies this device as low-RAM. */
 @Composable
 fun isLowRamDevice(): Boolean {
     val context = LocalContext.current
@@ -234,105 +182,102 @@ fun isLowRamDevice(): Boolean {
 @Composable
 fun isGlassAllowed(): Boolean = isGlassSupported() && !isLowRamDevice()
 
-/**
- * Maps the user-facing vibrancy preference (0..2, default 1) to a saturation multiplier.
- * A value of 1 matches the library's built-in vibrancy effect (saturation x1.5), 0 leaves
- * colors untouched and 2 doubles the saturation.
- */
+/** Maps the 0..2 vibrancy preference to a saturation multiplier. */
 fun glassSaturation(vibrancy: Float): Float = 1f + 0.5f * vibrancy.coerceIn(0f, 2f)
 
-/**
- * A content colour guaranteed to read against the glass it sits on.
- *
- * Picking purely from the app theme is not enough: what a glass pill actually
- * shows is the content behind it, tinted by [tint] at [opacity]. A dark tint at
- * high opacity is dark even in light mode, and a light tint is light even in
- * dark mode — so theme-derived text goes invisible at exactly the settings a
- * user is most likely to reach for. This composites the same two layers the
- * surface draws and picks from the result.
- *
- * @param behind the colour behind the glass — the theme surface, or the screen's
- * artwork tint where one is known.
- * @param tint the glass surface tint; [Color.Unspecified] means untinted.
- * @param opacity how strongly [tint] covers [behind], matching surfaceOpacity.
- */
+/** Picks readable content color from the glass tint composited over [behind]. */
 fun glassContentColorFor(behind: Color, tint: Color, opacity: Float): Color {
     val effective = if (tint.isSpecified) {
         lerp(behind, tint, opacity.coerceIn(0f, 1f))
     } else {
         behind
     }
-    // Same targets the rest of the app uses for on-surface text, so glass chrome
-    // matches ordinary content rather than being its own special case.
+    // Match the app's standard on-surface text colors.
     return if (effective.luminance() > 0.5f) Color(0xFF1A1A1A) else Color.White
 }
 
-/**
- * Apple's floating pills have a thin, subtle specular line along the top edge — a
- * hint of light, not a bold ring. The library's [Highlight.Default] (0.5dp, white @
- * 0.5 alpha) reads as near-invisible at typical density, but a wide bright rim
- * overshoots in the other direction, so this lands narrower and dimmer than that.
- */
-private val EdgeHighlightWidth = 0.8f.dp
+/** Width of the subtle top-edge highlight. */
+internal val EdgeHighlightWidth = 0.8f.dp
 private const val EdgeHighlightAlpha = 0.55f
 
-/**
- * Real Liquid Glass isn't a highlight painted on at a fixed angle: Apple describes
- * the material as dynamically bending and shaping light "in real time, every single
- * frame," and community shader recreations implement this as one or more soft light
- * sources drifting across the surface over time (e.g. animated via sin/cos of the
- * frame clock). A perfectly static 45° rim reads as flat and synthetic by
- * comparison, so the highlight's light angle slowly drifts instead of sitting still.
- */
+/** Range and timing for the highlight's slow angle drift. */
 private const val HighlightAngleMin = 25f
 private const val HighlightAngleMax = 65f
 private const val HighlightDriftMillis = 7000
 
 /** Midpoint of the [HighlightAngleMin]..[HighlightAngleMax] sweep — see the use site. */
-private const val HighlightAngleFrozen = (HighlightAngleMin + HighlightAngleMax) / 2f
+internal const val HighlightAngleFrozen = (HighlightAngleMin + HighlightAngleMax) / 2f
 
 val LocalGlassEffectConfig = staticCompositionLocalOf { GlassEffectConfig() }
+
+/**
+ * Appearance follows the active artwork page as well as the app theme -- unless the
+ * chrome has sampled what is actually behind it ([LocalSampledChromeDark]), which wins.
+ */
+@Composable
+fun glassUsesDarkAppearance(): Boolean =
+    LocalSampledChromeDark.current
+        ?: (com.convx.music.LocalAmbientDarkChrome.current.value ||
+            AppTheme.colorScheme.surface.luminance() <= 0.5f)
+
+/** Forces glass on for fixed controls such as floating buttons. */
+fun GlassEffectConfig.withFixedStyle(): GlassEffectConfig = copy(globalEnabled = true)
+
+/** Resolves configured or adaptive monochromatic text color for glass chrome. */
+@Composable
+fun GlassEffectConfig.resolvedTextColor(
+    activeTint: Color = Color.Unspecified,
+    isSelected: Boolean = false,
+    isTitle: Boolean = false,
+    isUnselectedTabLabel: Boolean = false,
+): Color {
+    if (textColor.isSpecified) return textColor
+    val isDark = glassUsesDarkAppearance()
+    val ambient = if (activeTint.isSpecified) activeTint else LocalAmbientBackgroundColor.current.value
+    // Use sampled backdrop appearance when available; otherwise account for artwork tint.
+    val effectiveDark = LocalSampledChromeDark.current ?: (isDark || (ambient.isSpecified && !ambient.isHueless()))
+    return com.convx.music.ui.theme.GlassTintTokens.glassContentColor(
+        isDark = effectiveDark,
+        activeTint = ambient,
+        isSelected = isSelected,
+        isTitle = isTitle,
+        isUnselectedTabLabel = isUnselectedTabLabel,
+    )
+}
 
 /** The backdrop content (app UI) that glass surfaces sample from. */
 val LocalAppBackdrop = staticCompositionLocalOf<Backdrop> { error("No AppBackdrop provided") }
 
-/**
- * When set, glass surfaces in scope pool one recorded+effect-processed layer
- * per bucket this returns instead of a single reused layer — see
- * `drawBackdrop`'s `loopBucket` parameter. Meant for surfaces sampling a
- * backdrop whose source loops (a looping canvas video): a bucket's visual
- * output is identical every repeat, so it only needs computing once, ever.
- * Null (default) keeps every surface's existing single-layer behavior.
- */
+/** Processed backdrop shared by surfaces with matching blur and vibrancy settings. */
+@Stable
+class PooledGlass(
+    val backdrop: LayerBackdrop,
+    val blurRadiusDp: Float,
+    val vibrancy: Float,
+)
+
+val LocalPooledGlass = staticCompositionLocalOf<PooledGlass?> { null }
+
+/** True while app-level motion is active. Freeze nested captures too, since recording them each frame redraws their full subtree. */
+val LocalAppBackdropFrozen = staticCompositionLocalOf<() -> Boolean> { { false } }
+
+/** Reactive state mirror used to pause animations when backdrop capture is frozen. */
+val LocalAppMotionFrozen = staticCompositionLocalOf<State<Boolean>> {
+    object : State<Boolean> {
+        override val value: Boolean get() = false
+    }
+}
+
+/** Optional cache key for reusing glass output over looping video backdrops. */
 val LocalBackdropLoopBucket = staticCompositionLocalOf<(() -> Int)?> { null }
 
-/**
- * Whether the Apple Music-styled UI (iOS 26/27 liquid glass look, SF-style tab icons,
- * denser glass) is active. Read by [com.convx.music.ui.screens.Screens] consumers to pick
- * between the classic and iOS icon sets.
- */
+/** Whether the Apple Music style is active, used to select its matching icons. */
 val LocalAppleMusicUi = staticCompositionLocalOf { false }
 
 /**
- * Renders this composable as a liquid glass surface sampling [LocalAppBackdrop].
- *
- * Applies the configured vibrancy, blur and lens refraction effects, then draws the
- * surface tint (theme-adaptive unless the user picked a color). Effects whose
- * parameters make them a no-op are skipped entirely to keep the RenderEffect chain
- * as short as possible, and the backdrop is processed at [glassResolutionScale] of
- * the surface resolution. Returns the receiver unchanged on devices without
- * RenderEffect support.
- *
- * [applyEdgeEffects] controls the edge treatment that makes small pills read as
- * physical glass: lens refraction, the specular highlight rim and the drop shadow.
- * It should be false for large surfaces such as the full screen player, where the
- * rim renders as a stray band of light.
- *
- * [blurRadiusDp] overrides the configured blur; the full screen player passes a
- * heavier value ([PLAYER_BLUR_MULTIPLIER]x) than the clear glass pills.
- *
- * [shape] is restricted to [CornerBasedShape] because the backdrop lens effect throws
- * [UnsupportedOperationException] for any other shape type.
+ * Draws a glass surface from [LocalAppBackdrop], applying configured blur,
+ * vibrancy, tint, and optional edge effects. No-op on devices without
+ * RenderEffect support. [shape] must be a [CornerBasedShape] for lens effects.
  */
 @Composable
 fun Modifier.liquidGlass(
@@ -340,28 +285,33 @@ fun Modifier.liquidGlass(
     shape: CornerBasedShape = RoundedCornerShape(0.dp),
     applyEdgeEffects: Boolean = true,
     blurRadiusDp: Float = config.blurRadius,
-    // The nav bar and mini player want a dimmer specular rim than the default.
+    // Component-specific specular rim opacity.
     highlightAlpha: Float = EdgeHighlightAlpha,
-    // Fraction of the surface resolution the backdrop is recorded at. Defaults to
-    // [glassResolutionScale] for the blur radius (cheap, and the blur masks the
-    // upscaling) — pass 1f for a crisp full-resolution backdrop, e.g. the small
-    // glass buttons whose whole look is clear content, not heavy frost.
+    // Capture resolution; use 1f for crisp, unblurred glass controls.
     backdropScale: Float = glassResolutionScale(blurRadiusDp),
-    // Forwarded to drawBackdrop: while this returns true the surface holds its
-    // last capture instead of re-recording the screen. Used by the floating tab
-    // bar for the frames of its inline/expanded/search transition, where the
-    // bar's bounds animate and would otherwise force a full-screen re-capture
-    // plus effect chain on every frame.
-    frozen: () -> Boolean = { false },
-    // Forwarded to drawBackdrop: see LocalBackdropLoopBucket's doc. Defaults to
-    // whatever's provided in composition, so player control pills over a
-    // looping video pick this up without every call site naming it explicitly.
+    // Hold the last capture while frozen. Add any component-specific freeze at the call site.
+    frozen: () -> Boolean = LocalAppBackdropFrozen.current,
+    // Defaults to the current loop bucket for animated backdrops.
     loopBucket: (() -> Int)? = LocalBackdropLoopBucket.current,
+    /** Optional artwork tint for the rim; [Color.Unspecified] uses the configured highlight. */
+    rimTintColor: Color = Color.Unspecified,
+    /** Disable for surfaces that draw their own elevation shadow. */
+    outerShadow: Boolean = true,
 ): Modifier {
     if (!isGlassAllowed()) return this
-    val backdrop = LocalAppBackdrop.current
+    val pool = LocalPooledGlass.current
+    // Only when the pool holds this exact treatment; a caller that asked for its own
+    // radius (the full player's heavier blur) still runs its own chain.
+    // Dispersion needs the single-shape shader, so a surface asking for it keeps its own chain.
+    val usePool = pool != null &&
+        blurRadiusDp == pool.blurRadiusDp &&
+        config.vibrancy == pool.vibrancy &&
+        !config.chromaticAberration
+    val backdrop = if (usePool) pool.backdrop else LocalAppBackdrop.current
     val density = LocalDensity.current
-    val resolutionScale = backdropScale.coerceIn(0.05f, 1f)
+    // The pool is already blurred, so its sample is taken at full surface resolution --
+    // there is nothing left for a reduced capture to save, and the lens reads sharper.
+    val resolutionScale = if (usePool) 1f else backdropScale.coerceIn(0.05f, 1f)
     // Pixel-sized effect parameters operate on the backdrop layer at its recorded
     // resolution, so they are pre-multiplied by the resolution scale to keep the
     // same visual size.
@@ -369,71 +319,49 @@ fun Modifier.liquidGlass(
     val saturation = glassSaturation(config.vibrancy)
     val lensHeightPx = with(density) { (config.lensHeight * LENS_MAX_DP).dp.toPx() } * resolutionScale
     val lensAmountPx = with(density) { (config.lensAmount * LENS_MAX_DP).dp.toPx() } * resolutionScale
-    // Apple's Liquid Glass is a bright, reflective material: even in dark mode it
-    // reads as a distinctly lighter "frosted" surface, not a near-black rectangle
-    // that blends into an OLED-black background. Honor an explicit user color,
-    // otherwise use a proper adaptive glass gray rather than matching the theme
-    // surface color 1:1 (which made the bar invisible over pure-black content).
-    val surfaceTintColor = if (config.surfaceTintColor.isSpecified) {
-        config.surfaceTintColor
-    } else if (MaterialTheme.colorScheme.surface.luminance() > 0.5f) {
-        Color(0xFFFAFAFA)
+    val ambientColor = LocalAmbientBackgroundColor.current.value
+    val isDark = glassUsesDarkAppearance()
+    val baseSurfaceColor = com.convx.music.ui.theme.GlassTintTokens.glassBaseColor(isDark)
+    val baseSurfaceOpacity = if (isDark) {
+        com.convx.music.ui.theme.GlassTintTokens.BaseSurfaceOpacityDark
     } else {
-        Color(0xFF4A4A4E)
+        com.convx.music.ui.theme.GlassTintTokens.BaseSurfaceOpacityLight
     }
 
-    // Translucent style short-circuits everything below: no backdrop is sampled and
-    // no RenderEffect runs, so there is nothing to configure. Content behind shows
-    // through the tint directly, which is the point — the alternative when glass is
-    // off is an opaque fill, and that reads as a black blob sitting on the content.
-    //
-    // Also taken when the platform can't do the real blur (below API 31):
-    // this used to fall through to a hardcoded opaque-black surface instead
-    // (reasoning: unblurred sharp content behind a translucent tint "reads as
-    // broken, not glass"), which is exactly the "solid black instead of any
-    // transparency" bug reported on older/low-end devices. This same
-    // translucent-tint path is already the app's own answer to "can't do a
-    // real blur, need something cheap that still respects the user's tint
-    // and opacity settings" — so route the unsupported case here too instead
-    // of a separate hardcoded fallback.
+    val isHeroContext = ambientColor.isSpecified && !ambientColor.isHueless()
+    val tintColor = when {
+        config.surfaceTintColor.isSpecified -> config.surfaceTintColor
+        isHeroContext -> ambientColor
+        else -> com.convx.music.ui.theme.GlassTintTokens.neutralTintColor(isDark)
+    }
+    val tintOpacity = when {
+        config.surfaceTintColor.isSpecified -> config.surfaceOpacity.coerceIn(0f, 1f)
+        isHeroContext -> com.convx.music.ui.theme.GlassTintTokens.heroTintOpacity(isDark)
+        else -> 1f
+    }
+    // Neutral tints carry their own spec alpha (0.06/0.05); copy(alpha=1) would
+    // make them opaque. Multiply so 1f means "use tint's own alpha".
+    val effectiveTintAlpha = (tintColor.alpha * tintOpacity).coerceIn(0f, 1f)
+
+    // Glass crossfades between its light and dark look instead of snapping, so entering a
+    // dark-forced screen from a light one does not pop. Read in the draw phase, so animating
+    // never recomposes or rebuilds the backdrop effects.
+    val glassFade = androidx.compose.animation.core.tween<Color>(GlassThemeFadeMillis)
+    val animBaseColor = androidx.compose.animation.animateColorAsState(baseSurfaceColor.copy(alpha = baseSurfaceOpacity), glassFade, label = "glassBase")
+    val animTintColor = androidx.compose.animation.animateColorAsState(tintColor.copy(alpha = effectiveTintAlpha), glassFade, label = "glassTint")
+
     if (shouldUseTranslucentGlassFallback(config.style, isRenderEffectSupported())) {
         return this
             .clip(shape)
-            .background(surfaceTintColor.copy(alpha = config.surfaceOpacity.coerceIn(0f, 1f)))
+            .background(baseSurfaceColor.copy(alpha = baseSurfaceOpacity))
+            .background(tintColor.copy(alpha = effectiveTintAlpha))
     }
 
-    // ponytail: frozen mid-sweep. The drift described at [HighlightAngleMin] was a
-    // rememberInfiniteTransition, and because glass surfaces (the nav bar above all)
-    // are on screen permanently, it re-emitted every frame forever — a measured
-    // ~45fps of full-screen capture plus three blur passes and ~400mA, at idle,
-    // with nothing on screen moving. Slowing the tween does NOT help: an infinite
-    // transition emits per frame regardless of duration.
-    //
-    // The original note here blamed LayerBackdropModifier recording the screen
-    // unconditionally, and proposed gating that. That was a misdiagnosis. The
-    // consumer side was already gated (DrawBackdropNode re-records only on a
-    // backdrop version/offset/size change). The real path was surfaceDirty: the
-    // angle was read during COMPOSITION, so every frame rebuilt this function's
-    // lambdas, made the drawBackdrop element unequal, and update() set
-    // surfaceDirty unconditionally — forcing a full re-capture. Both halves of
-    // that are now fixed (the lambdas below are remembered; update() only dirties
-    // the capture when capture params change).
-    //
-    // Remaining upgrade path, now much smaller: hold the angle as a State and read
-    // it INSIDE the highlight lambda, which HighlightNode already supports (its
-    // highlight param is a lambda and it sets shouldAutoInvalidate = false). The
-    // animation then invalidates only that node's draw — no recomposition, no
-    // element churn, no re-capture. Worth measuring before/after rather than
-    // assuming, since the numbers above were measured and these are not.
+    // Keep this angle fixed during composition; animated state here would rebuild
+    // the effects and recapture the full backdrop on every frame.
     val animatedHighlightAngle = HighlightAngleFrozen
 
-    // Every lambda below is remembered on exactly the values it reads. Freshly
-    // allocated lambdas make the drawBackdrop element unequal, which runs its
-    // update() — and an `effects` change there invalidates the captured backdrop,
-    // costing a full re-sample plus saturation/blur/lens. Since glass sits on
-    // permanently-visible chrome, that turned any unrelated recomposition of the
-    // nav bar into a whole-screen re-capture. Stable identities let the element
-    // compare equal and skip the work entirely.
+    // Stable lambda identities keep recomposition from invalidating the backdrop.
     val shapeBlock: () -> Shape = remember(shape) { { shape } }
 
     // BLUR keeps the frosted capture but drops the refraction and the rim, which
@@ -450,12 +378,13 @@ fun Modifier.liquidGlass(
         lensAmountPx,
         config.depthEffect,
         config.chromaticAberration,
+        usePool,
     ) {
         {
-            if (saturation != 1f) {
+            if (!usePool && saturation != 1f) {
                 colorControls(saturation = saturation)
             }
-            if (blurPx > 0f) {
+            if (!usePool && blurPx > 0f) {
                 blur(blurPx)
             }
             if (!plainBlur &&
@@ -463,7 +392,16 @@ fun Modifier.liquidGlass(
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                 (lensHeightPx > 0f || lensAmountPx > 0f)
             ) {
-                lens(
+                if (usePool) {
+                    // Refracted by the pool in its single pass for every bar surface: this
+                    // layer then carries no effect, so it needs no offscreen buffer and no
+                    // lens pass of its own. Same shader math, same region.
+                    poolLens(
+                        refractionHeight = lensHeightPx,
+                        refractionAmount = lensAmountPx,
+                        depthEffect = config.depthEffect,
+                    )
+                } else lens(
                     refractionHeight = lensHeightPx,
                     refractionAmount = lensAmountPx,
                     depthEffect = config.depthEffect,
@@ -473,22 +411,28 @@ fun Modifier.liquidGlass(
         }
     }
 
-    // The rim's own colour, independent of the surface tint: on a tinted pill a
-    // white rim is what reads as "lit glass", but a coloured one is the difference
-    // between chrome and neon, so it is worth exposing rather than assuming.
-    val rimColor = if (config.highlightColor.isSpecified) config.highlightColor else Color.White
-    // Call sites pass a per-component alpha (the nav bar wants a dimmer rim than a
-    // button). Scale the user's setting by it rather than replacing it, so both the
-    // per-component tuning and the preference still mean something.
-    val rimAlpha = (highlightAlpha * (config.highlightOpacity / EdgeHighlightAlpha)).coerceIn(0f, 1f)
+    // The rim color is separate from the surface tint; an explicit highlight wins.
+    val isHeroContextForPluck = (ambientColor.isSpecified && !ambientColor.isHueless()) || rimTintColor.isSpecified
+    val rimColor = when {
+        config.highlightColor.isSpecified -> config.highlightColor
+        rimTintColor.isSpecified -> rimTintColor
+        else -> com.convx.music.ui.theme.GlassTintTokens.pluckColor(isDark, ambientColor)
+    }
+    val baseHighlightAlpha = when {
+        highlightAlpha != EdgeHighlightAlpha -> highlightAlpha
+        else -> com.convx.music.ui.theme.GlassTintTokens.pluckOpacity(isDark, isHeroContextForPluck)
+    }
+    // Apply both component-specific and preference opacity.
+    val rimAlpha = (baseHighlightAlpha * (config.highlightOpacity / EdgeHighlightAlpha)).coerceIn(0f, 1f)
 
-    val highlightBlock: (() -> Highlight?)? = remember(applyEdgeEffects, plainBlur, rimColor, rimAlpha, animatedHighlightAngle) {
+    val animRim = androidx.compose.animation.animateColorAsState(rimColor.copy(alpha = rimAlpha), glassFade, label = "glassRim")
+    val highlightBlock: (() -> Highlight?)? = remember(applyEdgeEffects, plainBlur, rimTintColor, animatedHighlightAngle) {
         if (applyEdgeEffects && !plainBlur) {
             {
                 Highlight(
                     width = EdgeHighlightWidth,
                     style = HighlightStyle.Default(
-                        color = rimColor.copy(alpha = rimAlpha),
+                        color = animRim.value,
                         angle = animatedHighlightAngle,
                     ),
                 )
@@ -498,19 +442,29 @@ fun Modifier.liquidGlass(
         }
     }
 
-    val shadowBlock: (() -> Shadow?)? = remember(applyEdgeEffects) {
-        if (applyEdgeEffects) ({ Shadow.Default }) else null
+    // Pooled bar surfaces draw their own elevation shadow.
+    val shadowBlock: (() -> Shadow?)? = remember(applyEdgeEffects, usePool, outerShadow) {
+        if (applyEdgeEffects && !usePool && outerShadow) ({ Shadow.Default }) else null
     }
+
+    // The normal-blend dark rim keeps glass edges visible on light or busy surfaces.
+    // A black Plus-blend stroke is invisible.
+    val darkRimAlpha = (DarkRimAlpha * (config.highlightOpacity / EdgeHighlightAlpha)).coerceIn(0f, 1f)
 
     // RenderEffect is guaranteed supported past this point — the unsupported
     // case already returned the translucent-tint fallback above.
-    val surfaceBlock: DrawScope.() -> Unit = remember(surfaceTintColor, config.surfaceOpacity) {
+    val surfaceBlock: DrawScope.() -> Unit = remember(usePool, shape) {
         {
-            if (config.surfaceOpacity > 0f) {
-                drawRect(
-                    color = surfaceTintColor.copy(alpha = config.surfaceOpacity),
-                    size = size,
-                )
+            // A pooled surface clips to its bounds only (the pool masks its glass), so its
+            // tint is filled to the exact outline instead of relying on a shape clip.
+            val outline = if (usePool) shape.createOutline(size, layoutDirection, this) else null
+            val base = animBaseColor.value
+            if (base.alpha > 0f) {
+                if (outline != null) drawOutline(outline, base) else drawRect(color = base, size = size)
+            }
+            val tint = animTintColor.value
+            if (tint.alpha > 0f) {
+                if (outline != null) drawOutline(outline, tint) else drawRect(color = tint, size = size)
             }
         }
     }
@@ -525,5 +479,27 @@ fun Modifier.liquidGlass(
         backdropScale = resolutionScale,
         frozen = frozen,
         loopBucket = loopBucket,
+    ).then(
+        if (applyEdgeEffects && !plainBlur && darkRimAlpha > 0f) {
+            Modifier.outerDarkRim(
+                shape = shape,
+                width = DarkRimWidth,
+                alpha = darkRimAlpha,
+                angle = animatedHighlightAngle,
+                // Pooled surfaces have no shape clip, so draw only the inner rim.
+                insideOnly = usePool,
+            )
+        } else {
+            Modifier
+        }
     )
 }
+
+/** Dark outer outline paired with [EdgeHighlightWidth]'s light rim: wider so
+ *  it extends past it as the outermost layer, dimmer so it outlines without
+ *  dirtying the glass. */
+/** Length of the light-to-dark glass crossfade. */
+private const val GlassThemeFadeMillis = 280
+
+private val DarkRimWidth = 1.6.dp
+private const val DarkRimAlpha = 0.32f

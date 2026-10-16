@@ -16,14 +16,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
+import com.convx.music.ui.component.shapes.ContinuousRoundedRectangle
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Text
+import com.convx.music.ui.ios.compat.Button
+import com.convx.music.ui.ios.compat.Checkbox
+import com.convx.music.ui.ios.compat.LinearProgressIndicator
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.OutlinedButton
+import com.convx.music.ui.ios.compat.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -64,31 +64,30 @@ fun CsvColumnMappingDialog(
         Column(
             modifier = Modifier
                 .fillMaxWidth(0.95f)
-                .clip(RoundedCornerShape(16.dp))
-                .background(MaterialTheme.colorScheme.surface)
+                .clip(ContinuousRoundedRectangle(16.dp))
+                .background(AppTheme.colorScheme.surface)
                 .padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(
                 text = stringResource(R.string.map_csv_columns),
-                style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.onSurface,
+                style = AppTheme.typography.headlineSmall,
+                color = AppTheme.colorScheme.onSurface,
             )
 
-            // Preview rows
             if (csvState.previewRows.isNotEmpty()) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .clip(ContinuousRoundedRectangle(8.dp))
+                        .background(AppTheme.colorScheme.surfaceVariant)
                         .padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Text(
                         text = "Preview",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = AppTheme.typography.labelMedium,
+                        color = AppTheme.colorScheme.onSurfaceVariant,
                     )
 
                     Row(
@@ -106,22 +105,22 @@ fun CsvColumnMappingDialog(
                                     Box(
                                         modifier = Modifier
                                             .width(120.dp)
-                                            .clip(RoundedCornerShape(4.dp))
+                                            .clip(ContinuousRoundedRectangle(4.dp))
                                             .background(
                                                 when {
-                                                    rowIndex == 0 && hasHeader -> MaterialTheme.colorScheme.primaryContainer
-                                                    colIndex == artistColumnIndex -> MaterialTheme.colorScheme.tertiaryContainer
-                                                    colIndex == titleColumnIndex -> MaterialTheme.colorScheme.secondaryContainer
-                                                    colIndex == urlColumnIndex && urlColumnIndex >= 0 -> MaterialTheme.colorScheme.tertiaryContainer
-                                                    else -> MaterialTheme.colorScheme.background
+                                                    rowIndex == 0 && hasHeader -> AppTheme.colorScheme.primaryContainer
+                                                    colIndex == artistColumnIndex -> AppTheme.colorScheme.tertiaryContainer
+                                                    colIndex == titleColumnIndex -> AppTheme.colorScheme.secondaryContainer
+                                                    colIndex == urlColumnIndex && urlColumnIndex >= 0 -> AppTheme.colorScheme.tertiaryContainer
+                                                    else -> AppTheme.colorScheme.background
                                                 },
                                             )
                                             .padding(6.dp),
                                     ) {
                                         Text(
                                             text = cell.take(18),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurface,
+                                            style = AppTheme.typography.labelSmall,
+                                            color = AppTheme.colorScheme.onSurface,
                                             maxLines = 2,
                                             overflow = TextOverflow.Ellipsis,
                                             fontFamily = FontFamily.Monospace,
@@ -134,7 +133,6 @@ fun CsvColumnMappingDialog(
                 }
             }
 
-            // Header checkbox
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -146,12 +144,11 @@ fun CsvColumnMappingDialog(
                 )
                 Text(
                     text = stringResource(R.string.first_row_is_header),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    style = AppTheme.typography.bodyMedium,
+                    color = AppTheme.colorScheme.onSurface,
                 )
             }
 
-            // Column selectors
             ColumnSelector(
                 label = stringResource(R.string.artist_name_column),
                 selectedIndex = artistColumnIndex,
@@ -174,7 +171,6 @@ fun CsvColumnMappingDialog(
                 onSelected = { urlColumnIndex = it },
             )
 
-            // Buttons
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -218,8 +214,8 @@ private fun ColumnSelector(
     ) {
         Text(
             text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurface,
+            style = AppTheme.typography.labelMedium,
+            color = AppTheme.colorScheme.onSurface,
         )
 
         Row(
@@ -234,14 +230,14 @@ private fun ColumnSelector(
                         onClick = { onSelected(-1) },
                         modifier = Modifier.height(36.dp),
                     ) {
-                        Text(stringResource(R.string.none), style = MaterialTheme.typography.labelSmall)
+                        Text(stringResource(R.string.none), style = AppTheme.typography.labelSmall)
                     }
                 } else {
                     OutlinedButton(
                         onClick = { onSelected(-1) },
                         modifier = Modifier.height(36.dp),
                     ) {
-                        Text(stringResource(R.string.none), style = MaterialTheme.typography.labelSmall)
+                        Text(stringResource(R.string.none), style = AppTheme.typography.labelSmall)
                     }
                 }
             }
@@ -254,7 +250,7 @@ private fun ColumnSelector(
                     ) {
                         Text(
                             stringResource(R.string.column_label, index + 1),
-                            style = MaterialTheme.typography.labelSmall,
+                            style = AppTheme.typography.labelSmall,
                         )
                     }
                 } else {
@@ -264,7 +260,7 @@ private fun ColumnSelector(
                     ) {
                         Text(
                             stringResource(R.string.column_label, index + 1),
-                            style = MaterialTheme.typography.labelSmall,
+                            style = AppTheme.typography.labelSmall,
                         )
                     }
                 }
@@ -289,15 +285,15 @@ fun CsvImportProgressDialog(
         Column(
             modifier = Modifier
                 .fillMaxWidth(0.85f)
-                .clip(RoundedCornerShape(16.dp))
-                .background(MaterialTheme.colorScheme.surface)
+                .clip(ContinuousRoundedRectangle(16.dp))
+                .background(AppTheme.colorScheme.surface)
                 .padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(
                 text = stringResource(R.string.importing_csv),
-                style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.onSurface,
+                style = AppTheme.typography.headlineSmall,
+                color = AppTheme.colorScheme.onSurface,
             )
 
             LinearProgressIndicator(
@@ -305,50 +301,50 @@ fun CsvImportProgressDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(8.dp)
-                    .clip(RoundedCornerShape(4.dp)),
+                    .clip(ContinuousRoundedRectangle(4.dp)),
             )
 
             Text(
                 text = stringResource(R.string.percentage_format, progress),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = AppTheme.typography.bodySmall,
+                color = AppTheme.colorScheme.onSurfaceVariant,
             )
 
             if (recentLogs.isNotEmpty()) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .clip(ContinuousRoundedRectangle(8.dp))
+                        .background(AppTheme.colorScheme.surfaceVariant)
                         .padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Text(
                         text = stringResource(R.string.recently_converted),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = AppTheme.typography.labelMedium,
+                        color = AppTheme.colorScheme.onSurfaceVariant,
                     )
 
                     recentLogs.forEach { log ->
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(MaterialTheme.colorScheme.background)
+                                .clip(ContinuousRoundedRectangle(4.dp))
+                                .background(AppTheme.colorScheme.background)
                                 .padding(8.dp),
                             verticalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
                             Text(
                                 text = log.title,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurface,
+                                style = AppTheme.typography.labelSmall,
+                                color = AppTheme.colorScheme.onSurface,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
                             Text(
                                 text = log.artists,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = AppTheme.typography.labelSmall,
+                                color = AppTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )

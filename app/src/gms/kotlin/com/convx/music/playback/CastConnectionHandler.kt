@@ -2,7 +2,9 @@ package com.convx.music.playback
 
 import android.content.Context
 import android.net.Uri
+import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.common.Timeline
 import androidx.mediarouter.media.MediaRouteSelector
 import androidx.mediarouter.media.MediaRouter
 import com.google.android.gms.cast.CastMediaControlIntent
@@ -33,13 +35,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import timber.log.Timber
 
+private const val CAST_QUEUE_CONTEXT_ITEMS = 2
+
 /**
- * Manages Google Cast connections and media playback on Cast devices.
- * This class handles the entire Cast lifecycle including:
- * - Device discovery
- * - Session management
- * - Media loading and playback control
- * - Synchronization between local and remote playback
+ * Coordinates Cast device discovery, sessions, playback, and local/remote synchronization.
  */
 class CastConnectionHandler(
     private val context: Context,
@@ -99,7 +98,7 @@ class CastConnectionHandler(
                                          playerState == MediaStatus.PLAYER_STATE_LOADING
                 _castDuration.value = client.streamDuration
                 
-                // Check if the current Cast item changed (user skipped on Cast widget)
+                // Detect skips made from the Cast controls.
                 val currentItemId = mediaStatus?.currentItemId ?: -1
                 if (currentItemId != -1 && currentItemId != lastCastItemId && lastCastItemId != -1 && !isReloadingQueue && mediaStatus != null) {
                     Timber.d("Cast item changed: $lastCastItemId -> $currentItemId")
@@ -120,7 +119,6 @@ class CastConnectionHandler(
         }
     }
     
-    // Job for resetting sync flag
     private var syncResetJob: Job? = null
     
     /**
@@ -135,7 +133,6 @@ class CastConnectionHandler(
         
         if (currentIndex < 0) return
         
-        // Get the mediaId from the current Cast item's custom data
         val currentQueueItem = queueItems[currentIndex]
         val customData = currentQueueItem.media?.customData
         val castMediaId = customData?.optString("mediaId")
@@ -145,32 +142,24 @@ class CastConnectionHandler(
         if (castMediaId != null && castMediaId != currentMediaId) {
             currentMediaId = castMediaId
             
-            // Cancel any pending sync reset
             syncResetJob?.cancel()
             
             // Set flag immediately to prevent reverse sync
             isSyncingFromCast = true
             
-            // Find this song in the local player queue and switch to it
             val player = musicService.player
             val playerItemCount = player.mediaItemCount
             
-            // Find the matching item in local player
             for (i in 0 until playerItemCount) {
                 val mediaItem = player.getMediaItemAt(i)
                 if (mediaItem.mediaId == castMediaId) {
                     Timber.d("Syncing local player to index $i (mediaId=$castMediaId)")
                     
-                    // Ensure local player is paused before seeking
+                    // Keep local playback paused while syncing it to Cast.
                     player.pause()
-                    
-                    // Move local player to match Cast (just for metadata sync)
                     player.seekTo(i, 0)
-                    
-                    // Make absolutely sure local player stays paused
                     player.pause()
                     
-                    // Extend queue if needed (in background)
                     val itemsAhead = queueItems.size - 1 - currentIndex
                     val itemsBehind = currentIndex
                     
@@ -210,14 +199,11 @@ class CastConnectionHandler(
         isReloadingQueue = true
         
         try {
-            // Add more items to the end of queue if needed
             val itemsAhead = currentCastQueue.size - 1 - currentCastIndex
             if (itemsAhead < 2) {
-                // Find what songs we need to add
                 val lastCastItem = currentCastQueue.lastOrNull()
                 val lastMediaId = lastCastItem?.media?.customData?.optString("mediaId")
                 
-                // Find the index of the last Cast item in local player
                 var lastLocalIndex = -1
                 for (i in 0 until playerItemCount) {
                     if (musicService.player.getMediaItemAt(i).mediaId == lastMediaId) {
@@ -226,7 +212,6 @@ class CastConnectionHandler(
                     }
                 }
                 
-                // Add next items from local player
                 if (lastLocalIndex >= 0 && lastLocalIndex < playerItemCount - 1) {
                     val itemsToAdd = mutableListOf<MediaQueueItem>()
                     val addCount = minOf(2, playerItemCount - lastLocalIndex - 1)
@@ -272,50 +257,23 @@ class CastConnectionHandler(
                 val shuffleEnabled = player.shuffleModeEnabled
                 val timeline = player.currentTimeline
                 
-                // Build new queue items: up to 2 previous, current, and up to 2 next
                 val queueItems = mutableListOf<MediaQueueItem>()
                 
-                // Get previous items respecting shuffle order
-                val prevItems = mutableListOf<androidx.media3.common.MediaItem>()
-                if (!timeline.isEmpty) {
-                    var prevIdx = currentIndex
-                    for (i in 0 until 2) {
-                        prevIdx = timeline.getPreviousWindowIndex(prevIdx, Player.REPEAT_MODE_OFF, shuffleEnabled)
-                        if (prevIdx == androidx.media3.common.C.INDEX_UNSET) break
-                        prevItems.add(0, player.getMediaItemAt(prevIdx))
-                    }
-                }
-                
-                // Add previous items
-                for (prevItem in prevItems) {
-                    prevItem.metadata?.let { prevMetadata ->
-                        buildMediaInfo(prevMetadata)?.let { mediaInfo ->
-                            queueItems.add(MediaQueueItem.Builder(mediaInfo).build())
-                        }
-                    }
-                }
+                appendCastQueueItems(
+                    queueItems,
+                    previousMediaItems(player, timeline, currentIndex, shuffleEnabled),
+                )
                 val startIndex = queueItems.size // Current item index after previous items
                 
-                // Add current item
                 val currentMediaInfo = buildMediaInfo(metadata)
                 if (currentMediaInfo != null) {
                     queueItems.add(MediaQueueItem.Builder(currentMediaInfo).build())
                 }
                 
-                // Get next items respecting shuffle order
-                if (!timeline.isEmpty) {
-                    var nextIdx = currentIndex
-                    for (i in 0 until 2) {
-                        nextIdx = timeline.getNextWindowIndex(nextIdx, Player.REPEAT_MODE_OFF, shuffleEnabled)
-                        if (nextIdx == androidx.media3.common.C.INDEX_UNSET) break
-                        val nextItem = player.getMediaItemAt(nextIdx)
-                        nextItem.metadata?.let { nextMetadata ->
-                            buildMediaInfo(nextMetadata)?.let { mediaInfo ->
-                                queueItems.add(MediaQueueItem.Builder(mediaInfo).build())
-                            }
-                        }
-                    }
-                }
+                appendCastQueueItems(
+                    queueItems,
+                    nextMediaItems(player, timeline, currentIndex, shuffleEnabled),
+                )
                 
                 if (queueItems.isNotEmpty()) {
                     Timber.d("Reloading Cast queue: ${queueItems.size} items, startIndex=$startIndex, shuffle=$shuffleEnabled")
@@ -339,6 +297,54 @@ class CastConnectionHandler(
             }
         }
     }
+
+    private fun previousMediaItems(
+        player: Player,
+        timeline: Timeline,
+        currentIndex: Int,
+        shuffleEnabled: Boolean,
+    ): List<MediaItem> {
+        if (timeline.isEmpty) return emptyList()
+
+        val previousItems = mutableListOf<MediaItem>()
+        var index = currentIndex
+        repeat(CAST_QUEUE_CONTEXT_ITEMS) {
+            index = timeline.getPreviousWindowIndex(index, Player.REPEAT_MODE_OFF, shuffleEnabled)
+            if (index == androidx.media3.common.C.INDEX_UNSET) return previousItems
+            // We walk backwards, so prepend each item to restore playback order.
+            previousItems.add(0, player.getMediaItemAt(index))
+        }
+        return previousItems
+    }
+
+    private fun nextMediaItems(
+        player: Player,
+        timeline: Timeline,
+        currentIndex: Int,
+        shuffleEnabled: Boolean,
+    ): List<MediaItem> {
+        if (timeline.isEmpty) return emptyList()
+
+        val nextItems = mutableListOf<MediaItem>()
+        var index = currentIndex
+        repeat(CAST_QUEUE_CONTEXT_ITEMS) {
+            index = timeline.getNextWindowIndex(index, Player.REPEAT_MODE_OFF, shuffleEnabled)
+            if (index == androidx.media3.common.C.INDEX_UNSET) return nextItems
+            nextItems.add(player.getMediaItemAt(index))
+        }
+        return nextItems
+    }
+
+    private suspend fun appendCastQueueItems(
+        queueItems: MutableList<MediaQueueItem>,
+        mediaItems: List<MediaItem>,
+    ) {
+        for (item in mediaItems) {
+            val metadata = item.metadata ?: continue
+            val mediaInfo = buildMediaInfo(metadata) ?: continue
+            queueItems.add(MediaQueueItem.Builder(mediaInfo).build())
+        }
+    }
     
     private val sessionManagerListener = object : SessionManagerListener<CastSession> {
         override fun onSessionStarting(session: CastSession) {
@@ -355,13 +361,10 @@ class CastConnectionHandler(
             remoteMediaClient = session.remoteMediaClient
             remoteMediaClient?.registerCallback(remoteMediaClientCallback)
             
-            // Get initial volume
             _castVolume.value = session.volume.toFloat()
             
-            // Start position updates
             startPositionUpdates()
             
-            // Load current media
             loadCurrentMedia()
         }
         
@@ -431,7 +434,6 @@ class CastConnectionHandler(
             
             sessionManager?.addSessionManagerListener(sessionManagerListener, CastSession::class.java)
             
-            // Check if already connected
             sessionManager?.currentCastSession?.let { session ->
                 _isCasting.value = true
                 _castDeviceName.value = session.castDevice?.friendlyName
@@ -524,31 +526,14 @@ class CastConnectionHandler(
                 val shuffleEnabled = player.shuffleModeEnabled
                 val timeline = player.currentTimeline
                 
-                // Build queue items: up to 2 previous, current, and up to 2 next songs
                 val queueItems = mutableListOf<MediaQueueItem>()
                 
-                // Get previous items respecting shuffle order
-                val prevItems = mutableListOf<androidx.media3.common.MediaItem>()
-                if (!timeline.isEmpty) {
-                    var prevIdx = currentIndex
-                    for (i in 0 until 2) {
-                        prevIdx = timeline.getPreviousWindowIndex(prevIdx, Player.REPEAT_MODE_OFF, shuffleEnabled)
-                        if (prevIdx == androidx.media3.common.C.INDEX_UNSET) break
-                        prevItems.add(0, player.getMediaItemAt(prevIdx)) // Add at beginning to maintain order
-                    }
-                }
-                
-                // Add previous items
-                for (prevItem in prevItems) {
-                    prevItem.metadata?.let { prevMetadata ->
-                        buildMediaInfo(prevMetadata)?.let { mediaInfo ->
-                            queueItems.add(MediaQueueItem.Builder(mediaInfo).build())
-                        }
-                    }
-                }
+                appendCastQueueItems(
+                    queueItems,
+                    previousMediaItems(player, timeline, currentIndex, shuffleEnabled),
+                )
                 val startIndex = queueItems.size // Current item index after previous items
                 
-                // Add current item
                 val currentMediaInfo = buildMediaInfo(metadata)
                 if (currentMediaInfo == null) {
                     Timber.e("Failed to get stream URL for Cast")
@@ -557,22 +542,11 @@ class CastConnectionHandler(
                 }
                 queueItems.add(MediaQueueItem.Builder(currentMediaInfo).build())
                 
-                // Get next items respecting shuffle order
-                if (!timeline.isEmpty) {
-                    var nextIdx = currentIndex
-                    for (i in 0 until 2) {
-                        nextIdx = timeline.getNextWindowIndex(nextIdx, Player.REPEAT_MODE_OFF, shuffleEnabled)
-                        if (nextIdx == androidx.media3.common.C.INDEX_UNSET) break
-                        val nextItem = player.getMediaItemAt(nextIdx)
-                        nextItem.metadata?.let { nextMetadata ->
-                            buildMediaInfo(nextMetadata)?.let { mediaInfo ->
-                                queueItems.add(MediaQueueItem.Builder(mediaInfo).build())
-                            }
-                        }
-                    }
-                }
+                appendCastQueueItems(
+                    queueItems,
+                    nextMediaItems(player, timeline, currentIndex, shuffleEnabled),
+                )
                 
-                // Get current position from local player if same song
                 val startPosition = if (player.currentMediaItem?.mediaId == metadata.id) {
                     player.currentPosition
                 } else {
@@ -584,7 +558,6 @@ class CastConnectionHandler(
                 withContext(Dispatchers.Main) {
                     val client = remoteMediaClient ?: return@withContext
                     
-                    // Load the queue
                     client.queueLoad(
                         queueItems.toTypedArray(),
                         startIndex,
@@ -648,7 +621,6 @@ class CastConnectionHandler(
         val queueItems = mediaStatus.queueItems
         if (queueItems.isEmpty()) return false
         
-        // Find the item in Cast queue
         val targetIndex = queueItems.indexOfFirst { 
             it.media?.customData?.optString("mediaId") == mediaId 
         }
@@ -662,20 +634,18 @@ class CastConnectionHandler(
         val currentIndex = queueItems.indexOfFirst { it.itemId == currentItemId }
         
         if (targetIndex == currentIndex) {
-            // Already on this item - ensure local player is paused
             currentMediaId = mediaId
             musicService.player.pause()
             return true
         }
         
-        // Navigate to the item on Cast
         val targetItem = queueItems[targetIndex]
         Timber.d("Navigating Cast to item at index $targetIndex (mediaId=$mediaId)")
         
         // Set flag to prevent reverse sync loop
         isSyncingFromCast = true
         
-        // Update local player to match (for UI sync) - find the item in local queue
+        // Keep local UI in sync with the selected Cast queue item.
         val player = musicService.player
         for (i in 0 until player.mediaItemCount) {
             if (player.getMediaItemAt(i).mediaId == mediaId) {
@@ -685,11 +655,10 @@ class CastConnectionHandler(
         }
         player.pause()
         
-        // Navigate Cast
         client.queueJumpToItem(targetItem.itemId, org.json.JSONObject())
         currentMediaId = mediaId
         
-        // Reset sync flag after a short delay
+        // Keep sync suppression active until the Cast jump event arrives.
         scope.launch {
             delay(300)
             isSyncingFromCast = false
@@ -699,56 +668,45 @@ class CastConnectionHandler(
     }
     
     fun skipToNext() {
-        // First try to use Cast queue
         val client = remoteMediaClient
         val mediaStatus = client?.mediaStatus
         if (mediaStatus != null && mediaStatus.queueItemCount > 0) {
-            // Check if there's a next item in Cast queue
             val currentItemId = mediaStatus.currentItemId
             val queueItems = mediaStatus.queueItems
             val currentIndex = queueItems.indexOfFirst { it.itemId == currentItemId }
             if (currentIndex >= 0 && currentIndex < queueItems.size - 1) {
-                // There's a next item in Cast queue, use it
                 client.queueNext(org.json.JSONObject())
-                // Ensure local player stays paused
                 musicService.player.pause()
                 return
             }
         }
         
-        // Fall back to loading from MusicService queue
         val player = musicService.player
         if (player.hasNextMediaItem()) {
-            // Pause first, then seek
             player.pause()
+            // The player listener forwards this seek to Cast.
             player.seekToNextMediaItem()
-            // The player listener will handle loading the new media to Cast
         }
     }
     
     fun skipToPrevious() {
-        // First try to use Cast queue
         val client = remoteMediaClient
         val mediaStatus = client?.mediaStatus
         if (mediaStatus != null && mediaStatus.queueItemCount > 0) {
-            // Check if there's a previous item in Cast queue
             val currentItemId = mediaStatus.currentItemId
             val queueItems = mediaStatus.queueItems
             val currentIndex = queueItems.indexOfFirst { it.itemId == currentItemId }
             if (currentIndex > 0) {
-                // There's a previous item in Cast queue, use it
                 client.queuePrev(org.json.JSONObject())
-                // Ensure local player stays paused
                 musicService.player.pause()
                 return
             }
         }
         
-        // Fall back to loading from MusicService queue
         val player = musicService.player
         if (player.hasPreviousMediaItem()) {
-            // Pause first, then seek
             player.pause()
+            // The player listener forwards this seek to Cast.
             player.seekToPreviousMediaItem()
         }
     }

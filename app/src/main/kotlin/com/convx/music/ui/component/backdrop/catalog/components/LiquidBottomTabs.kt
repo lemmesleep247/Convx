@@ -87,7 +87,7 @@ fun LiquidBottomTabs(
     height: Dp = 64.dp,
     content: @Composable RowScope.() -> Unit
 ) {
-    val isLightTheme = !isSystemInDarkTheme()
+    val isLightTheme = !com.convx.music.ui.component.glassUsesDarkAppearance()
     val accentColor =
         if (isLightTheme) Color(0xFF0088FF)
         else Color(0xFF0091FF)

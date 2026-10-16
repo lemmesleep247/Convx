@@ -21,9 +21,10 @@ import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.LazyGridState
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -34,9 +35,12 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.convx.music.LocalAmbientBackgroundColor
 import com.convx.music.constants.AppBarHeight
 import com.convx.music.ui.theme.AppleTokens
 import com.convx.music.ui.theme.LocalAccentTextColor
+import com.convx.music.ui.theme.isHueless
+import androidx.compose.ui.graphics.isSpecified
 
 /**
  * A screen's large title, rendered as the first item of its list or grid.
@@ -57,11 +61,19 @@ fun LargeScreenTitle(
 ) {
     Spacer(Modifier.height(40.dp))
 
+    // Neutral per theme; hero screens keep their artwork-derived tint.
+    val ambient = LocalAmbientBackgroundColor.current.value
+    val titleColor = color ?: if (ambient.isSpecified && !ambient.isHueless()) {
+        LocalAccentTextColor.current
+    } else {
+        AppTheme.colorScheme.onSurface
+    }
+
     Text(
         text = title,
-        style = MaterialTheme.typography.headlineLarge,
+        style = AppTheme.typography.headlineLarge,
         fontWeight = FontWeight.ExtraBold,
-        color = color ?: LocalAccentTextColor.current,
+        color = titleColor,
         maxLines = 2,
         overflow = TextOverflow.Ellipsis,
         modifier = modifier
@@ -71,16 +83,35 @@ fun LargeScreenTitle(
 }
 
 /**
- * How far the large title has scrolled away, 0..1. Drives [CollapsedTitleBar]'s
- * fade-in.
- *
- * Same shape as [rememberChromeScrimProgress], but keyed to the title's own
- * height rather than a hero image's, so the compact bar appears exactly as the
- * large one leaves.
+ * Progress from 0 to 1 as the large title scrolls out. Uses its measured height
+ * so the compact title appears only after the large title is fully gone.
  */
 @Composable
-fun rememberTitleCollapseProgress(state: LazyListState, thresholdPx: Float = 220f): Float {
-    val progress by remember(state) {
+fun rememberTitleCollapseProgressState(state: LazyListState, titleItemKey: Any? = null): State<Float> =
+    remember(state, titleItemKey) {
+        derivedStateOf {
+            val visible = state.layoutInfo.visibleItemsInfo
+            val titleItem = if (titleItemKey != null) {
+                visible.firstOrNull { it.key == titleItemKey }
+            } else {
+                visible.firstOrNull { it.index == 0 }
+            }
+            if (titleItem == null) {
+                // Not in the visible range at all — scrolled fully past.
+                1f
+            } else {
+                (-titleItem.offset.toFloat() / titleItem.size.coerceAtLeast(1)).coerceIn(0f, 1f)
+            }
+        }
+    }
+
+@Composable
+fun rememberTitleCollapseProgress(state: LazyListState, titleItemKey: Any? = null): Float =
+    rememberTitleCollapseProgressState(state, titleItemKey).value
+
+@Composable
+fun rememberTitleCollapseProgressState(state: LazyGridState, thresholdPx: Float = 220f): State<Float> =
+    remember(state) {
         derivedStateOf {
             val scrolled = if (state.firstVisibleItemIndex == 0) {
                 state.firstVisibleItemScrollOffset.toFloat()
@@ -90,21 +121,10 @@ fun rememberTitleCollapseProgress(state: LazyListState, thresholdPx: Float = 220
             (scrolled / thresholdPx).coerceIn(0f, 1f)
         }
     }
-    return progress
-}
 
 @Composable
 fun rememberTitleCollapseProgress(state: LazyGridState, thresholdPx: Float = 220f): Float {
-    val progress by remember(state) {
-        derivedStateOf {
-            val scrolled = if (state.firstVisibleItemIndex == 0) {
-                state.firstVisibleItemScrollOffset.toFloat()
-            } else {
-                thresholdPx
-            }
-            (scrolled / thresholdPx).coerceIn(0f, 1f)
-        }
-    }
+    val progress by rememberTitleCollapseProgressState(state, thresholdPx)
     return progress
 }
 
@@ -130,7 +150,7 @@ fun CollapsedTitleBar(
     ) {
         Text(
             text = title,
-            style = MaterialTheme.typography.titleMedium,
+            style = AppTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
             color = color ?: LocalAccentTextColor.current,
             maxLines = 1,

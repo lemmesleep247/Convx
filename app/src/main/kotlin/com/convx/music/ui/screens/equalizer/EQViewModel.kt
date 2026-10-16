@@ -31,11 +31,8 @@ class EQViewModel @Inject constructor(
         loadProfiles()
     }
 
-    /**
-     * Load all saved EQ profiles (sorted: AutoEQ first, then custom)
-     */
+    /** Observes saved and active profile changes. */
     private fun loadProfiles() {
-        // Observe profiles changes
         viewModelScope.launch {
             eqProfileRepository.profiles.collect { _ ->
                 val sortedProfiles = eqProfileRepository.getSortedProfiles()
@@ -45,7 +42,6 @@ class EQViewModel @Inject constructor(
             }
         }
 
-        // Observe active profile changes separately
         viewModelScope.launch {
             eqProfileRepository.activeProfile.collect { activeProfile ->
                 _state.update {
@@ -62,20 +58,17 @@ class EQViewModel @Inject constructor(
     fun selectProfile(profileId: String?) {
         viewModelScope.launch {
             if (profileId == null) {
-                // Disable EQ
                 equalizerService.disable()
                 eqProfileRepository.setActiveProfile(null)
-            } else {
-                // Apply the selected profile
-                val profile = _state.value.profiles.find { it.id == profileId }
-                if (profile != null) {
-                    val result = equalizerService.applyProfile(profile)
-                    result.onSuccess {
-                        eqProfileRepository.setActiveProfile(profileId)
-                    }.onFailure { e ->
-                        _state.update { it.copy(error = e.message ?: "Unknown error") }
-                    }
-                }
+                return@launch
+            }
+
+            val profile = _state.value.profiles.find { it.id == profileId } ?: return@launch
+            val result = equalizerService.applyProfile(profile)
+            result.onSuccess {
+                eqProfileRepository.setActiveProfile(profileId)
+            }.onFailure { e ->
+                _state.update { it.copy(error = e.message ?: "Unknown error") }
             }
         }
     }
@@ -107,24 +100,18 @@ class EQViewModel @Inject constructor(
     ) {
         viewModelScope.launch {
             try {
-                // Read the file content
                 val content = inputStream.bufferedReader().use { it.readText() }
-                inputStream.close()
 
-                // Parse the ParametricEQ format
                 val parametricEQ = ParametricEQParser.parseText(content)
 
-                // Validate the parsed EQ
                 val validationErrors = ParametricEQParser.validate(parametricEQ)
                 if (validationErrors.isNotEmpty()) {
                     onError(Exception("Invalid EQ file: ${validationErrors.first()}"))
                     return@launch
                 }
 
-                // Extract profile name from file name (remove .txt extension)
                 val profileName = fileName.removeSuffix(".txt")
 
-                // Import the profile
                 eqProfileRepository.importCustomProfile(profileName, parametricEQ)
 
                 _state.update { it.copy(importStatus = "Successfully imported $profileName") }

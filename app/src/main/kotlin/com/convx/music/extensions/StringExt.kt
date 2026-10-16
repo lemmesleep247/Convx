@@ -9,12 +9,20 @@ import androidx.sqlite.db.SimpleSQLiteQuery
 import java.net.InetSocketAddress
 import java.net.InetSocketAddress.createUnresolved
 
+/** Enum names persisted before their constants were renamed, mapped to the current names. */
+@PublishedApi
+internal val legacyEnumNames = mapOf(
+    "VIVIMUSIC_1" to "CONVX_1",
+    "VIVIMUSIC" to "CONVX",
+    "BITCHORD_MESH" to "FLUID_MESH",
+)
+
 inline fun <reified T : Enum<T>> String?.toEnum(defaultValue: T): T =
     if (this == null) {
         defaultValue
     } else {
         try {
-            enumValueOf(this)
+            enumValueOf(legacyEnumNames[this] ?: this)
         } catch (e: IllegalArgumentException) {
             defaultValue
         }
@@ -23,10 +31,7 @@ inline fun <reified T : Enum<T>> String?.toEnum(defaultValue: T): T =
 fun String.toSQLiteQuery(): SimpleSQLiteQuery = SimpleSQLiteQuery(this)
 
 fun String.toInetSocketAddress(): InetSocketAddress {
-    // Bracketed form ("[2401:4900::1]:1080") for an IPv6 literal host — an IPv6
-    // address's own colons make plain split(":") ambiguous with the port
-    // separator, so RFC 3986 disambiguates with brackets. IPv4/hostname never
-    // start with one, so that's the branch signal.
+    // Bracketed IPv6 literal: colons in the address would clash with the port split.
     if (startsWith("[")) {
         val closeBracket = indexOf(']')
         val host = substring(1, closeBracket)

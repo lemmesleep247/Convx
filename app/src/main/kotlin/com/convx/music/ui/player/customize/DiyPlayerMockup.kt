@@ -26,8 +26,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -67,6 +67,7 @@ import com.convx.music.constants.SliderStyleKey
 import com.convx.music.constants.ThumbnailCornerRadiusKey
 import com.convx.music.ui.component.LocalAppBackdrop
 import com.convx.music.ui.component.LocalGlassEffectConfig
+import com.convx.music.ui.component.withFixedStyle
 import com.convx.music.ui.component.PLAYER_BLUR_MULTIPLIER
 import com.convx.music.ui.component.backdrop.backdrops.rememberLayerBackdrop
 import com.convx.music.ui.component.isGlassAllowed
@@ -114,14 +115,11 @@ fun DiyPlayerMockup(
     topOverlay: @Composable BoxScope.(scale: Float) -> Unit = {},
 ) {
     val style = rememberMockupStyle()
-    val glassConfig = LocalGlassEffectConfig.current
+    // Keep preview glass fixed; the global preference controls the nav bar and mini player.
+    val glassConfig = LocalGlassEffectConfig.current.withFixedStyle()
     val glassActive = isGlassAllowed()
 
-    // Same frosted-chrome trick as ArtistScreen/AlbumScreen: this editor is a NavHost
-    // destination, so liquidGlass must NOT sample the root appBackdrop (that capture
-    // includes the screen itself -> native RenderNode cycle, SIGSEGV). An unattached
-    // screen-local backdrop (never .layerBackdrop'd onto anything) gives real glass
-    // material with zero self-reference, just without live artwork refraction.
+    // Use a screen-local backdrop to avoid sampling the root capture from inside itself.
     val mockupBackdrop = rememberLayerBackdrop()
 
     CompositionLocalProvider(LocalAppBackdrop provides mockupBackdrop) {
@@ -167,13 +165,6 @@ fun DiyPlayerMockup(
 }
 
 /**
- * The same fixed virtual canvas + uniform centered scale [DiyPlayerMockup] lays its content out
- * against, factored out so the real player can wrap its sticker layer in it too. A sticker's
- * normalised (x, y) only means the same thing in the editor and on the real player if both
- * resolve it against this identical canvas — the real player has no other reason to match a
- * 360:780 aspect ratio on its own.
- */
-/**
  * The mockup's actual rendered width for [orientation] within a [maxWidth]x[maxHeight] area —
  * the same scale formula [DiyDesignCanvas] computes internally, exposed so sibling UI (the
  * editor's floating control pills) can match the mockup's real on-screen bounds. Without this,
@@ -191,6 +182,10 @@ fun diyMockupRenderedWidth(orientation: DiyOrientation, maxWidth: Dp, maxHeight:
     return design.width * scale
 }
 
+/**
+ * Lays out the mockup and real sticker layer on the same virtual canvas and centered scale.
+ * Sticker coordinates then resolve to the same positions in both places.
+ */
 @Composable
 fun DiyDesignCanvas(
     orientation: DiyOrientation,
@@ -234,10 +229,10 @@ data class MockupStyle(
 
 @Composable
 private fun rememberMockupStyle(): MockupStyle {
-    val accent = MaterialTheme.colorScheme.primary
+    val accent = AppTheme.colorScheme.primary
     val background by rememberEnumPreference(
         PlayerBackgroundStyleKey,
-        defaultValue = PlayerBackgroundStyle.APPLE_MUSIC,
+        defaultValue = PlayerBackgroundStyle.GRADIENT,
     )
     val artwork by rememberEnumPreference(
         PlayerArtworkStyleKey,
@@ -254,7 +249,7 @@ private fun rememberMockupStyle(): MockupStyle {
     val (cornerRadius) = rememberPreference(ThumbnailCornerRadiusKey, defaultValue = 3f)
     val (hideThumbnail) = rememberPreference(HidePlayerThumbnailKey, defaultValue = false)
 
-    val tertiary = MaterialTheme.colorScheme.tertiary
+    val tertiary = AppTheme.colorScheme.tertiary
     return remember(
         accent, background, artwork, buttons, slider,
         staticColor, gradientStops, gradientAngle, cornerRadius, hideThumbnail, tertiary,

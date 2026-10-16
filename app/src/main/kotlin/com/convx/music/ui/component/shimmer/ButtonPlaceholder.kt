@@ -10,7 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.MaterialTheme
+import com.convx.music.ui.ios.compat.AppTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -21,6 +21,6 @@ fun ButtonPlaceholder(modifier: Modifier = Modifier) {
         modifier
             .height(ButtonDefaults.MinHeight)
             .clip(RoundedCornerShape(50))
-            .background(MaterialTheme.colorScheme.onSurface),
+            .background(AppTheme.colorScheme.onSurface),
     )
 }

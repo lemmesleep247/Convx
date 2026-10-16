@@ -1,5 +1,6 @@
 package com.music.spotify
 
+import com.music.spotify.models.SpotifyImage
 import com.music.spotify.models.SpotifyPlaylist
 import com.music.spotify.models.SpotifyTrack
 
@@ -15,6 +16,9 @@ object SpotifyMapper {
 
     private const val NORM_CACHE_MAX_SIZE = 256
     private const val EARLY_EXIT_THRESHOLD = 0.95
+    private const val TITLE_SCORE_WEIGHT = 0.45
+    private const val ARTIST_SCORE_WEIGHT = 0.35
+    private const val DURATION_SCORE_WEIGHT = 0.20
 
     private val normalizeCache = object : LinkedHashMap<String, String>(
         NORM_CACHE_MAX_SIZE, 0.75f, true
@@ -44,19 +48,13 @@ object SpotifyMapper {
         return if (artist.isEmpty()) title else "$artist $title"
     }
 
-    fun getPlaylistThumbnail(playlist: SpotifyPlaylist): String? {
-        return playlist.images.let { images ->
-            images.firstOrNull { it.width in 200..400 }?.url
-                ?: images.firstOrNull()?.url
-        }
-    }
+    fun getPlaylistThumbnail(playlist: SpotifyPlaylist): String? = selectThumbnail(playlist.images)
 
-    fun getTrackThumbnail(track: SpotifyTrack): String? {
-        return track.album?.images?.let { images ->
-            images.firstOrNull { it.width in 200..400 }?.url
-                ?: images.firstOrNull()?.url
-        }
-    }
+    fun getTrackThumbnail(track: SpotifyTrack): String? =
+        track.album?.images?.let(::selectThumbnail)
+
+    private fun selectThumbnail(images: List<SpotifyImage>): String? =
+        images.firstOrNull { it.width in 200..400 }?.url ?: images.firstOrNull()?.url
 
     fun precompute(
         title: String,
@@ -97,7 +95,7 @@ object SpotifyMapper {
         )
 
         val durationScore = durationScore(spotifyDurationMs, candidateDurationSec)
-        return titleScore * 0.45 + artistScore * 0.35 + durationScore * 0.20
+        return combineScores(titleScore, artistScore, durationScore)
     }
 
     fun matchScorePrecomputed(
@@ -119,8 +117,13 @@ object SpotifyMapper {
         )
 
         val durationScore = durationScore(precomputed.durationMs, candidateDurationSec)
-        return titleScore * 0.45 + artistScore * 0.35 + durationScore * 0.20
+        return combineScores(titleScore, artistScore, durationScore)
     }
+
+    private fun combineScores(title: Double, artist: Double, duration: Double): Double =
+        title * TITLE_SCORE_WEIGHT +
+            artist * ARTIST_SCORE_WEIGHT +
+            duration * DURATION_SCORE_WEIGHT
 
     fun earlyExitThreshold(): Double = EARLY_EXIT_THRESHOLD
 

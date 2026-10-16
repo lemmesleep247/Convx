@@ -15,6 +15,8 @@ data class ModuleSearchResult(
     @SerialName("duration") val duration: Int = 0,
     @SerialName("trackNumber") val trackNumber: Int = 0,
     @SerialName("audioQuality") val audioQuality: String = "",
+    @SerialName("format") val format: String = "",
+    @SerialName("availableQualities") val availableQualities: List<String> = emptyList(),
 )
 
 @Serializable
@@ -25,8 +27,11 @@ data class ModuleSearchResponse(
 
 @Serializable
 data class ModuleStreamResponse(
-    @SerialName("streamUrl") val streamUrl: String = "",
+    @SerialName("streamUrl") val streamUrl: String? = null,
     @SerialName("track") val track: ModuleStreamTrack? = null,
+    @SerialName("mimeType") val mimeType: String? = null,
+    @SerialName("streamType") val streamType: String? = null,
+    @SerialName("expiresAt") val expiresAt: Long? = null,
 )
 
 @Serializable
@@ -34,7 +39,10 @@ data class ModuleStreamTrack(
     @SerialName("id") val id: String = "",
     @SerialName("audioQuality") val audioQuality: String = "",
     @SerialName("mimeType") val mimeType: String? = null,
+    @SerialName("format") val format: String? = null,
+    @SerialName("codec") val codec: String? = null,
     @SerialName("bitDepth") val bitDepth: Int? = null,
     @SerialName("sampleRate") val sampleRate: Double? = null,
+    @SerialName("bitrate") val bitrate: Int? = null,
     @SerialName("audioModes") val audioModes: List<String>? = null,
 )

@@ -2,7 +2,7 @@
  * Convx Project (C) 2026
  * Licensed under GPL-3.0 | See git history for contributors
  * 
- * Ported and adapted from ArchiveTune-dev (LyricsV2.kt)
+ * Ported and adapted from reference-dev (LyricsV2.kt)
  */
 
 package com.convx.music.ui.component
@@ -16,8 +16,8 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -41,6 +41,7 @@ import com.convx.music.lyrics.LyricsEntry
 import com.convx.music.lyrics.WordTimestamp
 import kotlin.math.PI
 import kotlin.math.sin
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -99,9 +100,11 @@ fun LyricsLineV2(
         // Fallback for lines without word timings (e.g. standard LRC without word sync)
         Text(
             text = entry.text,
-            style = MaterialTheme.typography.headlineMedium.copy(
+            style = AppTheme.typography.headlineMedium.copy(
                 fontSize = if (entry.isBackground) (baseFontSize * 0.85f).sp else baseFontSize.sp,
-                fontWeight = if (isActive) FontWeight.Bold else FontWeight.Medium,
+                fontWeight = FontWeight.Bold,
+                // Keep tracking proportional to the lyric size.
+                letterSpacing = ((if (entry.isBackground) baseFontSize * 0.85f else baseFontSize) * 0.012f).sp,
                 fontStyle = if (entry.isBackground) FontStyle.Italic else FontStyle.Normal,
                 lineHeight = lineHeight.coerceAtMost(baseFontSize * 1.3f).sp,
             ),
@@ -113,14 +116,16 @@ fun LyricsLineV2(
 
     // Translated text support
     if (showTranslated) {
-        val translatedText by entry.translatedTextFlow.collectAsState()
+        val translatedText by entry.translatedTextFlow.collectAsStateWithLifecycle()
         translatedText?.let { translated ->
             Text(
                 text = translated,
                 fontSize = (baseFontSize * 0.7f).sp,
                 color = expressiveAccent.copy(alpha = if (isActive) 0.8f else inactiveAlpha * 0.8f),
                 textAlign = agentTextAlign,
-                fontWeight = FontWeight.Medium,
+                // Slightly tighten translated text.
+                fontWeight = FontWeight.Bold,
+                letterSpacing = (baseFontSize * 0.7f * -0.012f).sp,
                 modifier = Modifier.padding(top = 4.dp).fillMaxWidth(),
                 lineHeight = (baseFontSize * 0.7f * (lineHeight / baseFontSize).coerceAtMost(1.3f)).sp
             )
@@ -147,7 +152,6 @@ fun AnimatedWordV2(
     val isWordComplete = isLinePast || effectivePlaybackPosition >= wordEndMs
     val isWordActive = isLineActive && effectivePlaybackPosition in wordStartMs until wordEndMs
 
-    // Perfect linear progress [0..1]
     val progress = when {
         isWordComplete -> 1f
         !isLineActive || effectivePlaybackPosition <= wordStartMs -> 0f
@@ -174,7 +178,7 @@ fun AnimatedWordV2(
     val glowRadius = if (isWordActive) glowProgress * 12f else 0f
 
     val density = LocalDensity.current
-    val fontWeight = if (isLineActive) FontWeight.Bold else FontWeight.SemiBold
+    val fontWeight = FontWeight.Bold
 
     Box(
         modifier = Modifier
@@ -187,9 +191,10 @@ fun AnimatedWordV2(
         // Layer 1: Base text (always dimmed)
         Text(
             text = word.text,
-            style = MaterialTheme.typography.headlineMedium.copy(
+            style = AppTheme.typography.headlineMedium.copy(
                 fontSize = fontSize.sp,
                 fontWeight = fontWeight,
+                letterSpacing = (fontSize * 0.012f).sp,
                 fontStyle = if (isBackground) FontStyle.Italic else FontStyle.Normal,
                 lineHeight = lineHeight.sp,
             ),
@@ -200,9 +205,10 @@ fun AnimatedWordV2(
         if (isWordComplete || isWordActive) {
             Text(
                 text = word.text,
-                style = MaterialTheme.typography.headlineMedium.copy(
+                style = AppTheme.typography.headlineMedium.copy(
                     fontSize = fontSize.sp,
                     fontWeight = fontWeight,
+                    letterSpacing = (fontSize * 0.012f).sp,
                     fontStyle = if (isBackground) FontStyle.Italic else FontStyle.Normal,
                     lineHeight = lineHeight.sp,
                     shadow = if (glowAlpha > 0f) {

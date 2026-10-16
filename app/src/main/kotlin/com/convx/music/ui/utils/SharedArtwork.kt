@@ -6,133 +6,204 @@
  */
 package com.convx.music.ui.utils
 
+import android.net.Uri
+import android.os.Bundle
 import androidx.compose.animation.AnimatedVisibilityScope
-import androidx.compose.animation.BoundsTransform
-import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
-import androidx.compose.animation.SharedTransitionScope.OverlayClip
-import androidx.compose.animation.SharedTransitionScope.ResizeMode
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateDp
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.compositionLocalOf
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import coil3.Image
+import coil3.toBitmap
+import coil3.compose.AsyncImagePainter
+import com.convx.artwork.ArtworkSourceRegistry
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onPlaced
-import android.os.Bundle
 import androidx.navigation.NavBackStackEntry
-import com.convx.music.constants.ThumbnailCornerRadius
-import com.convx.music.ui.player.rememberScreenCornerRadius
 
-/**
- * The app-wide [SharedTransitionScope], provided once around the NavHost.
- *
- * Null wherever no scope is in play -- a screen rendered outside the NavHost, a preview,
- * a dialog. [morphContainer] then does nothing rather than crashing, which is why this is
- * nullable instead of `error()`-ing like the app's other required locals: a screen is
- * always drawable, and only sometimes morphable.
- */
+/** Shared-transition scope around the NavHost; null outside navigation and previews. */
 val LocalSharedTransitionScope = compositionLocalOf<SharedTransitionScope?> { null }
 
-/**
- * The current destination's [AnimatedVisibilityScope] — the NavHost entry's own, which is
- * what tells the shared element which transition it is participating in.
- */
+/** The current NavHost entry scope used by shared transitions. */
 val LocalNavAnimatedVisibilityScope = compositionLocalOf<AnimatedVisibilityScope?> { null }
 
-/**
- * Stable identity for one morph pair: the tapped tile and the screen it opens.
- *
- * A data class rather than the bare id string so it cannot collide with any other shared
- * key in the app -- shared content is matched across the whole SharedTransitionLayout,
- * not per screen, so a plain `"abc123"` would match anything else that happened to use
- * the same string.
- */
+/** Unique key for the tile and destination artwork pair. */
 data class SharedArtworkKey(val id: String)
 
-/**
- * True while the in-flight navigation is a pop (closing a morph route back to its
- * tile) rather than a push (opening one). Both halves of the shared bounds read this
- * -- it has to be one flag, not derived independently per side, or the two ends can
- * disagree about which curve they are on and visibly shear apart mid-flight.
- *
- * Set from [markMorphDirection], called alongside [markSharedArtworkSource] in
- * MainActivity's `OnDestinationChangedListener`, which already fires on every
- * navigation -- comparing back-stack size before and after that same event is a push
- * vs a pop, deterministically, without threading a signal through every place a morph
- * route's back button or system back is handled.
- */
+/** Shared direction for both ends of the morph, set once per navigation change. */
 private val isMorphClosing = mutableStateOf(false)
+private val libraryMorph = mutableStateOf(false)
+fun isLibraryArtworkMorph(): Boolean = libraryMorph.value
 
 /** See [isMorphClosing]. */
 fun markMorphDirection(isPop: Boolean) {
     isMorphClosing.value = isPop
 }
 
-private val MorphBoundsTransform = BoundsTransform { _, _ ->
-    if (isMorphClosing.value) Motion.morphExit() else Motion.morphEnter()
+/** Whether the current navigation is popping, used to avoid freezing predictive back. */
+fun lastNavWasPop(): Boolean = isMorphClosing.value
+
+/** Only the tapped tile claims the shared key; duplicate tiles may show the same artwork. */
+class NavigationArtworkState {
+    val sources = ArtworkSourceRegistry<Image>()
+    val librarySourceOwners = mutableSetOf<Any>()
+    private val libraryOrigins = mutableMapOf<String, Boolean>()
+    private var pendingReturnId: String? = null
+    var selected by mutableStateOf<ArtworkSourceRegistry.Source<Image>?>(null)
+        private set
+
+    fun select(id: String?, returning: Boolean): String? {
+        val selectedId = if (returning) selected?.id ?: id else id
+        if (selectedId.isNullOrBlank()) {
+            if (!returning) pendingReturnId = null
+            return null
+        }
+        pendingReturnId = selectedId.takeIf { returning }
+        selected = sources.select(selectedId, returning)
+        if (!returning) libraryOrigins[selectedId] = selected?.owner in librarySourceOwners
+        libraryMorph.value = libraryOrigins[selectedId] == true
+        return selected?.url
+    }
+
+    fun registerSource(owner: Any, id: String, url: String?) {
+        sources.register(owner, id, url)
+        if (pendingReturnId == id && selected?.owner != owner && !sources.isRegistered(selected?.owner)) {
+            selected = sources.select(id, returning = true, preferredOwner = owner)
+            if (selected?.owner == owner) {
+                pendingReturnId = null
+                libraryOrigins[id] = owner in librarySourceOwners
+                libraryMorph.value = libraryOrigins[id] == true
+            }
+        }
+    }
 }
 
-/**
- * The artwork the user last tapped to navigate.
- *
- * Home shows the same album in more than one rail all the time -- quick picks and
- * "similar to", say. Shared elements are matched BY KEY, so if every tile claimed its
- * id, two live elements would answer to one key in the same frame and the detail
- * screen would morph out of whichever the framework happened to pick. That is the
- * "artwork flew in from the wrong tile" bug, and it survives the move from
- * sharedElement to sharedBounds unchanged -- the matching rule is the same.
- *
- * So a tile only becomes a shared element once it is the one being opened. The detail
- * screen needs no such guard: there is only ever one of it.
- *
- * Plain state rather than a nav argument because it is a presentation detail -- losing
- * it (process death, a deep link, a programmatic navigate) costs the morph, not
- * correctness.
- */
-private val pendingSharedArtworkId = mutableStateOf<String?>(null)
+val LocalNavigationArtwork = compositionLocalOf<NavigationArtworkState?> { null }
+val LocalArtworkSourceOwner = compositionLocalOf<Any?> { null }
 
-/**
- * Every artwork currently placed on screen, by item id.
- *
- * Plain map, not snapshot state: this is written from the layout pass on every tile on
- * every scroll frame, and nothing composes off it.
- */
-private val placedArtwork = HashMap<String, Pair<LayoutCoordinates, String?>>()
+@Composable
+fun rememberArtworkSourceOwner(): Any = LocalArtworkSourceOwner.current
+    ?: rememberSaveable { java.util.UUID.randomUUID().toString() }
 
-/**
- * The item id a destination's route carries, if any.
- *
- * These argument names cover every artwork-bearing route in the app. Keeping the list
- * in one place is what stops the listener that nominates a morph source and the
- * container that consumes it from drifting apart.
- */
+@Composable
+fun Modifier.artworkSourceTouch(owner: Any): Modifier {
+    val state = LocalNavigationArtwork.current ?: return this
+    return pointerInput(state, owner) {
+        awaitEachGesture {
+            awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+            state.sources.touch(owner)
+        }
+    }
+}
+
+@Composable
+fun sharedArtworkImageListener(owner: Any, url: String?): (AsyncImagePainter.State.Success) -> Unit {
+    val state = LocalNavigationArtwork.current
+    return remember(state, owner, url) {
+        { success -> state?.sources?.updateImage(owner, url, success.result.image) }
+    }
+}
+
+@Composable
+fun selectedArtworkImage(): Image? {
+    val id = LocalMorphArtworkId.current ?: return null
+    return LocalNavigationArtwork.current?.selected?.takeIf { it.id == id }?.image
+}
+
+@Composable
+fun SharedArtworkSeedImage(modifier: Modifier, contentScale: ContentScale): Boolean {
+    val image = selectedArtworkImage() ?: return false
+    val bitmap = remember(image) { image.toBitmap().asImageBitmap() }
+    Image(bitmap = bitmap, contentDescription = null, modifier = modifier, contentScale = contentScale)
+    return true
+}
+
+@Composable
+fun artworkTransitionRunning(): Boolean {
+    val navTransition = LocalNavAnimatedVisibilityScope.current?.transition
+    return navTransition?.let { it.currentState != it.targetState } == true ||
+        LocalSharedTransitionScope.current?.isTransitionActive == true
+}
+
+@Composable
+fun ArtworkSourceHost(modifier: Modifier, fromLibrary: Boolean = false, content: @Composable (Modifier) -> Unit) {
+    val owner = rememberSaveable { java.util.UUID.randomUUID().toString() }
+    val state = LocalNavigationArtwork.current
+    DisposableEffect(state, owner, fromLibrary) {
+        if (fromLibrary) state?.librarySourceOwners?.add(owner)
+        onDispose {
+            state?.sources?.unregister(owner)
+            state?.librarySourceOwners?.remove(owner)
+        }
+    }
+    CompositionLocalProvider(LocalArtworkSourceOwner provides owner) {
+        content(modifier.artworkSourceTouch(owner))
+    }
+}
+
+@Composable
+fun selectedArtworkTitle(): String? {
+    val id = LocalMorphArtworkId.current ?: return null
+    return LocalNavigationArtwork.current?.selected?.takeIf { it.id == id }?.title
+}
+
+@Composable
+fun Modifier.sharedTitleSource(title: String): Modifier {
+    val owner = LocalArtworkSourceOwner.current ?: return this
+    val state = LocalNavigationArtwork.current ?: return this
+    state.sources.setTitle(owner, title)
+    val source = state.selected?.takeIf { it.owner == owner } ?: return this
+    return sharedTitleElement(source.id)
+}
+
+@Composable
+fun Modifier.sharedTitleTarget(): Modifier {
+    val id = LocalMorphArtworkId.current ?: return this
+    if (!hasMorphSource(id)) return this
+    return sharedTitleElement(id)
+}
+
+@Composable
+private fun Modifier.sharedTitleElement(id: String): Modifier {
+    val sharedScope = LocalSharedTransitionScope.current ?: return this
+    val animatedScope = LocalNavAnimatedVisibilityScope.current ?: return this
+    return with(sharedScope) {
+        this@sharedTitleElement.sharedBounds(
+            sharedContentState = rememberSharedContentState("title:$id"),
+            animatedVisibilityScope = animatedScope,
+            boundsTransform = { _, _ -> Motion.artwork() },
+            renderInOverlayDuringTransition = true,
+            zIndexInOverlay = 2f,
+        )
+    }
+}
+
+/** Artwork route arguments are shared by the navigation listener and destination. */
 fun NavBackStackEntry.morphArtworkId(): String? = arguments.morphArtworkId()
+fun NavBackStackEntry.morphArtworkThumb(): String? = arguments.morphArtworkThumb()
 
-/**
- * Same lookup against a raw argument [Bundle], for `OnDestinationChangedListener` --
- * which is handed arguments, not an entry.
- *
- * Deliberately the same function as the entry overload rather than a second copy of the
- * key list. The listener nominates the source half and the destination's container
- * consumes it; if the two disagree about which argument names carry an id, a route is
- * silently left with a destination that expects a morph and a source that was never
- * nominated, and it falls back to a cross-fade for no visible reason.
- */
+/** Looks up artwork arguments from the Bundle passed to navigation listeners. */
+fun Bundle?.morphArtworkThumb(): String? =
+    this?.getString("thumb")
+        ?: this?.getString("thumbnail")
+
 fun Bundle?.morphArtworkId(): String? =
-    this?.getString("albumId")
+    this?.getString("morphId")
+        ?: this?.getString("albumId")
         ?: this?.getString("artistId")
         ?: this?.getString("playlistId")
         ?: this?.getString("browseId")
@@ -140,9 +211,23 @@ fun Bundle?.morphArtworkId(): String? =
         ?: this?.getString("top")
         ?: this?.getString("path")
 
-/** True for the destinations that open with a container morph -- see `sharedComposable`. */
+/** True for destinations that use the shared artwork morph. */
 fun isMorphRoute(route: String?): Boolean =
     route != null && MorphRoutePrefixes.any(route::startsWith)
+
+/** Adds optional title and artwork so the destination can render its hero immediately. */
+fun onlinePlaylistRoute(id: String, title: String?, thumbnail: String?): String = buildString {
+    append("online_playlist/").append(id)
+    if (!title.isNullOrEmpty() || !thumbnail.isNullOrEmpty()) {
+        append("?title=").append(Uri.encode(title ?: ""))
+        append("&thumbnail=").append(Uri.encode(thumbnail ?: ""))
+    }
+}
+
+fun youtubeBrowseRoute(browseId: String, params: String?): String = buildString {
+    append("youtube_browse/").append(Uri.encode(browseId))
+    params?.let { append("?params=").append(Uri.encode(it)) }
+}
 
 private val MorphRoutePrefixes =
     listOf(
@@ -158,144 +243,91 @@ private val MorphRoutePrefixes =
         "browse/",
     )
 
-/**
- * Call as navigation to [id]'s detail screen begins: nominates that tile as the source
- * of the morph. Returns the tile's artwork URL, for warming anything the destination
- * will want.
- *
- * A null or unknown id leaves the previous nomination in place rather than clearing it
- * -- popping back off a detail screen reports a destination with no id at all, and
- * clearing here would drop the source half of the morph exactly when the reverse morph
- * needs it.
- */
-fun markSharedArtworkSource(id: String?): String? {
+/** Selects the tapped tile as the morph source; null IDs preserve it for reverse navigation. */
+fun markSharedArtworkSource(state: NavigationArtworkState, id: String?, returning: Boolean): String? =
+    state.select(id, returning)
+
+/** Returns the route thumbnail or the live tile thumbnail for [id]. */
+@Composable
+fun pendingSharedArtworkThumbFor(id: String?): String? {
     if (id.isNullOrEmpty()) return null
-    pendingSharedArtworkId.value = id
-    return placedArtwork[id]?.second
+    return LocalNavigationArtwork.current?.sources?.source(id)?.url
 }
 
-/**
- * Whether [id] has a live [sharedArtworkSource] tile registered right now.
- *
- * Not the same question as "is [id] non-null" -- a route can carry a perfectly good
- * id while the tile that opened it never called [sharedArtworkSource] at all (a
- * bespoke card that renders its own `AsyncImage` instead of going through one of
- * Items.kt's shared composables). That case has a real id, so [morphContainer] would
- * still try to claim the shared-bounds key, find no partner, and the destination
- * would render with none of the enter animation applied anywhere -- not the real
- * morph (no partner to interpolate from) and not the generic fallback either (which
- * used to gate on id-nullness alone). This is the check that closes that gap: a
- * `sharedComposable` should fall back to [Modifier.animateEnterExit] whenever this
- * is false, id or no id.
- */
-fun hasMorphSource(id: String): Boolean = placedArtwork.containsKey(id)
+/** Builds an album route with an optional thumbnail for immediate hero rendering. */
+fun albumRoute(id: String, thumbnail: String?, sharedArtworkId: String? = null): String = buildString {
+    append("album/").append(id)
+    val query = mutableListOf<String>()
+    thumbnail?.takeIf(String::isNotEmpty)?.let { query += "thumb=${Uri.encode(it)}" }
+    sharedArtworkId?.takeIf(String::isNotEmpty)?.let { query += "morphId=${Uri.encode(it)}" }
+    if (query.isNotEmpty()) {
+        append('?').append(query.joinToString("&"))
+    }
+}
 
-/**
- * Source half of the morph: the tile's artwork box.
- *
- * Always records where this artwork is, so anything that wants the tile's thumbnail
- * URL can read it without every tile in the app routing its click through a shared
- * helper. Only becomes an actual shared element once this tile is the one being
- * opened -- see [pendingSharedArtworkId].
- *
- * Deliberately a `sharedBounds`, not a `sharedElement`, and deliberately on the
- * ARTWORK box rather than the whole tile card. Measured off the reference: the
- * shrinking card lands exactly on the artwork square, with the tile's text label
- * below it never part of the morph.
- */
+/** Builds an artist route with an optional thumbnail. */
+fun artistRoute(id: String, thumbnail: String?): String = buildString {
+    append("artist/").append(id)
+    if (!thumbnail.isNullOrEmpty()) {
+        append("?thumb=").append(Uri.encode(thumbnail))
+    }
+}
+
+/** Builds a local playlist route with an optional thumbnail. */
+fun localPlaylistRoute(id: String, thumbnail: String?): String = buildString {
+    append("local_playlist/").append(id)
+    if (!thumbnail.isNullOrEmpty()) {
+        append("?thumb=").append(Uri.encode(thumbnail))
+    }
+}
+
+/** True only when a visible tile registered this id as a shared-artwork source. */
 @Composable
-fun Modifier.sharedArtworkSource(id: String?, thumbnailUrl: String? = null): Modifier {
-    if (id.isNullOrEmpty()) return this
+fun hasMorphSource(id: String): Boolean = LocalNavigationArtwork.current?.selected?.id == id
 
-    DisposableEffect(id) { onDispose { placedArtwork.remove(id) } }
-    val track = remember(id, thumbnailUrl) {
-        Modifier.onPlaced { placedArtwork[id] = it to thumbnailUrl }
+/** Records a tile and joins the morph only when that tile was tapped. */
+@Composable
+fun Modifier.sharedArtworkSource(id: String?, thumbnailUrl: String? = null, owner: Any = rememberArtworkSourceOwner()): Modifier {
+    if (id.isNullOrEmpty()) return this
+    val state = LocalNavigationArtwork.current ?: return this
+
+    DisposableEffect(state, owner, id) { onDispose { state.sources.unregister(owner) } }
+    val track = remember(state, owner, id, thumbnailUrl) {
+        Modifier.onPlaced { state.registerSource(owner, id, thumbnailUrl) }
     }
 
-    return if (pendingSharedArtworkId.value != id) {
+    return if (state.selected?.owner != owner || state.selected?.id != id) {
         then(track)
     } else {
-        then(track).morphContainer(id, isSource = true)
+        then(track).sharedArtworkElement(id)
     }
 }
 
-/**
- * One end of the container morph.
- *
- * On the tile it is the artwork box; on the detail screen it is the whole screen root.
- * Between them Compose lifts both into the shared overlay and interpolates one rect
- * into the other, scaling the detail screen's already-laid-out content down into the
- * tile's square and cropping the overflow -- which is what the reference does. The
- * corner radius travels with it, from the screen's own radius to the tile's.
- *
- * Content scales into the card rather than re-measuring: the reference clearly
- * scales finished layout (text, buttons and tracklist all shrink proportionally inside
- * the card) instead of re-laying-out the detail screen at tile width every frame, which
- * would also be a full measure/layout pass per frame of the transition.
- *
- * Silently returns the receiver when either scope is missing, so a call site is safe to
- * add before its screen has been wired into the NavHost -- it simply cross-fades.
- */
+/** Marks the destination hero as the other end of the morph. Place before size, clip, and shadow. */
 @Composable
-fun Modifier.morphContainer(id: String?, isSource: Boolean): Modifier {
-    if (id.isNullOrEmpty()) return this
-    val sharedScope = LocalSharedTransitionScope.current ?: return this
-    val animatedScope = LocalNavAnimatedVisibilityScope.current ?: return this
+fun Modifier.sharedArtworkTarget(): Modifier {
+    val id = LocalMorphArtworkId.current ?: return this
+    if (!hasMorphSource(id)) return this
+    return sharedArtworkElement(id)
+}
 
-    val screenRadius = rememberScreenCornerRadius()
-    // Source and destination must animate the radius through the SAME values or the
-    // two halves disagree about the card's shape mid-flight. Both read tile radius at
-    // the tile end and screen radius at the screen end; which end each one starts from
-    // is the only difference, and EnterExitState already expresses that.
-    val radius by animatedScope.transition.animateDp(
-        // Same flag as MorphBoundsTransform, so the radius and the rect it clips
-        // never fall out of sync mid-flight.
-        transitionSpec = { if (isMorphClosing.value) Motion.morphExit() else Motion.morphEnter() },
-        label = "morphCornerRadius",
-    ) { state ->
-        when (state) {
-            EnterExitState.Visible -> if (isSource) ThumbnailCornerRadius else screenRadius
-            // Both ends of the flight sit on the tile, so both take the tile's radius
-            // no matter which half of the morph this is.
-            EnterExitState.PreEnter, EnterExitState.PostExit -> ThumbnailCornerRadius
-        }
-    }
+/** Artwork id provided to a morph destination; null outside a morph route. */
+val LocalMorphArtworkId = compositionLocalOf<String?> { null }
 
+/** Adds a shared element when both transition scopes are available. */
+@Composable
+private fun Modifier.sharedArtworkElement(id: String): Modifier {
+    val sharedScope = LocalSharedTransitionScope.current
+    val animatedScope = LocalNavAnimatedVisibilityScope.current
+    if (sharedScope == null || animatedScope == null) return this
     return with(sharedScope) {
-        this@morphContainer
-            .sharedBounds(
-                sharedContentState = rememberSharedContentState(SharedArtworkKey(id)),
-                animatedVisibilityScope = animatedScope,
-                boundsTransform = MorphBoundsTransform,
-                // The compose-animation API is lowercase -- `scaleToBounds`, not
-                // `ScaleToBounds` -- confirmed via javap against the actual
-                // animation-android-1.11.2 aar. The capitalized name silently fell
-                // back to the DEFAULT resizeMode instead, which is RemeasureToBounds:
-                // that forces the whole destination screen (every row of its
-                // LazyColumn) through a full measure + layout pass on EVERY frame of
-                // the transition. That is what the dropped-frame jank and the
-                // content-reflowing-instead-of-scaling "just popping" look both were.
-                resizeMode = ResizeMode.scaleToBounds(ContentScale.Crop, Alignment.TopCenter),
-                // Weighted to the ends, not spread across the flight. Measured on the
-                // reference: through the body of the morph the card is fully opaque and
-                // its content simply rides along scaled -- the detail screen's title and
-                // buttons are still legible inside a card barely bigger than the tile --
-                // and only in the last ~3 frames does that content give way to the tile
-                // beneath it. A crossfade spread over the whole flight instead makes the
-                // two halves ghost through each other the entire way, which is the single
-                // most obvious tell that a morph is two images and not one object.
-                //
-                // Arriving (push) resolves early so the card is opaque while it is still
-                // growing; leaving (pop) holds and drops at the very end. Scaled to the
-                // same proportion of the flight as before (roughly the first/last fifth)
-                // now that MorphEnterMillis/MorphExitStiffness are slower -- these were
-                // still 80ms/90ms after that change, i.e. a sixth of the new flight
-                // instead of a fifth, which read as an abrupt little flash at the start
-                // of an otherwise slow, smooth motion.
-                enter = fadeIn(tween(110, easing = FastOutSlowInEasing)),
-                exit = fadeOut(tween(120, delayMillis = 120, easing = FastOutSlowInEasing)),
-                clipInOverlayDuringTransition = OverlayClip(RoundedCornerShape(radius)),
-            )
-            .clip(RoundedCornerShape(radius))
+        this@sharedArtworkElement.sharedElement(
+            sharedContentState = rememberSharedContentState(SharedArtworkKey(id)),
+            animatedVisibilityScope = animatedScope,
+            boundsTransform = { _, _ -> Motion.sharedArtwork() },
+            // Draw above both pages so their clips cannot cut off the artwork.
+            renderInOverlayDuringTransition = true,
+            zIndexInOverlay = 1f,
+        )
     }
 }

@@ -9,6 +9,8 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.music.innertube.YouTube
+import com.music.innertube.models.WatchEndpoint
+import com.music.innertube.models.YTItem
 import com.music.innertube.models.filterExplicit
 import com.music.innertube.pages.ExplorePage
 import com.convx.music.constants.HideExplicitKey
@@ -31,7 +33,25 @@ constructor(
     @ApplicationContext val context: Context,
     val database: MusicDatabase,
 ) : ViewModel() {
-    val explorePage = MutableStateFlow<ExplorePage?>(null)
+    // Seeded from the last fetch so a return visit paints immediately; a refresh then replaces it.
+    val explorePage = MutableStateFlow<ExplorePage?>(ExploreCache.page)
+
+    /** Related items seeded from the most recently played track. */
+    val recommendedForYou = MutableStateFlow<List<YTItem>?>(ExploreCache.recommended)
+
+    private suspend fun loadRecommendedForYou() {
+        val hideExplicit = context.dataStore.get(HideExplicitKey, false)
+        val seedSong = database.latestEvent().first()?.song ?: return
+        val endpoint = YouTube.next(WatchEndpoint(videoId = seedSong.id)).getOrNull()?.relatedEndpoint ?: return
+        YouTube.related(endpoint).onSuccess { page ->
+            recommendedForYou.value = (page.songs + page.albums + page.artists + page.playlists)
+                .distinctBy { it.id }
+                .filterExplicit(hideExplicit)
+                .shuffled()
+                .take(15)
+            recommendedForYou.value?.let(ExploreCache::putRecommended)
+        }
+    }
 
     private suspend fun load() {
         YouTube
@@ -66,19 +86,23 @@ constructor(
                                 firstArtistKey
                             }.filterExplicit(context.dataStore.get(HideExplicitKey, false)),
                     )
+                explorePage.value?.let(ExploreCache::put)
             }.onFailure {
                 reportException(it)
             }
     }
 
     init {
-        refresh()
+        // Fresh data is already on screen; only fetch when there is none or it has gone stale.
+        if (!ExploreCache.isFresh) refresh()
+        else viewModelScope.launch(Dispatchers.IO) { if (recommendedForYou.value == null) loadRecommendedForYou() }
     }
 
     /** Re-fetches the explore page. Bound to the pull-to-refresh gesture. */
     fun refresh() {
         viewModelScope.launch(Dispatchers.IO) {
             load()
+            loadRecommendedForYou()
         }
     }
 }

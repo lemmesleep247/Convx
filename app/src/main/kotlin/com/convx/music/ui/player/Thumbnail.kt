@@ -6,6 +6,7 @@
 package com.convx.music.ui.player
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -14,6 +15,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
@@ -39,10 +41,10 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.Icon
+import com.convx.music.ui.ios.compat.Icon
 import androidx.compose.material3.MaterialShapes
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.Text
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
@@ -59,15 +61,22 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.drop
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
@@ -78,17 +87,21 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.graphics.Bitmap
 import android.util.Size
 import androidx.activity.compose.BackHandler
+import androidx.core.graphics.createBitmap
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import coil3.SingletonImageLoader
 import coil3.compose.AsyncImage
+import coil3.imageLoader
 import coil3.request.CachePolicy
 import coil3.request.ImageRequest
-import coil3.request.crossfade
+import coil3.request.allowHardware
 import coil3.size.Size as CoilSize
+import coil3.toBitmap
 import com.convx.music.LocalListenTogetherManager
 import com.convx.music.LocalPlayerConnection
 import com.convx.music.R
@@ -100,7 +113,6 @@ import com.convx.music.constants.PlayerHorizontalPadding
 import com.convx.music.ui.component.shapes.ContinuousRoundedRectangle
 import com.convx.music.constants.PlayerArtworkStyle
 import com.convx.music.constants.PlayerArtworkStyleKey
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -124,9 +136,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import com.convx.music.applecanvas.AppleMusicCanvasProvider
-import com.convx.music.vivimusiccanvas.ViviMusicCanvasProvider
-import com.convx.music.vivimusiccanvas.EchoMusicCanvasProvider
+import com.convx.music.convxcanvas.ConvxCanvasProvider
+import com.convx.music.utils.SpotifyCanvasLookup
 import java.util.Locale
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 /**
  * Pre-calculated thumbnail dimensions to avoid repeated calculations during recomposition.
@@ -151,7 +164,6 @@ data class MediaItemsData(
 
 /**
  * Calculate thumbnail dimensions once based on container size.
- * This function is marked as @Stable to indicate it produces stable results.
  * In landscape mode, uses the smaller dimension (height) to ensure square thumbnail fits.
  */
 @Stable
@@ -176,10 +188,7 @@ private fun calculateThumbnailDimensions(
     )
 }
 
-/**
- * Get media items for the thumbnail carousel.
- * Calculates previous, current, and next items based on shuffle mode.
- */
+/** Builds the swipe preview from current, previous, and next items in shuffle order. */
 @Stable
 private fun getMediaItems(
     player: Player,
@@ -221,16 +230,12 @@ private fun getMediaItems(
     return MediaItemsData(items, currentMediaIndex)
 }
 
-/**
- * Get text color based on player background style.
- * Computed once per background style change.
- */
 @Stable
 @Composable
 private fun getTextColor(playerBackground: PlayerBackgroundStyle): Color {
     return when (playerBackground) {
-        PlayerBackgroundStyle.DEFAULT -> MaterialTheme.colorScheme.onBackground
-        PlayerBackgroundStyle.BLUR, PlayerBackgroundStyle.GRADIENT, PlayerBackgroundStyle.GLOW_ANIMATED, PlayerBackgroundStyle.APPLE_MUSIC, PlayerBackgroundStyle.LIVE_MESH, PlayerBackgroundStyle.STATIC, PlayerBackgroundStyle.CUSTOM_GRADIENT -> Color.White
+        PlayerBackgroundStyle.DEFAULT -> AppTheme.colorScheme.onBackground
+        PlayerBackgroundStyle.BLUR, PlayerBackgroundStyle.GRADIENT, PlayerBackgroundStyle.GLOW_ANIMATED, PlayerBackgroundStyle.APPLE_MUSIC, PlayerBackgroundStyle.LIVE_MESH, PlayerBackgroundStyle.FLUID_MESH, PlayerBackgroundStyle.STATIC, PlayerBackgroundStyle.CUSTOM_GRADIENT, PlayerBackgroundStyle.GLASS -> Color.White
     }
 }
 
@@ -298,14 +303,12 @@ fun Thumbnail(
     val context = LocalContext.current
     val layoutDirection = LocalLayoutDirection.current
 
-    // Collect states
-    val mediaMetadata by playerConnection.mediaMetadata.collectAsState()
-    val error by playerConnection.error.collectAsState()
-    val queueTitle by playerConnection.queueTitle.collectAsState()
-    val canSkipPrevious by playerConnection.canSkipPrevious.collectAsState()
-    val canSkipNext by playerConnection.canSkipNext.collectAsState()
+    val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
+    val error by playerConnection.error.collectAsStateWithLifecycle()
+    val queueTitle by playerConnection.queueTitle.collectAsStateWithLifecycle()
+    val canSkipPrevious by playerConnection.canSkipPrevious.collectAsStateWithLifecycle()
+    val canSkipNext by playerConnection.canSkipNext.collectAsStateWithLifecycle()
 
-    // Preferences - computed once
     // Disable swipe for Listen Together guests
     val swipeThumbnailPref by rememberPreference(SwipeThumbnailKey, true)
     val swipeThumbnail = swipeThumbnailPref && !isListenTogetherGuest
@@ -313,7 +316,7 @@ fun Thumbnail(
     val cropAlbumArt by rememberPreference(CropAlbumArtKey, false)
     val playerBackground by rememberEnumPreference(
         key = PlayerBackgroundStyleKey,
-        defaultValue = PlayerBackgroundStyle.APPLE_MUSIC
+        defaultValue = PlayerBackgroundStyle.GRADIENT
     )
     val thumbnailCornerRadius by rememberPreference(ThumbnailCornerRadiusKey, defaultValue = 3f)
     
@@ -323,7 +326,6 @@ fun Thumbnail(
     // Grid state
     val thumbnailLazyGridState = rememberLazyGridState()
     
-    // Calculate media items data - memoized
     val mediaItemsData by remember(
         playerConnection.player.currentMediaItemIndex,
         playerConnection.player.shuffleModeEnabled,
@@ -359,15 +361,8 @@ fun Thumbnail(
     // the whole thumbnail carousel.
     LaunchedEffect(swipeThumbnail, currentMediaIndex, canSkipNext, canSkipPrevious) {
         if (!swipeThumbnail || currentMediaIndex < 0) return@LaunchedEffect
-        // drop(1): this effect restarts every time currentMediaIndex changes,
-        // and snapshotFlow replays the CURRENT isScrollInProgress value
-        // immediately on collection start — which is stale grid state from
-        // before the index changed (the resync scroll below hasn't started
-        // yet). Comparing that stale position against the new index misread
-        // as a user swipe and fired a spurious seek, which changed the index
-        // again, restarting this effect again — an infinite ping-pong at
-        // queue boundaries (index 0/1) where the carousel window is 2 items
-        // instead of 3. Only react to an actual transition, not the replay.
+        // snapshotFlow emits its current value on collection start. Ignore it so a
+        // position-resync scroll is not mistaken for a user swipe after this effect restarts.
         snapshotFlow { thumbnailLazyGridState.isScrollInProgress }
             .drop(1)
             .collect { scrolling ->
@@ -382,7 +377,6 @@ fun Thumbnail(
             }
     }
 
-    // Update position when song changes
     LaunchedEffect(mediaMetadata, canSkipPrevious, canSkipNext) {
         val index = maxOf(0, currentMediaIndex)
         if (index >= 0 && index < mediaItems.size) {
@@ -434,7 +428,6 @@ fun Thumbnail(
             }
         }
 
-        // Main thumbnail view
         AnimatedVisibility(
             visible = error == null && !(playerBackground == PlayerBackgroundStyle.APPLE_MUSIC && !isLandscape),
             enter = fadeIn(),
@@ -466,7 +459,6 @@ fun Thumbnail(
                         Modifier.fillMaxSize()
                     }
                 ) {
-                    // Calculate dimensions once per size change, considering landscape mode
                     val dimensions = remember(maxWidth, maxHeight, isLandscape, thumbnailCornerRadius) {
                         calculateThumbnailDimensions(
                             containerWidth = maxWidth,
@@ -581,13 +573,13 @@ private fun ThumbnailHeader(
             if (listenTogetherRoleState?.value != RoomRole.NONE) {
                 Text(
                     text = if (listenTogetherRoleState?.value == RoomRole.HOST) "Hosting Listen Together" else "Listening Together",
-                    style = MaterialTheme.typography.titleMedium,
+                    style = AppTheme.typography.titleMedium,
                     color = textColor
                 )
             } else {
                 Text(
                     text = stringResource(R.string.now_playing),
-                    style = MaterialTheme.typography.titleMedium,
+                    style = AppTheme.typography.titleMedium,
                     color = textColor
                 )
             }
@@ -601,7 +593,7 @@ private fun ThumbnailHeader(
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = text,
-                        style = MaterialTheme.typography.titleMedium,
+                        style = AppTheme.typography.titleMedium,
                         color = textColor.copy(alpha = 0.8f),
                         maxLines = 1,
                         modifier = Modifier.basicMarquee()
@@ -642,28 +634,13 @@ private fun ThumbnailItem(
     modifier: Modifier = Modifier,
 ) {
     val (artworkStyle) = rememberEnumPreference(PlayerArtworkStyleKey, defaultValue = PlayerArtworkStyle.CARD)
-    val rotatingThumbnail = artworkStyle != PlayerArtworkStyle.CARD
-    val isPlaying by playerConnection.isPlaying.collectAsState()
+    val coverStyle = artworkStyle.coverStyle()
+    val rotatingThumbnail = coverStyle.spins
+    val isPlaying by playerConnection.isPlaying.collectAsStateWithLifecycle()
     val isCurrentItem = item.mediaId == currentMediaId
 
-    // An infiniteRepeatable never finishes, so pinning targetValue to 0f did not
-    // stop this — the transition kept awaiting a frame forever and redrew the
-    // whole app every vsync whenever the player was on screen. Only create it
-    // while the artwork is actually spinning.
-    val rotation: State<Float> = if (isPlaying && rotatingThumbnail && isCurrentItem) {
-        val infiniteTransition = rememberInfiniteTransition(label = "ThumbnailRotation")
-        infiniteTransition.animateFloat(
-            initialValue = 0f,
-            targetValue = 360f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(20000, easing = LinearEasing),
-                repeatMode = androidx.compose.animation.core.RepeatMode.Restart
-            ),
-            label = "Rotation"
-        )
-    } else {
-        remember { mutableFloatStateOf(0f) }
-    }
+    // InfiniteRepeatable keeps ticking even when paused, so create it only while spinning.
+    val rotation: State<Float> = rememberCoverRotation(coverStyle, isPlaying && isCurrentItem)
 
     val incrementalSeekSkipEnabled by rememberPreference(SeekExtraSeconds, defaultValue = false)
     var skipMultiplier by remember { mutableIntStateOf(1) }
@@ -725,35 +702,26 @@ private fun ThumbnailItem(
         val artworkDensity = androidx.compose.ui.platform.LocalDensity.current
         Box(
             modifier = Modifier
+                .coverMorph(coverStyle)
                 .size(dimensions.thumbnailSize)
-                // Target end of the mini-to-full cover morph, registered on the node that
-                // KNOWS the shape: a vinyl or clover is a circle for morph purposes (half
-                // its size), a card is its own corner radius. Also the copy that has to be
-                // hidden while the travelling one is in flight, or the cover is on screen
-                // twice from the handoff onward.
-                .registerFullArtworkRect(
-                    with(artworkDensity) {
+                // Register the morph target shape and hide its traveling copy during handoff.
+                .fullArtworkMorphTarget(
+                    cornerRadiusPx = with(artworkDensity) {
                         when (artworkStyle) {
                             PlayerArtworkStyle.CARD -> dimensions.cornerRadius.toPx()
                             else -> dimensions.thumbnailSize.toPx() / 2f
                         }
-                    }
+                    },
+                    // Cards travel between players; vinyl and clover covers resolve in place.
+                    travels = artworkStyle == PlayerArtworkStyle.CARD,
                 )
-                .hideWhileMorphing()
                 .graphicsLayer {
                     rotationZ = rotation.value
                 }
-                .clip(
-                    when (artworkStyle) {
-                        PlayerArtworkStyle.VINYL -> CircleShape
-                        PlayerArtworkStyle.CLOVER -> MaterialShapes.Clover8Leaf.toShape()
-                        // Continuous (squircle) corners, matching the rest of the chrome.
-                        PlayerArtworkStyle.CARD -> ContinuousRoundedRectangle(dimensions.cornerRadius)
-                    }
-                )
-                // A vinyl spins with its label, so only the clover shape counter-rotates.
+                .clip(coverStyle.shape(dimensions.cornerRadius))
+                // A record spins with its label, so only a style whose art stays upright counter-rotates.
                 .graphicsLayer {
-                    rotationZ = if (artworkStyle == PlayerArtworkStyle.VINYL) 0f else -rotation.value
+                    rotationZ = if (coverStyle.artSpinsWithShape) 0f else -rotation.value
                 }
         ) {
             if (hidePlayerThumbnail) {
@@ -765,35 +733,16 @@ private fun ThumbnailItem(
                     item.mediaMetadata.artworkUri?.toString()
                 }
 
+                val crossfadeDurationMs by playerConnection.crossfadeDurationMs.collectAsStateWithLifecycle()
                 ThumbnailImage(
                     artworkUri = artworkUriToUse?.resize(1200, 1200),
-                    cropArtwork = cropAlbumArt
+                    cropArtwork = cropAlbumArt,
+                    crossfadeMillis = crossfadeDurationMs.takeIf { isCurrentItem && it > 0 }?.toInt() ?: 200,
+                    contentKey = item.mediaId,
                 )
             }
             
-            if (artworkStyle == PlayerArtworkStyle.VINYL) {
-                Canvas(Modifier.fillMaxSize()) {
-                    val r = size.minDimension / 2f
-                    val c = Offset(size.width / 2f, size.height / 2f)
-                    // Black record body drawn as a ring, so the art stays visible
-                    // in the middle as the vinyl's paper label.
-                    drawCircle(
-                        color = Color.Black.copy(alpha = 0.82f),
-                        radius = r * 0.67f,
-                        center = c,
-                        style = Stroke(width = r * 0.66f),
-                    )
-                    for (i in 1..7) {
-                        drawCircle(
-                            color = Color.White.copy(alpha = 0.05f),
-                            radius = r * (0.40f + i * 0.083f),
-                            center = c,
-                            style = Stroke(width = 1.dp.toPx()),
-                        )
-                    }
-                    drawCircle(Color.Black, radius = r * 0.055f, center = c)
-                }
-            }
+            coverStyle.Decoration(Modifier.fillMaxSize())
 
             if (canvasThumbnailAnimation && item.mediaId == currentMediaId && !rotatingThumbnail && playerBackground != PlayerBackgroundStyle.APPLE_MUSIC) {
                 val (canvasSource) = rememberEnumPreference(CanvasSourceKey, defaultValue = CanvasSource.AUTO)
@@ -822,11 +771,6 @@ private fun ThumbnailItem(
                         val songTitleRaw = item.mediaMetadata.title?.toString() ?: ""
                         val artistNameRaw = item.mediaMetadata.artist?.toString() ?: ""
                         
-                        val songTitle = normalizeCanvasSongTitle(songTitleRaw)
-                        val artistName = normalizeCanvasArtistName(artistNameRaw)
-                        
-                        println("CanvasFetch: Song='$songTitle' (raw='$songTitleRaw'), Artist='$artistName' (raw='$artistNameRaw'), Album='$albumName'")
-                        
                         val searchTasks = listOf(
                             songTitleRaw to artistNameRaw
                         ).filter { (s, a) -> s.isNotBlank() && a.isNotBlank() }
@@ -834,17 +778,14 @@ private fun ThumbnailItem(
                         when (canvasSource) {
                             CanvasSource.AUTO -> {
                                 searchTasks.firstNotNullOfOrNull { (s, a) ->
-                                    EchoMusicCanvasProvider.getBySongArtist(
-                                        song = s,
-                                        artist = a
-                                    )?.takeIf { !it.preferredAnimationUrl.isNullOrBlank() }
+                                    SpotifyCanvasLookup.getBySongArtist(context, s, a)
                                         ?: AppleMusicCanvasProvider.getBySongArtist(
                                         song = s,
                                         artist = a,
                                         album = albumName,
                                         storefront = storefront
                                     )?.takeIf { !it.preferredAnimationUrl.isNullOrBlank() }
-                                        ?: ViviMusicCanvasProvider.getBySongArtist(
+                                        ?: ConvxCanvasProvider.getBySongArtist(
                                             song = s,
                                             artist = a
                                         )?.takeIf { !it.preferredAnimationUrl.isNullOrBlank() }
@@ -853,14 +794,6 @@ private fun ThumbnailItem(
                                             artist = a,
                                             album = albumName
                                         )?.takeIf { !it.preferredAnimationUrl.isNullOrBlank() }
-                                }
-                            }
-                            CanvasSource.ECHO_MUSIC -> {
-                                searchTasks.firstNotNullOfOrNull { (s, a) ->
-                                    EchoMusicCanvasProvider.getBySongArtist(
-                                        song = s,
-                                        artist = a
-                                    )?.takeIf { !it.preferredAnimationUrl.isNullOrBlank() }
                                 }
                             }
                             CanvasSource.APPLE_MUSIC -> {
@@ -873,9 +806,9 @@ private fun ThumbnailItem(
                                     )?.takeIf { !it.preferredAnimationUrl.isNullOrBlank() }
                                 }
                             }
-                            CanvasSource.VIVIMUSIC -> {
+                            CanvasSource.CONVX -> {
                                 searchTasks.firstNotNullOfOrNull { (s, a) ->
-                                    ViviMusicCanvasProvider.getBySongArtist(
+                                    ConvxCanvasProvider.getBySongArtist(
                                         song = s,
                                         artist = a
                                     )?.takeIf { !it.preferredAnimationUrl.isNullOrBlank() }
@@ -890,6 +823,11 @@ private fun ThumbnailItem(
                                     )?.takeIf { !it.preferredAnimationUrl.isNullOrBlank() }
                                 }
                             }
+                            CanvasSource.SPOTIFY -> {
+                                searchTasks.firstNotNullOfOrNull { (s, a) ->
+                                    SpotifyCanvasLookup.getBySongArtist(context, s, a)
+                                }
+                            }
                         }
                     }
                     
@@ -902,18 +840,15 @@ private fun ThumbnailItem(
                         val resultArtist = artwork.artist
                         val resultName = artwork.name
                         
-                        // Check artist list overlaps
                         val artistMatches = if (resultArtist != null && requestedArtist.isNotBlank()) {
                             val requestedList = splitAndNormalizeArtists(requestedArtist)
                             val resultList = splitAndNormalizeArtists(resultArtist)
                             requestedList.any { req -> resultList.any { res -> res.contains(req) || req.contains(res) } }
                         } else true
 
-                        // Check song title (raw comparison)
                         val songMatches = if (resultName != null && requestedTitle.isNotBlank()) {
                             resultName.trim().equals(requestedTitle.trim(), ignoreCase = true)
                         } else true
-                        // Check album name (raw comparison)
                         val requestedAlbum = item.mediaMetadata.albumTitle?.toString() ?: ""
                         val canvasAlbumName = artwork.albumName
 
@@ -923,15 +858,9 @@ private fun ThumbnailItem(
 
                         val titleMatches = songMatches && albumMatches
 
-                        println("CanvasValidation: artistMatches=$artistMatches, songMatches=$songMatches, albumMatches=$albumMatches")
-                        println("  Requested: Title='$requestedTitle', Album='$requestedAlbum', Artists='$requestedArtist'")
-                        println("  Returned: Title='$resultName', Album='$canvasAlbumName', Artists='$resultArtist'")
-
                         if (artistMatches && titleMatches) {
-                            println("CanvasValidation: Match SUCCESS for '${artwork.name}'")
                             artwork
                         } else {
-                            println("CanvasValidation: Match FAILED for '${artwork.name}' by '${artwork.artist}'")
                             null
                         }
                     }
@@ -954,49 +883,6 @@ private fun ThumbnailItem(
                 }
             }
         }
-
-        // Non-rotating light overlay — stays fixed while the vinyl spins underneath
-        if (artworkStyle == PlayerArtworkStyle.VINYL && !hidePlayerThumbnail) {
-            Canvas(
-                Modifier
-                    .size(dimensions.thumbnailSize)
-                    .clip(CircleShape)
-            ) {
-                val r = size.minDimension / 2f
-                val c = Offset(size.width / 2f, size.height / 2f)
-
-                // Edge rim light
-                drawCircle(
-                    color = Color.White.copy(alpha = 0.18f),
-                    radius = r * 0.98f,
-                    center = c,
-                    style = Stroke(width = 1.2.dp.toPx()),
-                )
-                drawCircle(
-                    color = Color.White.copy(alpha = 0.06f),
-                    radius = r * 0.95f,
-                    center = c,
-                    style = Stroke(width = 0.6.dp.toPx()),
-                )
-
-                // Diagonal gloss shine — stays in place as if lit from above-right
-                drawOval(
-                    brush = Brush.linearGradient(
-                        colors = listOf(
-                            Color.Transparent,
-                            Color.White.copy(alpha = 0.09f),
-                            Color.White.copy(alpha = 0.14f),
-                            Color.White.copy(alpha = 0.09f),
-                            Color.Transparent,
-                        ),
-                        start = Offset(size.width * 0.15f, 0f),
-                        end = Offset(size.width * 0.85f, size.height),
-                    ),
-                    topLeft = Offset(size.width * 0.08f, size.height * 0.22f),
-                    size = androidx.compose.ui.geometry.Size(size.width * 0.84f, size.height * 0.32f),
-                )
-            }
-        }
     }
 }
 
@@ -1011,7 +897,7 @@ private fun HiddenThumbnailPlaceholder(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surfaceVariant),
+            .background(AppTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center
     ) {
         Icon(
@@ -1023,43 +909,413 @@ private fun HiddenThumbnailPlaceholder(
     }
 }
 
+/** Mesh resolution for the API<33 ripple-warp fallback. */
+private const val MESH_COLS = 8
+private const val MESH_ROWS = 8
+
+/** How far a mesh vertex moves at the peak of the ripple (fallback path). */
+private val RIPPLE_MAX_DISPLACEMENT = 14.dp
+
+/** How many ripple rings fit across the artwork's radius (fallback path). */
+private const val RIPPLE_RINGS = 3.0
+
+/** Keep only the outgoing and current covers; let GC reclaim bitmaps after drawing ends. */
+private const val MAX_CACHED_COVERS = 2
+
 /**
- * Actual thumbnail image with caching and hardware layer rendering.
+ * Cached artwork transition. API 33+ uses an AGSL noise-field melt; older
+ * devices use a bitmap-mesh ripple. The warp is content-agnostic because album
+ * covers do not share features that a correspondence-based morph could align.
  */
 @Composable
-private fun ThumbnailImage(
+internal fun ThumbnailImage(
     artworkUri: String?,
     cropArtwork: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    // Match DJ handoffs to the audio crossfade; the resolved duration is clamped below.
+    crossfadeMillis: Int = 200,
+    // Keep fallback URL changes for the same song from triggering a self-transition.
+    contentKey: String? = null,
+    // Decode these URLs ahead of time so transitions start with loaded bitmaps.
+    preloadUrls: List<String> = emptyList(),
+    /** Skip the transition when another animation has already moved the incoming cover into place. */
+    morphOnChange: Boolean = true,
+    bitmapStore: com.convx.artwork.ArtworkBitmapStore? = null,
 ) {
+    // Keep the transition visible without letting long audio crossfades make it drag on.
+    val resolvedCrossfadeMillis = crossfadeMillis.coerceIn(450, 8_000)
+    val context = LocalContext.current
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val shaderMorphSupported = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU
+
+    var boxSize by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+    var currentUrl by remember { mutableStateOf(artworkUri) }
+    var currentKey by remember { mutableStateOf(contentKey) }
+    var outgoingUrl by remember { mutableStateOf<String?>(null) }
+    val morph = remember { Animatable(1f) }
+    // Update shader time only during a transition to avoid idle frame updates.
+    var timeSeconds by remember { mutableFloatStateOf(0f) }
+
+    // Raw decoded covers, keyed by resolved URL (a fallback rung gets its own
+    // slot rather than overwriting the URL that failed).
+    val ownedStore = remember { com.convx.artwork.ArtworkBitmapStore() }
+    val store = bitmapStore ?: ownedStore
+    val rawBitmaps = store.images
+    // The API<33 mesh fallback needs a bitmap matching the destination size; the shader uses raw art.
+    val scaledBitmaps = remember { androidx.compose.runtime.mutableStateMapOf<String, Bitmap>() }
+
+    suspend fun ensureLoaded(url: String?) {
+        var candidate = url
+        while (candidate != null && !rawBitmaps.containsKey(candidate)) {
+            val bitmap = store.load(candidate) { loadArtworkBitmap(context, it) }
+            if (bitmap != null) {
+                rawBitmaps[candidate] = bitmap
+                return
+            }
+            candidate = nextThumbnailFallback(candidate)
+        }
+    }
+
+    LaunchedEffect(artworkUri) {
+        if (artworkUri == currentUrl) return@LaunchedEffect
+        if (!morphOnChange) {
+            outgoingUrl = null
+            currentUrl = artworkUri
+            currentKey = contentKey
+            morph.snapTo(1f)
+            return@LaunchedEffect
+        }
+        if (contentKey != null && contentKey == currentKey) {
+            // Same song, new URL rung: adopt silently, no self-melt.
+            currentUrl = artworkUri
+            return@LaunchedEffect
+        }
+        ensureLoaded(artworkUri)
+        // On interruption, continue from the cover that was mostly visible to avoid a jump.
+        val interrupted = outgoingUrl != null
+        if (!interrupted || morph.value >= 0.5f) outgoingUrl = currentUrl
+        currentUrl = artworkUri
+        currentKey = contentKey
+        morph.snapTo(0f)
+        coroutineScope {
+            val timeJob = if (shaderMorphSupported) {
+                launch {
+                    val start = withFrameNanos { it }
+                    while (isActive) {
+                        timeSeconds = (withFrameNanos { it } - start) / 1_000_000_000f
+                    }
+                }
+            } else {
+                null
+            }
+            // Eased at both ends: linear progress made the melt visibly start and stop.
+            morph.animateTo(1f, animationSpec = tween(resolvedCrossfadeMillis, easing = SeamlessEasing))
+            timeJob?.cancel()
+        }
+        outgoingUrl = null
+        // Only the just-landed cover matters from here — this is a
+        // per-composable cache for morph-ready bitmaps, not a general
+        // image cache (Coil already owns that). Preloaded neighbours are
+        // spared so the next skip starts warm.
+        if (bitmapStore == null && rawBitmaps.size > MAX_CACHED_COVERS) {
+            rawBitmaps.keys.filterNot { it == currentUrl || it in preloadUrls }.forEach { rawBitmaps.remove(it) }
+        }
+        val keep = currentUrl
+        scaledBitmaps.keys.filterNot { keep != null && it.startsWith("$keep@") }
+            .forEach { scaledBitmaps.remove(it) }
+    }
+    LaunchedEffect(Unit) { ensureLoaded(currentUrl) }
+    // Prerender: decode neighbour covers ahead of the skip so both melt
+    // endpoints are resident when the transition fires.
+    LaunchedEffect(preloadUrls) {
+        preloadUrls.forEach { ensureLoaded(it) }
+    }
+
+    if (!shaderMorphSupported) {
+        fun scaledKeyFor(url: String) = "$url@${boxSize.width}x${boxSize.height}x$cropArtwork"
+        LaunchedEffect(rawBitmaps.keys.toSet(), boxSize, cropArtwork) {
+            if (boxSize.width <= 0 || boxSize.height <= 0) return@LaunchedEffect
+            for ((url, bitmap) in rawBitmaps) {
+                val key = scaledKeyFor(url)
+                if (!scaledBitmaps.containsKey(key)) {
+                    scaledBitmaps[key] = scaleForMesh(bitmap, boxSize.width, boxSize.height, cropArtwork)
+                }
+            }
+        }
+
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .background(AppTheme.colorScheme.surfaceVariant)
+                .onSizeChanged { boxSize = it }
+        ) {
+            val outgoingBitmap = outgoingUrl?.let { scaledBitmaps[scaledKeyFor(it)] }
+            val currentBitmap = currentUrl?.let { scaledBitmaps[scaledKeyFor(it)] }
+            if (currentBitmap != null || outgoingBitmap != null) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val maxDisplacementPx = with(density) { RIPPLE_MAX_DISPLACEMENT.toPx() }
+                    val warpAmount = kotlin.math.sin((morph.value * Math.PI).toFloat())
+                    drawIntoCanvas { canvas ->
+                        val nativeCanvas = canvas.nativeCanvas
+                        outgoingBitmap?.let { bitmap ->
+                            val verts = rippleMesh(size.width, size.height, warpAmount, maxDisplacementPx)
+                            val paint = android.graphics.Paint().apply {
+                                isAntiAlias = true
+                                alpha = ((1f - morph.value) * 255).toInt().coerceIn(0, 255)
+                            }
+                            nativeCanvas.drawBitmapMesh(bitmap, MESH_COLS, MESH_ROWS, verts, 0, null, 0, paint)
+                        }
+                        currentBitmap?.let { bitmap ->
+                            val verts = rippleMesh(size.width, size.height, warpAmount, maxDisplacementPx)
+                            val paint = android.graphics.Paint().apply {
+                                isAntiAlias = true
+                                alpha = if (outgoingBitmap != null) {
+                                    (morph.value * 255).toInt().coerceIn(0, 255)
+                                } else {
+                                    255
+                                }
+                            }
+                            nativeCanvas.drawBitmapMesh(bitmap, MESH_COLS, MESH_ROWS, verts, 0, null, 0, paint)
+                        }
+                    }
+                }
+            }
+        }
+        return
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .background(AppTheme.colorScheme.surfaceVariant)
     ) {
-        var currentUrl by remember(artworkUri) {
-            mutableStateOf(artworkUri)
-        }
+        // The resting frame: a plain image respecting cropArtwork exactly like
+        // before. The shader only ever draws on top of this during the brief
+        // transition window below, so the steady state pays nothing extra.
         AsyncImage(
-            model = ImageRequest.Builder(LocalContext.current)
+            model = ImageRequest.Builder(context)
                 .data(currentUrl)
                 .size(CoilSize.ORIGINAL)
-                .crossfade(true)
                 .memoryCachePolicy(CachePolicy.ENABLED)
                 .diskCachePolicy(CachePolicy.ENABLED)
                 .networkCachePolicy(CachePolicy.ENABLED)
                 .build(),
-            // Step DOWN the ladder, one rung at a time. This used to jump straight from
-            // maxresdefault to hqdefault, and since maxresdefault (1280x720) simply does
-            // not exist for most YouTube tracks, the common case was a 404 followed by a
-            // 480x360 image blown up ~2.5x on a ~1200px player artwork -- which is the
-            // soft, mushy cover people notice. sddefault (640x480) exists far more often
-            // and is the rung that was being skipped.
-            onError = { currentUrl = nextThumbnailFallback(currentUrl) },
+            onError = onError@{
+                val fallback = nextThumbnailFallback(currentUrl) ?: return@onError
+                currentUrl = fallback
+            },
             contentDescription = null,
             contentScale = if (cropArtwork) ContentScale.Crop else ContentScale.Fit,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize(),
         )
+
+        val outgoingBitmap = outgoingUrl?.let { rawBitmaps[it] }
+        val currentBitmap = currentUrl?.let { rawBitmaps[it] }
+        if (outgoingBitmap != null && currentBitmap != null) {
+            // Lambdas, read in the draw phase: passing the values recomposed this whole
+            // composable every frame of the melt -- up to the full length of a DJ crossfade.
+            MeltMorphOverlay(
+                outgoing = outgoingBitmap,
+                incoming = currentBitmap,
+                progress = { morph.value },
+                timeSeconds = { timeSeconds },
+            )
+        }
+    }
+}
+
+/**
+ * The morph itself: one shader draw call blending [outgoing] into [incoming]
+ * as [progress] runs 0→1. See [MELT_SHADER_SOURCE] for the actual displacement
+ * and reveal math — this composable only binds the two bitmaps and uniforms.
+ */
+@androidx.annotation.RequiresApi(android.os.Build.VERSION_CODES.TIRAMISU)
+@Composable
+private fun MeltMorphOverlay(outgoing: Bitmap, incoming: Bitmap, progress: () -> Float, timeSeconds: () -> Float) {
+    val shader = remember { android.graphics.RuntimeShader(MELT_SHADER_SOURCE) }
+    val outgoingShader = remember(outgoing) {
+        android.graphics.BitmapShader(outgoing, android.graphics.Shader.TileMode.CLAMP, android.graphics.Shader.TileMode.CLAMP)
+    }
+    val incomingShader = remember(incoming) {
+        android.graphics.BitmapShader(incoming, android.graphics.Shader.TileMode.CLAMP, android.graphics.Shader.TileMode.CLAMP)
+    }
+    Canvas(modifier = Modifier.fillMaxSize()) {
+        if (size.width <= 0f || size.height <= 0f) return@Canvas
+        shader.setInputShader("tCurrent", outgoingShader)
+        shader.setInputShader("tNext", incomingShader)
+        shader.setFloatUniform("uResolution", size.width, size.height)
+        shader.setFloatUniform("uCurrentSize", outgoing.width.toFloat(), outgoing.height.toFloat())
+        shader.setFloatUniform("uNextSize", incoming.width.toFloat(), incoming.height.toFloat())
+        shader.setFloatUniform("uProgress", progress())
+        shader.setFloatUniform("uIntensity", MeltIntensity)
+        shader.setFloatUniform("uScale", MeltScale)
+        shader.setFloatUniform("uAberration", MeltAberration)
+        shader.setFloatUniform("uTime", timeSeconds())
+        drawIntoCanvas { canvas ->
+            val paint = android.graphics.Paint().apply { this.shader = shader }
+            canvas.nativeCanvas.drawRect(0f, 0f, size.width, size.height, paint)
+        }
+    }
+}
+
+/** Displacement strength — how far the melt pushes pixels around. */
+private const val MeltIntensity = 0.55f
+
+/** Noise-field frequency — higher reads as finer, more turbulent melt cells. */
+private const val MeltScale = 2.4f
+
+/** RGB-split strength at the midpoint of the transition, fading to none at
+ *  both ends. */
+private const val MeltAberration = 0.35f
+
+/**
+ * AGSL port of React Bits' MorphSlider "melt" fragment shader
+ * (github.com/DavidHDev/react-bits): a shared fbm noise field displaces both
+ * the outgoing and incoming cover, and the SAME noise value gates a
+ * per-pixel reveal threshold against [progress] — so different regions of the
+ * frame cross over at different moments instead of a uniform fade, which is
+ * what actually reads as one image melting into the next rather than two
+ * images cross-faded on top of each other. Chromatic aberration rides
+ * alongside, peaking at the transition's midpoint.
+ */
+private const val MELT_SHADER_SOURCE = """
+uniform shader tCurrent;
+uniform shader tNext;
+uniform float2 uResolution;
+uniform float2 uCurrentSize;
+uniform float2 uNextSize;
+uniform float uProgress;
+uniform float uIntensity;
+uniform float uScale;
+uniform float uAberration;
+uniform float uTime;
+
+float hash21(float2 p) {
+    float3 p3 = fract(p.xyx * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+}
+
+float noise(float2 p) {
+    float2 i = floor(p);
+    float2 f = fract(p);
+    float2 u = f * f * (3.0 - 2.0 * f);
+    float a = hash21(i);
+    float b = hash21(i + float2(1.0, 0.0));
+    float c = hash21(i + float2(0.0, 1.0));
+    float d = hash21(i + float2(1.0, 1.0));
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+float fbm(float2 p) {
+    float v = 0.0;
+    float a = 0.5;
+    for (int i = 0; i < 5; i++) {
+        v += a * noise(p);
+        p *= 2.0;
+        a *= 0.5;
+    }
+    return v;
+}
+
+float2 coverUV(float2 uv, float2 res, float2 img) {
+    float rA = res.x / max(res.y, 1.0);
+    float iA = img.x / max(img.y, 1.0);
+    float2 s = float2(1.0, 1.0);
+    float ratio = rA / max(iA, 0.0001);
+    if (ratio > 1.0) {
+        s.y = 1.0 / ratio;
+    } else {
+        s.x = ratio;
+    }
+    return (uv - 0.5) * s + 0.5;
+}
+
+half4 main(float2 fragCoord) {
+    float2 uv = fragCoord / uResolution;
+    float p = clamp(uProgress, 0.0, 1.0);
+    float env = sin(p * 3.14159265359);
+
+    float nn = fbm(uv * uScale + uTime * 0.03);
+    float warp = fbm(uv * uScale * 1.7 - uTime * 0.02);
+    float2 g = float2(nn, warp) - 0.5;
+
+    float2 uvC = uv + g * uIntensity * 0.5 * p;
+    float2 uvN = uv - g * uIntensity * 0.5 * (1.0 - p);
+    float m = smoothstep(nn - 0.15, nn + 0.15, p);
+
+    float2 sC = coverUV(uvC, uResolution, uCurrentSize);
+    float2 sN = coverUV(uvN, uResolution, uNextSize);
+
+    float ca = uAberration * env * 0.03;
+
+    float3 colC = float3(
+        tCurrent.eval((sC + float2(ca, 0.0)) * uCurrentSize).r,
+        tCurrent.eval(sC * uCurrentSize).g,
+        tCurrent.eval((sC - float2(ca, 0.0)) * uCurrentSize).b
+    );
+    float3 colN = float3(
+        tNext.eval((sN + float2(ca, 0.0)) * uNextSize).r,
+        tNext.eval(sN * uNextSize).g,
+        tNext.eval((sN - float2(ca, 0.0)) * uNextSize).b
+    );
+
+    float3 col = mix(colC, colN, m);
+    return half4(half3(col), 1.0);
+}
+"""
+
+/** Destination vertices for an (MESH_COLS+1) x (MESH_ROWS+1) grid, each pushed
+ *  radially from center by a ring pattern scaled by [warpAmount] (0 = flat). */
+private fun rippleMesh(widthPx: Float, heightPx: Float, warpAmount: Float, maxDisplacementPx: Float): FloatArray {
+    val verts = FloatArray((MESH_COLS + 1) * (MESH_ROWS + 1) * 2)
+    var index = 0
+    for (row in 0..MESH_ROWS) {
+        val v = row.toFloat() / MESH_ROWS
+        for (col in 0..MESH_COLS) {
+            val u = col.toFloat() / MESH_COLS
+            val dx = u - 0.5f
+            val dy = v - 0.5f
+            val radius = kotlin.math.sqrt(dx * dx + dy * dy)
+            val ripple = kotlin.math.sin((radius * RIPPLE_RINGS * 2 * Math.PI).toFloat()) * warpAmount
+            val displacement = ripple * maxDisplacementPx
+            val nx = if (radius < 0.0001f) 0f else dx / radius
+            val ny = if (radius < 0.0001f) 0f else dy / radius
+            verts[index++] = u * widthPx + nx * displacement
+            verts[index++] = v * heightPx + ny * displacement
+        }
+    }
+    return verts
+}
+
+/** Center-crops or pads [bitmap] to the exact size required by drawBitmapMesh. */
+private fun scaleForMesh(bitmap: Bitmap, targetWidth: Int, targetHeight: Int, crop: Boolean): Bitmap {
+    val srcW = bitmap.width
+    val srcH = bitmap.height
+    if (srcW <= 0 || srcH <= 0) return bitmap
+    val scale = if (crop) {
+        kotlin.math.max(targetWidth.toFloat() / srcW, targetHeight.toFloat() / srcH)
+    } else {
+        kotlin.math.min(targetWidth.toFloat() / srcW, targetHeight.toFloat() / srcH)
+    }
+    val scaledW = (srcW * scale).toInt().coerceAtLeast(1)
+    val scaledH = (srcH * scale).toInt().coerceAtLeast(1)
+    val scaled = Bitmap.createScaledBitmap(bitmap, scaledW, scaledH, true)
+    val output = createBitmap(targetWidth, targetHeight)
+    val canvas = android.graphics.Canvas(output)
+    canvas.drawBitmap(scaled, (targetWidth - scaledW) / 2f, (targetHeight - scaledH) / 2f, null)
+    if (scaled !== bitmap) scaled.recycle()
+    return output
+}
+
+private suspend fun loadArtworkBitmap(context: android.content.Context, url: String): Bitmap? {
+    val request = ImageRequest.Builder(context)
+        .data(url)
+        .allowHardware(false)
+        .build()
+    return when (val result = context.imageLoader.execute(request)) {
+        is coil3.request.SuccessResult -> runCatching { result.image.toBitmap() }.getOrNull()
+        else -> null
     }
 }
 

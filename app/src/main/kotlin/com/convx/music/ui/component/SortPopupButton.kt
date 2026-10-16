@@ -12,13 +12,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import com.convx.music.ui.ios.compat.DropdownMenu
+import com.convx.music.ui.ios.compat.DropdownMenuItem
+import com.convx.music.ui.ios.compat.HorizontalDivider
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.IconButton
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,18 +39,9 @@ import com.convx.music.R
 data class SortOption<T>(val value: T, val labelRes: Int)
 
 /**
- * Compact sort control: an icon that opens a checklist of sort fields, a rule, and a
- * descending toggle at the bottom.
- *
- * The alternative already in the codebase, [SortHeader], is a Material split button
- * roughly 160dp wide that takes a row of its own above every list. This is a single icon that fits in a header alongside other
- * actions, which is what lets the list start at the top of the screen instead of below
- * a control strip.
- *
- * Selection is shown with a tick on the chosen row rather than by changing the button
- * label, so the current sort is legible without opening anything only if the caller
- * also shows it — that is the trade a compact control makes, and why this is offered
- * alongside [SortHeader] rather than replacing it everywhere.
+ * Compact sort control for list headers. Unlike [SortHeader], it uses one icon so list content
+ * can start higher on screen. A checkmark shows the selected option; callers can also display
+ * the current sort while the menu is closed.
  */
 @Composable
 fun <T> SortPopupButton(
@@ -62,16 +53,14 @@ fun <T> SortPopupButton(
     modifier: Modifier = Modifier,
     /** Extra rows above the sort fields — grid density, view style, whatever the screen has. */
     leadingSection: (@Composable ColumnScope.() -> Unit)? = null,
+    /** False for orders with no direction, such as a custom arrangement. */
+    showDescending: Boolean = true,
 ) {
     var expanded by remember { mutableStateOf(false) }
 
     Box(modifier = modifier) {
         IconButton(onClick = { expanded = true }) {
-            Icon(
-                painter = painterResource(R.drawable.tune),
-                contentDescription = stringResource(R.string.sort_by),
-                modifier = Modifier.size(24.dp),
-            )
+            SymbolIcon(symbol = sf("slider.horizontal.3"), contentDescription = stringResource(R.string.sort_by), size = 24.dp)
         }
 
         DropdownMenu(
@@ -94,18 +83,20 @@ fun <T> SortPopupButton(
                 )
             }
 
-            HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
+            if (showDescending) {
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
 
-            SortMenuRow(
-                label = stringResource(R.string.sort_descending),
-                checked = descending,
-                // Deliberately does NOT dismiss: direction is the one option people flip
-                // back and forth to compare, and reopening the menu for each flip is the
-                // kind of friction that makes a sort control feel heavy.
-                onClick = { onDescendingChange(!descending) },
-                trailingIcon = R.drawable.arrow_downward,
-                trailingRotated = !descending,
-            )
+                SortMenuRow(
+                    label = stringResource(R.string.sort_descending),
+                    checked = descending,
+                    // Deliberately does NOT dismiss: direction is the one option people flip
+                    // back and forth to compare, and reopening the menu for each flip is the
+                    // kind of friction that makes a sort control feel heavy.
+                    onClick = { onDescendingChange(!descending) },
+                    trailingIcon = R.drawable.arrow_downward,
+                    trailingRotated = !descending,
+                )
+            }
         }
     }
 }
@@ -126,11 +117,11 @@ private fun SortMenuRow(
             ) {
                 Text(
                     text = label,
-                    style = MaterialTheme.typography.bodyLarge,
+                    style = AppTheme.typography.bodyLarge,
                     color = if (checked) {
-                        MaterialTheme.colorScheme.primary
+                        AppTheme.colorScheme.primary
                     } else {
-                        MaterialTheme.colorScheme.onSurface
+                        AppTheme.colorScheme.onSurface
                     },
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -144,21 +135,16 @@ private fun SortMenuRow(
                     painter = painterResource(trailingIcon),
                     contentDescription = null,
                     tint = if (checked) {
-                        MaterialTheme.colorScheme.primary
+                        AppTheme.colorScheme.primary
                     } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
+                        AppTheme.colorScheme.onSurfaceVariant
                     },
                     modifier = Modifier
                         .size(18.dp)
                         .graphicsLayer { rotationZ = if (trailingRotated) 180f else 0f },
                 )
 
-                checked -> Icon(
-                    painter = painterResource(R.drawable.check),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp),
-                )
+                checked -> SymbolIcon(symbol = sf("checkmark"), contentDescription = null, size = 18.dp, tint = AppTheme.colorScheme.primary)
             }
         },
         onClick = onClick,

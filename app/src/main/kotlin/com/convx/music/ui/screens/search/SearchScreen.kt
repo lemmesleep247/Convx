@@ -5,6 +5,10 @@
 
 package com.convx.music.ui.screens.search
 
+import com.convx.music.utils.openSearchResults
+
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +22,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
@@ -30,15 +35,15 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LocalContentColor
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.IconButton
+import com.convx.music.ui.ios.compat.LocalContentColor
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.Scaffold
 import androidx.compose.material3.SearchBar
 import androidx.compose.material3.SearchBarDefaults
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import com.convx.music.ui.ios.compat.Surface
+import com.convx.music.ui.ios.compat.Text
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -47,7 +52,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -60,6 +64,12 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.role
+import com.convx.music.ui.ios.foundation.iosRowPress
+import com.convx.music.ui.ios.foundation.iosGlass
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -75,13 +85,14 @@ import com.convx.music.LocalPlayerConnection
 import com.convx.music.R
 import com.convx.music.ui.utils.rememberGridColumns
 import com.convx.music.constants.PauseSearchHistoryKey
-import com.convx.music.constants.LocalOnlyModeKey
 import com.convx.music.constants.SearchSource
 import com.convx.music.db.entities.SearchHistory
 import com.convx.music.playback.queues.YouTubeQueue
 import com.convx.music.ui.component.NavigationTitle
+import com.convx.music.ui.utils.albumRoute
 import com.convx.music.ui.utils.bounceClick
 import com.convx.music.ui.utils.combinedBounceClick
+import com.convx.music.ui.utils.youtubeBrowseRoute
 import com.convx.music.utils.rememberEnumPreference
 import com.convx.music.utils.rememberPreference
 import com.convx.music.viewmodels.MoodAndGenresViewModel
@@ -89,13 +100,12 @@ import com.convx.music.viewmodels.ExploreViewModel
 import com.convx.music.ui.screens.search.suggestions.SuggestionsTabContent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import java.net.URLEncoder
 import androidx.compose.runtime.collectAsState
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material3.CircularWavyProgressIndicator
+import com.convx.music.ui.ios.compat.CircularWavyProgressIndicator
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -127,17 +137,24 @@ import com.convx.music.ui.component.backdrop.catalog.components.LiquidBottomTab
 import com.convx.music.ui.component.backdrop.catalog.components.LiquidBottomTabs
 import androidx.compose.ui.text.font.FontWeight
 import com.convx.music.ui.component.GlassCircleButton
+import com.convx.music.ui.component.TopFadeBlur
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeSource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.offset
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchScreen(
     navController: NavController,
-    pureBlack: Boolean
+    pureBlack: Boolean,
+    accountImageUrl: String? = null,
+    accountName: String = "",
+    onAccountClick: () -> Unit = { navController.navigate(com.convx.music.ui.screens.Screens.Settings.route) },
 ) {
-    val database = LocalDatabase.current
+    val database = LocalDatabase.current.get()
     val coroutineScope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -145,16 +162,11 @@ fun SearchScreen(
     val playerConnection = LocalPlayerConnection.current
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
 
-    // The nav bar owns the actual search text field now (see NavBarSearchInputBar
-    // in FloatingNavBar.kt) — this screen just reads the live query to filter results.
+    // Read the shared nav-bar query so results update as the user types.
     val navSearch = LocalNavSearchState.current
     val pauseSearchHistory by rememberPreference(PauseSearchHistoryKey, defaultValue = false)
 
-    var selectedTabIndex by rememberSaveable { mutableStateOf(0) }
-    // The Explore/Suggestions/Albums tabs are all YouTube browse pages.
-    val (localOnly) = rememberPreference(LocalOnlyModeKey, false)
-    var searchActive by rememberSaveable { mutableStateOf(false) }
-    var showSearchContent by remember { mutableStateOf(false) }
+    val localOnly = com.convx.music.LocalLocalOnlyMode.current
 
     val onSearchFromSuggestion: (String) -> Unit = remember {
         { searchQuery ->
@@ -170,7 +182,7 @@ fun SearchScreen(
                         navController.navigate("artist/${parsedUrl.id}")
                     }
                     null -> {
-                        navController.navigate("search/${URLEncoder.encode(searchQuery, "UTF-8")}")
+                        navController.openSearchResults(searchQuery)
                     }
                 }
                 if (!pauseSearchHistory) {
@@ -184,130 +196,57 @@ fun SearchScreen(
         }
     }
 
-    // Fixed elevated token, not derived from any specific result's thumbnail —
-    // safe to override with the user's own picked theme color.
-    val tint = rememberAppBackgroundColor(AppleTokens.BgElevated)
-    val onTint = AppleTokens.onColor(tint)
-    val heroSource = rememberHeroSource(staticArt = null)
-    val heroBackdrop = rememberLayerBackdrop {
-        drawRect(tint)
-        drawContent()
-    }
-    val backdropFreeze = rememberBackdropFreeze()
+    // Keep the browse page and results page on the same system background.
+    val colors = com.convx.music.ui.ios.foundation.IosTheme.colors
+    val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val tabletLayout = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= 600
+    // The phone reference reserves 62 points above its title; retain larger cutouts.
+    val titleTop = if (tabletLayout) statusTop + 10.dp else maxOf(statusTop, 62.dp)
+    val bottomPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding()
+    val sideInset = LocalPlayerAwareWindowInsets.current
+        .asPaddingValues()
+        .calculateStartPadding(LocalLayoutDirection.current)
+    val searching = navSearch.keyboardActive || navSearch.query.text.isNotEmpty() || localOnly
 
-    HeroBackground(
-        tint = tint,
-        heroSource = heroSource,
-        showDefaultIcon = false,
-        modifier = Modifier.fillMaxSize(),
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(colors.systemBackground),
     ) {
-      HomeImageBackground()
-      HeroTintedContent(tint = tint, backdrop = heroBackdrop) {
-        val chromeShape = ContinuousRoundedRectangle(percent = 50)
-        val accent = com.convx.music.ui.theme.LocalAccentColor.current
-
-        // Space for the floating side bar in tab view (0 otherwise). The hero
-        // background stays full-bleed behind the Scaffold; only the foreground —
-        // title, search pill, tabs and results — shifts clear of the panel. The
-        // result lists inset bottom-only, so nothing double-pads.
-        val sideInset = LocalPlayerAwareWindowInsets.current
-            .asPaddingValues()
-            .calculateStartPadding(LocalLayoutDirection.current)
-
-        Scaffold(
-            modifier = Modifier.padding(start = sideInset),
-            topBar = {
-                Column(
-                    modifier = Modifier.background(Color.Transparent)
-                ) {
-                    LargeScreenTitle(
-                        title = stringResource(R.string.search),
-                        color = onTint,
+        if (!searching) {
+            // Frosted strip under the status bar once tiles scroll up into it.
+            val browseHaze = remember { HazeState() }
+            Box(Modifier.fillMaxSize().hazeSource(browseHaze)) {
+                AppleSearchBrowse(
+                    navController = navController,
+                    contentPadding = PaddingValues(start = sideInset, top = titleTop, bottom = bottomPadding + 16.dp),
+                    header = { AppleSearchHeader(accountImageUrl, accountName, onAccountClick,
+                        horizontalInset = 0.dp, bottomInset = 2.dp) },
+                )
+            }
+            TopFadeBlur(
+                hazeState = browseHaze,
+                pageColor = colors.systemBackground,
+                modifier = Modifier.align(Alignment.TopCenter),
+                heightOverride = titleTop + 16.dp,
+            )
+        } else {
+            val pageColor = colors.systemBackground
+            val searchBackdrop = com.convx.music.ui.component.backdrop.backdrops.rememberLayerBackdrop(
+                onDraw = remember(pageColor) { { drawRect(pageColor); drawContent() } },
+            )
+            val focusedTop = if (tabletLayout) statusTop + 10.dp else maxOf(statusTop, 58.dp)
+            Column(Modifier.fillMaxSize().padding(top = focusedTop)) {
+                if (navSearch.canToggleSource) {
+                    SourceSwitch(
+                        source = navSearch.searchSource,
+                        onSelect = { if (it != navSearch.searchSource) navSearch.onToggleSource() },
+                        backdrop = searchBackdrop,
+                        modifier = Modifier.padding(start = sideInset + 16.dp, end = 16.dp),
                     )
-
-                    AnimatedVisibility(
-                        visible = navSearch.query.text.isEmpty() && !localOnly,
-                        enter = expandVertically(animationSpec = tween(durationMillis = 245, easing = FastOutSlowInEasing)) + fadeIn(),
-                        exit = shrinkVertically(animationSpec = tween(durationMillis = 245, easing = FastOutSlowInEasing)) + fadeOut()
-                    ) {
-                        Column {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            // Wide floating pill, swipeable with the same drag-puck
-                            // ("pluck") feel as the floating nav bar's own tab selector.
-                            LiquidBottomTabs(
-                                selectedTabIndex = { selectedTabIndex },
-                                onTabSelected = { selectedTabIndex = it },
-                                backdrop = heroBackdrop,
-                                tabsCount = 3,
-                                // Blend into this screen's own tint instead of the
-                                // component's default near-black glass fill.
-                                containerColor = onTint.copy(alpha = 0.12f),
-                                height = 44.dp,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 30.dp , vertical = 16.dp)
-                            ) {
-                                LiquidBottomTab(onClick = { selectedTabIndex = 0 }) {
-                                    Text(
-                                        text = stringResource(R.string.tab_explore),
-                                        color = if (selectedTabIndex == 0) accent else onTint.copy(alpha = 0.6f),
-                                    )
-                                }
-                                LiquidBottomTab(onClick = { selectedTabIndex = 1 }) {
-                                    Text(
-                                        text = stringResource(R.string.tab_Suggestions),
-                                        color = if (selectedTabIndex == 1) accent else onTint.copy(alpha = 0.6f),
-                                    )
-                                }
-                                LiquidBottomTab(onClick = { selectedTabIndex = 2 }) {
-                                    Text(
-                                        text = stringResource(R.string.tab_album),
-                                        color = if (selectedTabIndex == 2) accent else onTint.copy(alpha = 0.6f),
-                                    )
-                                }
-                            }
-                    }
                 }
-                }
-            },
-            // The bottom search pill used to live here — now it's part of the
-            // floating nav bar itself (NavBarSearchInputBar in FloatingNavBar.kt),
-            // which stays mounted across this whole screen instead of being owned
-            // by it. See PLAN_search_navbar.md.
-            containerColor = Color.Transparent
-        ) { paddingValues ->
-            val bottomPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding()
-            
-            Box(
-                modifier = Modifier
-                    .nestedScroll(backdropFreeze.connection)
-
-                    // OUTER layer, and it must come BEFORE layerBackdrop: the layer has to
-                    // enclose the backdrop node, or that node's draw re-runs whenever anything
-                    // else in the window redraws. The mini player, the playing indicator and
-                    // the position poll are all siblings that tick on their own schedule, and
-                    // each tick was re-recording this entire list. MainActivity pairs an outer
-                    // and inner layer for exactly this; the screen-local backdrops were left
-                    // with only the inner half.
-                    .graphicsLayer()
-                    .layerBackdrop(heroBackdrop, frozen = backdropFreeze.frozen)
-                    // Content becomes ONE cached RenderNode, so the backdrop's
-                    // layer.record { drawContent() } records a single
-                    // drawRenderNode instead of re-issuing every op below.
-                    .graphicsLayer()
-                    .padding(
-                        top = paddingValues.calculateTopPadding(),
-                    )
-                    .fillMaxSize()
-            ) {
-                if (navSearch.query.text.isEmpty() && !localOnly) {
-                    val tabPadding = PaddingValues(bottom = bottomPadding + 50.dp)
-                    when (selectedTabIndex) {
-                        0 -> ExploreTabContent(navController = navController, contentPadding = tabPadding)
-                        1 -> SuggestionsTabContent(navController = navController, contentPadding = tabPadding)
-                        2 -> AlbumsTabContent(navController = navController, contentPadding = tabPadding)
-                    }
-                } else {
+                Box(Modifier.weight(1f)
+                    .layerBackdrop(searchBackdrop)) {
                     when (navSearch.searchSource) {
                         SearchSource.LOCAL -> LocalSearchScreen(
                             query = navSearch.query.text,
@@ -322,18 +261,16 @@ fun SearchScreen(
                             onSearch = { onSearchFromSuggestion(it) },
                             onDismiss = { },
                             pureBlack = pureBlack,
-                            contentColor = onTint,
+                            contentColor = colors.label,
+                            referenceHistory = true,
                         )
                     }
                 }
             }
         }
-      }
     }
 
-    // Handle lifecycle events to manage keyboard visibility. No auto-focus on
-    // launch anymore — the nav bar's search bar starts unfocused (first tap
-    // navigates here; a second tap on the bar opens the keyboard).
+    // Keep the keyboard closed on resume; the navigation bar handles search focus.
     DisposableEffect(lifecycleOwner, isPlayerExpanded) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
@@ -370,7 +307,7 @@ fun ExploreTabContent(
     viewModel: MoodAndGenresViewModel = hiltViewModel(),
     contentPadding: PaddingValues = PaddingValues(0.dp)
 ) {
-    val moodAndGenresList by viewModel.moodAndGenres.collectAsState()
+    val moodAndGenresList by viewModel.moodAndGenres.collectAsStateWithLifecycle()
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -381,7 +318,7 @@ fun ExploreTabContent(
                 NavigationTitle(title = section.title)
             }
             val rows = section.items.chunked(2)
-            items(rows) { row ->
+            items(rows, key = { row -> row.joinToString("|") { it.endpoint.browseId } }) { row ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -397,15 +334,13 @@ fun ExploreTabContent(
                                 .clip(RoundedCornerShape(10.dp))
                                 .background(LocalContentColor.current.copy(alpha = 0.1f))
                                 .bounceClick {
-                                    navController.navigate(
-                                        "youtube_browse/${item.endpoint.browseId}?params=${item.endpoint.params}"
-                                    )
+                                    navController.navigate(youtubeBrowseRoute(item.endpoint.browseId, item.endpoint.params))
                                 }
                                 .padding(horizontal = 14.dp)
                         ) {
                             Text(
                                 text = item.title,
-                                style = MaterialTheme.typography.labelLarge,
+                                style = AppTheme.typography.labelLarge,
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -444,11 +379,11 @@ fun AlbumsTabContent(
     val menuState = LocalMenuState.current
     val haptic = LocalHapticFeedback.current
     val playerConnection = LocalPlayerConnection.current
-    val mediaMetadata by (playerConnection?.mediaMetadata?.collectAsState() ?: remember { mutableStateOf(null) })
-    val isPlaying by (playerConnection?.isEffectivelyPlaying?.collectAsState() ?: remember { mutableStateOf(false) })
+    val mediaMetadata by (playerConnection?.mediaMetadata?.collectAsStateWithLifecycle() ?: remember { mutableStateOf(null) })
+    val isPlaying by (playerConnection?.isEffectivelyPlaying?.collectAsStateWithLifecycle() ?: remember { mutableStateOf(false) })
     val coroutineScope = rememberCoroutineScope()
     
-    val explorePage by viewModel.explorePage.collectAsState()
+    val explorePage by viewModel.explorePage.collectAsStateWithLifecycle()
     val newReleaseAlbums = explorePage?.newReleaseAlbums
 
     val gridItemSize by rememberEnumPreference(GridItemsSizeKey, GridItemSize.BIG)
@@ -484,7 +419,7 @@ fun AlbumsTabContent(
                     modifier = Modifier
                         .combinedBounceClick(
                             onClick = {
-                                navController.navigate("album/${album.id}")
+                                navController.navigate(albumRoute(album.id, album.thumbnail))
                             },
                             onLongClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -516,4 +451,97 @@ fun DynamicSearchPlaceholder(searchSource: SearchSource, style: TextStyle) {
         maxLines = 1,
         overflow = TextOverflow.Ellipsis
     )
+}
+
+
+/** Search toolbar with a title and a 44dp profile button. */
+@Composable
+private fun AppleSearchHeader(
+    accountImageUrl: String?,
+    accountName: String,
+    onAccountClick: () -> Unit,
+    horizontalInset: androidx.compose.ui.unit.Dp = 16.dp,
+    bottomInset: androidx.compose.ui.unit.Dp = 10.dp,
+) {
+    val profileDescription = stringResource(R.string.account)
+    Row(
+        modifier = Modifier.padding(start = horizontalInset, end = horizontalInset, bottom = bottomInset)
+            .fillMaxWidth(),
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(5.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Text(
+            text = stringResource(R.string.search),
+            style = com.convx.music.ui.screens.library.apple.SfStyle(34.sp, 41.sp, FontWeight.Bold, 0.4.sp),
+            color = com.convx.music.ui.ios.foundation.IosTheme.colors.label,
+            maxLines = 1,
+            modifier = Modifier.weight(1f).height(41.dp),
+        )
+        Box(
+            Modifier.size(44.dp).clip(CircleShape)
+                .iosRowPress(onClick = onAccountClick)
+                .semantics { contentDescription = profileDescription },
+        ) {
+            com.convx.music.ui.component.AccountAvatar(accountImageUrl, accountName)
+        }
+    }
+}
+
+/**
+ * Apple's segmented control under the field while searching: "YouTube Music" (Apple
+ * Music) and "Your Library" — the catalogue, or what is on this device and saved here.
+ */
+@Composable
+private fun SourceSwitch(
+    source: SearchSource,
+    onSelect: (SearchSource) -> Unit,
+    backdrop: com.convx.music.ui.component.backdrop.Backdrop,
+    modifier: Modifier = Modifier,
+) {
+    val colors = com.convx.music.ui.ios.foundation.IosTheme.colors
+    val thumb = if (colors.isDark) Color(0xFF1C1C1C) else Color.White
+    androidx.compose.foundation.layout.BoxWithConstraints(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(50.dp)
+            .iosGlass(shape = CircleShape,
+                spec = com.convx.music.ui.ios.foundation.IosGlassSpec.Control,
+                interactive = true, backdrop = backdrop,
+                wash = if (colors.isDark) Color.Black.copy(alpha = 0.75f) else Color.Transparent),
+    ) {
+        val thumbWidth = (maxWidth - 20.dp) / 2 + 12.dp
+        val selectionOffset = animateDpAsState(
+            if (source == SearchSource.ONLINE) 4.dp else maxWidth - thumbWidth - 4.dp,
+            animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.86f, stiffness = 400f),
+            label = "searchSourceSelection",
+        )
+        Box(Modifier.align(Alignment.CenterStart).width(thumbWidth).height(42.dp)
+            .graphicsLayer { translationX = selectionOffset.value.toPx() }
+            .clip(CircleShape).background(thumb))
+        Row(Modifier.fillMaxSize().padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        listOf(
+            SearchSource.ONLINE to stringResource(R.string.apple_search_catalog),
+            SearchSource.LOCAL to stringResource(R.string.apple_search_library),
+        ).forEach { (value, label) ->
+            val selected = value == source
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(42.dp)
+                    .iosRowPress(onClick = { onSelect(value) })
+                    .semantics { this.selected = selected; role = androidx.compose.ui.semantics.Role.Tab },
+            ) {
+                Text(
+                    text = label,
+                    style = com.convx.music.ui.screens.library.apple.SfStyle(
+                        14.sp, 18.sp, FontWeight.SemiBold, (-0.1).sp,
+                    ),
+                    color = colors.label,
+                    maxLines = 1,
+                )
+            }
+        }
+        }
+    }
 }

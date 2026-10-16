@@ -14,16 +14,8 @@ import com.convx.music.R
 import com.convx.music.WelcomeActivity
 
 /**
- * The launcher icon variants shipped with the app.
- *
- * Each one is an `<activity-alias>` in the manifest aliasing `WelcomeActivity`; exactly one
- * alias is enabled at a time, and the enabled one is what the launcher draws. Component
- * enablement is stored by the system, so it survives reinstall-free updates on its own — the
- * DataStore copy exists only so the picker can show a checkmark without querying PackageManager
- * thirteen times per frame.
- *
- * [previewRes] is the adaptive icon's *foreground* layer; the picker composes it over
- * [R.color.ic_launcher_tile] to reproduce what the launcher shows.
+ * Launcher icon aliases; one is enabled at a time and the selection is mirrored in DataStore.
+ * [previewRes] is the foreground layer shown over [R.color.ic_launcher_tile] in the picker.
  */
 enum class AppIcon(
     val id: String,
@@ -61,14 +53,7 @@ enum class AppIcon(
 
         fun fromId(id: String?): AppIcon = entries.firstOrNull { it.id == id } ?: DEFAULT
 
-        /**
-         * Enables [icon]'s alias and disables every other one.
-         *
-         * The new alias is enabled *first* so there is never an instant with no enabled
-         * LAUNCHER component — a gap there makes the app vanish from the launcher until the
-         * next package scan. [PackageManager.DONT_KILL_APP] keeps playback alive; the launcher
-         * usually redraws within a second or two on its own.
-         */
+        /** Enables the new alias before disabling the old one, keeping a launcher entry active. */
         fun apply(context: Context, icon: AppIcon) {
             val pm = context.packageManager
             pm.setComponentEnabledSetting(
@@ -76,21 +61,17 @@ enum class AppIcon(
                 PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
                 PackageManager.DONT_KILL_APP,
             )
-            entries.filter { it != icon }.forEach {
+            for (otherIcon in entries) {
+                if (otherIcon == icon) continue
                 pm.setComponentEnabledSetting(
-                    componentFor(context, it),
+                    componentFor(context, otherIcon),
                     PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
                     PackageManager.DONT_KILL_APP,
                 )
             }
         }
 
-        /**
-         * The manifest's relative alias names resolve against the module's *namespace*, not the
-         * applicationId — and debug builds carry an `applicationIdSuffix`, so the two differ.
-         * Deriving the prefix from a real class keeps both variants pointing at the right
-         * component instead of silently no-op'ing on debug.
-         */
+        /** Aliases resolve against the namespace, which can differ from applicationId in debug builds. */
         private fun componentFor(context: Context, icon: AppIcon): ComponentName {
             val namespace = WelcomeActivity::class.java.name.substringBeforeLast('.')
             return ComponentName(context.packageName, namespace + icon.alias)

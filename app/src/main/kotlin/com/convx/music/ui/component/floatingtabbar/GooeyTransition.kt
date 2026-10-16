@@ -41,11 +41,7 @@ private val ThresholdColorFilter = ColorMatrixColorFilter(
     )
 )
 
-// Radius is quantised to whole pixels before the effect is built and cached, so a
-// transition reuses one RenderEffect per distinct radius instead of allocating a
-// fresh BlurEffect + ColorMatrixColorFilter every frame. Sub-pixel blur steps are
-// not visible through an alpha threshold anyway. Bounded: the radius only ever
-// ranges over 0..GooeyPeakBlur.
+// Cache integer-pixel radii because thresholding hides subpixel blur changes.
 private val gooeyEffectCache = HashMap<Int, RenderEffect>()
 
 private fun gooeyRenderEffect(blurRadiusPx: Float): RenderEffect {

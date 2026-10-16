@@ -5,8 +5,8 @@
 
 package com.convx.music.ui.screens.settings
 
-import android.Manifest
-import android.content.pm.PackageManager
+import com.convx.music.ui.component.sf
+import com.convx.music.ui.component.SymbolIcon
 import android.net.Uri
 import android.os.Build
 import android.provider.DocumentsContract
@@ -18,30 +18,25 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
-import com.convx.music.ui.component.GlassSwitchCompat as Switch
-import androidx.compose.material3.Text
+import com.convx.music.ui.ios.compat.Button
+import com.convx.music.ui.ios.compat.CircularProgressIndicator
+import com.convx.music.ui.ios.compat.HorizontalDivider
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.OutlinedButton
+import com.convx.music.ui.ios.compat.Surface
+import com.convx.music.ui.ios.compat.Switch
+import com.convx.music.ui.ios.compat.Text
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -66,6 +61,7 @@ import com.convx.music.utils.decodeExcludedFolders
 import com.convx.music.utils.encodeExcludedFolders
 import com.convx.music.utils.rememberPreference
 import kotlinx.coroutines.launch
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 /**
  * Which on-device folders local-only mode is allowed to scan. Backed by a single
@@ -84,24 +80,11 @@ fun LocalFoldersSettingsScreen(
     val context = LocalContext.current
     val viewModel: LocalMusicViewModel = hiltViewModel()
     val coroutineScope = rememberCoroutineScope()
-    val isScanning by viewModel.isScanning.collectAsState()
+    val isScanning by viewModel.isScanning.collectAsStateWithLifecycle()
 
-    val audioPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        Manifest.permission.READ_MEDIA_AUDIO
-    } else {
-        Manifest.permission.READ_EXTERNAL_STORAGE
-    }
-    var hasPermission by remember {
-        mutableStateOf(
-            context.checkSelfPermission(audioPermission) == PackageManager.PERMISSION_GRANTED
-        )
-    }
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        hasPermission = granted
-        if (granted) viewModel.scanDevice(context)
-    }
+    val permission = com.convx.music.ui.component.rememberLocalAudioPermission { }
+    val hasPermission = permission.granted
+    LaunchedEffect(hasPermission) { if (hasPermission) viewModel.scanDevice(context, force = false) }
 
     var folders by remember { mutableStateOf<List<LocalFolderIndex.Folder>>(emptyList()) }
     // Keyed on isScanning so the list refills itself when a scan finishes, instead of
@@ -112,6 +95,11 @@ fun LocalFoldersSettingsScreen(
 
     val (excludedRaw, _) = rememberPreference(LocalExcludedFoldersKey, defaultValue = "")
     val excluded = remember(excludedRaw) { decodeExcludedFolders(excludedRaw) }
+
+    suspend fun saveExcludedFolders(paths: Set<String>) {
+        context.dataStore.edit { it[LocalExcludedFoldersKey] = encodeExcludedFolders(paths) }
+        viewModel.scanDevice(context)
+    }
 
     /** Paths excluded by hand that MediaStore doesn't report — no music in them (yet). */
     val excludedNotListed = remember(excluded, folders) {
@@ -124,8 +112,7 @@ fun LocalFoldersSettingsScreen(
             // off disk, and racing it against a fire-and-forget write meant the rescan
             // could still see the pre-toggle set and never drop the folder's songs.
             val next = if (exclude) excluded + path else excluded - path
-            context.dataStore.edit { it[LocalExcludedFoldersKey] = encodeExcludedFolders(next) }
-            viewModel.scanDevice(context)
+            saveExcludedFolders(next)
         }
     }
 
@@ -135,52 +122,39 @@ fun LocalFoldersSettingsScreen(
         uri?.let { treeUriToScannerPath(it) }?.let { setExcluded(it, true) }
     }
 
-    Column(
-        Modifier
-            .windowInsetsPadding(
-                LocalPlayerAwareWindowInsets.current.only(
-                    WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom
-                )
-            )
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp)
+    // "Only this folder": one pick excludes every listed folder outside it, instead of
+    // unticking them one by one. Works for a parent folder too -- MediaStore only lists
+    // the leaf folders that hold songs, so the parent itself never shows as a row.
+    val onlyFolderPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        val keep = uri?.let { treeUriToScannerPath(it) } ?: return@rememberLauncherForActivityResult
+        coroutineScope.launch {
+            val next = folders.map { it.path }
+                .filterNot { it == keep || it.startsWith("$keep/") }
+                .toSet()
+            saveExcludedFolders(next)
+        }
+    }
+
+    SettingsPage(
+        navController = navController,
+        title = stringResource(R.string.excluded_folders),
+        pageColor = AppTheme.colorScheme.background,
+        horizontalPadding = 24.dp,
     ) {
-        Spacer(
-            Modifier.windowInsetsPadding(
-                LocalPlayerAwareWindowInsets.current.only(WindowInsetsSides.Top)
-            )
-        )
 
         Text(
             text = stringResource(R.string.excluded_folders_desc),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = AppTheme.typography.bodyMedium,
+            color = AppTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(bottom = 16.dp, top = 16.dp)
         )
 
         if (!hasPermission) {
-            // Was a bare "scan from the Local screen first" line, which is a dead end on
-            // a fresh install: the folder list is empty precisely because permission was
-            // never granted, and nothing here offered to ask for it.
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Column(Modifier.padding(20.dp)) {
-                    Text(
-                        text = stringResource(R.string.excluded_folders_permission),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.height(16.dp))
-                    Button(onClick = { permissionLauncher.launch(audioPermission) }) {
-                        Text(stringResource(R.string.grant_permission))
-                    }
-                }
-            }
+            com.convx.music.ui.component.LocalMusicPermissionPrompt(permission)
             Spacer(Modifier.height(24.dp))
-            return@Column
+            return@SettingsPage
         }
 
         Row(
@@ -191,11 +165,7 @@ fun LocalFoldersSettingsScreen(
                 onClick = { folderPicker.launch(null) },
                 modifier = Modifier.weight(1f),
             ) {
-                Icon(
-                    painter = painterResource(R.drawable.add),
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                )
+                SymbolIcon(symbol = sf("plus"), contentDescription = null, size = 18.dp)
                 Spacer(Modifier.width(8.dp))
                 Text(stringResource(R.string.exclude_folder_add))
             }
@@ -207,15 +177,20 @@ fun LocalFoldersSettingsScreen(
                 if (isScanning) {
                     CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                 } else {
-                    Icon(
-                        painter = painterResource(R.drawable.refresh),
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                    )
+                    SymbolIcon(symbol = sf("arrow.clockwise"), contentDescription = null, size = 18.dp)
                     Spacer(Modifier.width(8.dp))
                     Text(stringResource(R.string.scan_device))
                 }
             }
+        }
+
+        Spacer(Modifier.height(12.dp))
+        OutlinedButton(
+            onClick = { onlyFolderPicker.launch(null) },
+            enabled = !isScanning && folders.isNotEmpty(),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(stringResource(R.string.scan_only_folder))
         }
 
         Spacer(Modifier.height(20.dp))
@@ -223,13 +198,13 @@ fun LocalFoldersSettingsScreen(
         if (folders.isEmpty() && !isScanning) {
             Text(
                 text = stringResource(R.string.excluded_folders_empty),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = AppTheme.typography.bodyMedium,
+                color = AppTheme.colorScheme.onSurfaceVariant,
             )
         } else {
             Surface(
                 shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                color = AppTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Column {
@@ -252,12 +227,12 @@ fun LocalFoldersSettingsScreen(
             Spacer(Modifier.height(24.dp))
             Text(
                 text = stringResource(R.string.excluded_folders_custom),
-                style = MaterialTheme.typography.titleSmall,
+                style = AppTheme.typography.titleSmall,
                 modifier = Modifier.padding(bottom = 8.dp),
             )
             Surface(
                 shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                color = AppTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Column {
@@ -302,23 +277,21 @@ private fun FolderRow(
         ) {
             Text(
                 text = name,
-                style = MaterialTheme.typography.bodyLarge,
+                style = AppTheme.typography.bodyLarge,
                 maxLines = 1,
                 softWrap = false,
                 modifier = Modifier.horizontalScroll(rememberScrollState()),
             )
             Text(
                 text = detail,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = AppTheme.typography.bodySmall,
+                color = AppTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 softWrap = false,
                 modifier = Modifier.horizontalScroll(rememberScrollState()),
             )
         }
-        // Given its own callback rather than left as a decoration on a clickable row:
-        // the switch is the obvious tap target, and it used to swallow the touch and
-        // do nothing (see GlassSwitch).
+        // Give the switch its own callback so tapping it changes the folder state.
         Switch(checked = included, onCheckedChange = onToggle)
     }
 }

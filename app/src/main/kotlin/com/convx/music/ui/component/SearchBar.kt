@@ -30,11 +30,11 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.LocalTextStyle
-import androidx.compose.material3.MaterialTheme
+import com.convx.music.ui.ios.compat.LocalTextStyle
+import com.convx.music.ui.ios.compat.AppTheme
 import androidx.compose.material3.TextFieldColors
 import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.TopAppBar
+import com.convx.music.ui.ios.compat.TopAppBar
 import androidx.compose.material3.TopAppBarColors
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.TopAppBarScrollBehavior
@@ -79,7 +79,7 @@ fun TopSearch(
     trailingIcon: @Composable (() -> Unit)? = null,
     shape: Shape? = null,
     colors: TopAppBarColors = TopAppBarDefaults.topAppBarColors(
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        containerColor = AppTheme.colorScheme.surfaceContainerLow
     ),
     scrollBehavior: TopAppBarScrollBehavior? = null,
     windowInsets: WindowInsets = WindowInsets.systemBars,
@@ -102,12 +102,12 @@ fun TopSearch(
                     leadingIcon = null,
                     trailingIcon = null,
                     colors = TextFieldDefaults.colors(
-                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                        unfocusedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        focusedTextColor = AppTheme.colorScheme.onSurface,
+                        unfocusedTextColor = AppTheme.colorScheme.onSurfaceVariant,
                         focusedContainerColor = Color.Transparent,
                         unfocusedContainerColor = Color.Transparent,
                         disabledContainerColor = Color.Transparent,
-                        cursorColor = MaterialTheme.colorScheme.primary,
+                        cursorColor = AppTheme.colorScheme.primary,
                         focusedIndicatorColor = Color.Transparent,
                         unfocusedIndicatorColor = Color.Transparent
                     ),
@@ -135,7 +135,7 @@ fun TopSearch(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = AppBarHeight + windowInsets.asPaddingValues().calculateTopPadding())
-                    .background(MaterialTheme.colorScheme.surface)
+                    .background(AppTheme.colorScheme.surface)
             ) {
                  Column {
                     content()

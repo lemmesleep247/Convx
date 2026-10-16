@@ -14,11 +14,12 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import racra.compose.smooth_corner_rect_library.AbsoluteSmoothCornerShape
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.IconButton
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.Surface
+import com.convx.music.ui.ios.compat.Switch
+import com.convx.music.ui.ios.compat.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -39,12 +40,14 @@ data class DraggableLyricsProviderItem(
     val id: String,
     val name: String,
     val icon: Painter,
+    val enabled: Boolean = true,
 )
 
 @Composable
 fun DraggableLyricsProviderList(
     items: MutableList<DraggableLyricsProviderItem>,
     onItemsReordered: (List<DraggableLyricsProviderItem>) -> Unit,
+    onToggleEnabled: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val lazyListState = rememberLazyListState()
@@ -81,7 +84,7 @@ fun DraggableLyricsProviderList(
                         .fillMaxWidth()
                         .padding(vertical = 4.dp),
                     shape = AbsoluteSmoothCornerShape(12.dp, 60),
-                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    color = AppTheme.colorScheme.surfaceContainer,
                 ) {
                     Row(
                         modifier = Modifier
@@ -94,18 +97,19 @@ fun DraggableLyricsProviderList(
                             onClick = { },
                             modifier = Modifier.draggableHandle(),
                         ) {
-                            Icon(
-                                painter = painterResource(R.drawable.drag_handle),
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                            SymbolIcon(symbol = sf("line.3.horizontal"), contentDescription = null, tint = AppTheme.colorScheme.onSurfaceVariant)
                         }
 
                         Text(
                             text = item.name,
-                            style = MaterialTheme.typography.bodyLarge,
+                            style = AppTheme.typography.bodyLarge,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f),
+                        )
+
+                        Switch(
+                            checked = item.enabled,
+                            onCheckedChange = { onToggleEnabled(item.id) },
                         )
                     }
                 }

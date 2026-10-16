@@ -40,7 +40,6 @@ class AccountViewModel @Inject constructor(
     val albums = MutableStateFlow<List<AlbumItem>?>(null)
     val artists = MutableStateFlow<List<ArtistItem>?>(null)
 
-    // Selected content type for chips
     val selectedContentType = MutableStateFlow(AccountContentType.PLAYLISTS)
 
     private suspend fun loadPlaylists() {
@@ -73,7 +72,6 @@ class AccountViewModel @Inject constructor(
             }
         }
 
-        // Listen for HideYoutubeShorts preference changes and reload playlists instantly
         viewModelScope.launch(Dispatchers.IO) {
             context.dataStore.data
                 .map { it[HideYoutubeShortsKey] ?: false }

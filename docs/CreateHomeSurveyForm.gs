@@ -1,13 +1,10 @@
-// ============================================================
 //  Convx — Home Screen & Playlist Design Survey (Google Form)
-// ============================================================
 //  HOW TO USE:
 //  1. Go to https://script.google.com
 //  2. Click "New project", delete the sample code, paste ALL of this.
 //  3. Click "Run" -> "createSurveyForm". Allow permissions.
 //  4. Wait a few seconds. A new Form appears in your Google Drive.
 //  5. Open it, click the Send button, share the link with your users.
-// ============================================================
 
 function mc(form, title, options, helpText, showOther) {
   const item = form.addMultipleChoiceItem();
@@ -35,9 +32,7 @@ function createSurveyForm() {
   form.setAllowResponseEdits(true);
   form.setConfirmationMessage('Thank you! Your answers decide what we build.');
 
-  // ----------------------------------------------------------
   // PART A — Your Home screen today
-  // ----------------------------------------------------------
   form.addSectionHeaderItem()
     .setTitle('Part A — Your Home screen today')
     .setHelpText('Your Home screen currently shows many different things at once: filter chips, a tile grid that swipes like phone icons, sideways song rows, giant community cards, big cards with text on top of the artwork, wide pill buttons, a blurred photo background — and the section order shuffles randomly on every refresh. Apple Music instead uses one simple repeating card: square picture, rounded corners, title below the picture, calm solid background, fixed order.');
@@ -89,9 +84,7 @@ function createSurveyForm() {
     'I would use it more if it looked less like a phone app launcher'
   ]);
 
-  // ----------------------------------------------------------
   // PART B — Design choices: making thumbnails consistent
-  // ----------------------------------------------------------
   form.addSectionHeaderItem()
     .setTitle('Part B — Design choices: the "make thumbnails consistent" problem')
     .setHelpText('There is no correct answer — we want to know which look feels right. Imagine you are designing the screen yourself. All of these are free to change (shapes, sizes, corners, spacing).');
@@ -163,9 +156,7 @@ function createSurveyForm() {
      'I do not know where to look first.'],
     null, true);
 
-  // ----------------------------------------------------------
   // PART C — Playlist colors (the mood problem)
-  // ----------------------------------------------------------
   form.addSectionHeaderItem()
     .setTitle('Part C — Playlist colors (the mood problem)')
     .setHelpText('When you change a playlist cover picture, the whole playlist screen changes color to match that picture. Orange cover = orange screen. There is no way to keep a calm neutral look (grey, black) — the picture always decides the mood for you.');
@@ -210,9 +201,7 @@ function createSurveyForm() {
     'Long-press the playlist → "change color"'
   ]);
 
-  // ----------------------------------------------------------
   // PART D — Cheat sheet check
-  // ----------------------------------------------------------
   form.addPageBreakItem().setTitle('Part D — The "is this solution worth it?" check');
 
   form.addParagraphTextItem()
@@ -224,9 +213,7 @@ function createSurveyForm() {
       '4) Does it respect both kinds of users? (color lovers AND neutral lovers)\n\n' +
       'Write: your idea, the four checks, and a verdict (good / bad / needs tweaking).');
 
-  // ----------------------------------------------------------
   // PART E — About you
-  // ----------------------------------------------------------
   form.addSectionHeaderItem().setTitle('Part E — About you (optional)');
 
   mc(form, 'I mostly use:', ['Dark mode', 'Light mode', 'Auto']);

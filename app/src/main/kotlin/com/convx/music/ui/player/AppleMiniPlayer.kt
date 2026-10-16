@@ -2,10 +2,12 @@
  * Convx Project (C) 2026
  * Licensed under GPL-3.0 | See git history for contributors
  */
-// Apple Music player UI ported from vivizzz007/vivi-music (https://github.com/vivizzz007/vivi-music), GPL-3.0.
+// Apple Music player UI adapted from an open-source (GPL-3.0) base.
 
 package com.convx.music.ui.player
 
+import com.convx.music.ui.component.sf
+import com.convx.music.ui.component.SymbolIcon
 import android.content.res.Configuration
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
@@ -23,12 +25,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialShapes
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.toShape
-import androidx.compose.material3.Text
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.IconButton
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,6 +41,14 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
+import com.composables.sfsymbols.SfSymbols
+import com.composables.sfsymbols.monochrome.SFAirplayAudio
+import com.composables.sfsymbols.monochrome.SFArrowCounterclockwise
+import com.composables.sfsymbols.monochrome.SFForwardFill
+import com.composables.sfsymbols.monochrome.SFPauseFill
+import com.composables.sfsymbols.monochrome.SFPlayFill
+import com.composables.sfsymbols.monochrome.SFSpeakerSlashFill
+import com.composables.sfsymbols.monochrome.SFSpeakerWave2Fill
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -65,6 +73,7 @@ import kotlinx.coroutines.launch
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
 import com.convx.music.ui.component.Icon as MIcon
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -78,17 +87,18 @@ fun AppleMiniPlayer(
     val pureBlack by rememberPreference(PureBlackMiniPlayerKey, defaultValue = false)
     val isSystemInDarkTheme = isSystemInDarkTheme()
     val darkTheme by rememberEnumPreference(DarkModeKey, defaultValue = DarkMode.AUTO)
-    val useDarkTheme = remember(darkTheme, isSystemInDarkTheme) {
+    val preferredDark = remember(darkTheme, isSystemInDarkTheme) {
         if (darkTheme == DarkMode.AUTO) isSystemInDarkTheme else darkTheme == DarkMode.ON
     }
+    val useDarkTheme = com.convx.music.ui.theme.LocalForcedDark.current || preferredDark
     
     val miniPlayerBackground by rememberEnumPreference(MiniPlayerBackgroundStyleKey, defaultValue = PlayerBackgroundStyle.DEFAULT)
     
     // Player states
-    val playbackState by playerConnection.playbackState.collectAsState()
-    val mediaMetadata by playerConnection.mediaMetadata.collectAsState()
-    val canSkipNext by playerConnection.canSkipNext.collectAsState()
-    val canSkipPrevious by playerConnection.canSkipPrevious.collectAsState()
+    val playbackState by playerConnection.playbackState.collectAsStateWithLifecycle()
+    val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
+    val canSkipNext by playerConnection.canSkipNext.collectAsStateWithLifecycle()
+    val canSkipPrevious by playerConnection.canSkipPrevious.collectAsStateWithLifecycle()
     
     // Cast state
     val castHandler = remember(playerConnection) {
@@ -98,7 +108,7 @@ fun AppleMiniPlayer(
             null
         }
     }
-    val isCasting by castHandler?.isCasting?.collectAsState() ?: remember { mutableStateOf(false) }
+    val isCasting by castHandler?.isCasting?.collectAsStateWithLifecycle() ?: remember { mutableStateOf(false) }
 
     // Swipe settings
     val swipeSensitivity by rememberPreference(SwipeSensitivityKey, 0.73f)
@@ -139,13 +149,13 @@ fun AppleMiniPlayer(
     )
     
     // Memoize colors
-    val backgroundColor = if (pureBlack && useDarkTheme) Color.Black else MaterialTheme.colorScheme.surface
+    val backgroundColor = if (pureBlack && useDarkTheme) Color.Black else AppTheme.colorScheme.surface
     val isDynamicBackground = miniPlayerBackground != PlayerBackgroundStyle.DEFAULT
     
-    val primaryColor = if (isDynamicBackground) Color.White else MaterialTheme.colorScheme.primary
-    val outlineColor = if (isDynamicBackground) Color.White.copy(alpha = 0.5f) else MaterialTheme.colorScheme.outline
-    val onSurfaceColor = if (isDynamicBackground) Color.White else MaterialTheme.colorScheme.onSurface
-    val errorColor = MaterialTheme.colorScheme.error
+    val primaryColor = if (isDynamicBackground) Color.White else AppTheme.colorScheme.primary
+    val outlineColor = if (isDynamicBackground) Color.White.copy(alpha = 0.5f) else AppTheme.colorScheme.outline
+    val onSurfaceColor = if (isDynamicBackground) Color.White else AppTheme.colorScheme.onSurface
+    val errorColor = AppTheme.colorScheme.error
 
     Box(
         modifier = modifier
@@ -219,19 +229,19 @@ fun AppleMiniPlayer(
         Box(
             modifier = Modifier
                 .then(if (isTabletLandscape) Modifier.width(500.dp).align(Alignment.Center) else Modifier.fillMaxWidth())
-                .height(64.dp)
+                // Reserve MiniPlayerHeight even though the visible bar is 48 dp tall.
+                .height(48.dp)
+                .align(Alignment.Center)
                 .offset { IntOffset(offsetXAnimatable.value.roundToInt(), 0) }
-                .clip(RoundedCornerShape(8.dp)) // Apple rectangular shape with slightly rounded corners
+                .clip(RoundedCornerShape(24.dp))
                 .background(color = backgroundColor)
         ) {
-            // Background Layers
             MiniPlayerBackgroundLayer(
                 style = miniPlayerBackground,
                 mediaMetadata = mediaMetadata,
                 gradientColors = gradientColors
             )
 
-            // Bottom Progress Bar
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -247,14 +257,13 @@ fun AppleMiniPlayer(
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 8.dp),
+                modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp),
             ) {
-                // Cookie 4-Sided Thumbnail
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
-                        .size(42.dp)
-                        .clip(MaterialShapes.Cookie4Sided.toShape())
+                        .size(32.dp)
+                        .clip(RoundedCornerShape(8.dp))
                         .background(color = outlineColor.copy(alpha = 0.2f))
                 ) {
                     mediaMetadata?.let { metadata ->
@@ -267,21 +276,22 @@ fun AppleMiniPlayer(
                     }
                 }
 
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(8.dp))
 
-                // Song info - title and artist
                 Column(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.Center
                 ) {
-                    val error by LocalPlayerConnection.current?.error?.collectAsState() ?: remember { mutableStateOf(null) }
+                    val error by LocalPlayerConnection.current?.error?.collectAsStateWithLifecycle() ?: remember { mutableStateOf(null) }
                     
                     mediaMetadata?.let { metadata ->
                         Text(
                             text = metadata.title,
                             color = onSurfaceColor,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium,
+                            fontSize = 15.sp,
+                            lineHeight = 20.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            letterSpacing = (-0.23).sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.basicMarquee(iterations = 1, initialDelayMillis = 3000, velocity = 30.dp),
@@ -295,7 +305,9 @@ fun AppleMiniPlayer(
                                 Text(
                                     text = metadata.artists.joinToString { it.name },
                                     color = onSurfaceColor.copy(alpha = 0.7f),
-                                    fontSize = 12.sp,
+                                    fontSize = 11.sp,
+                                    lineHeight = 13.sp,
+                                    letterSpacing = 0.06.sp,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.basicMarquee(iterations = 1, initialDelayMillis = 3000, velocity = 30.dp),
@@ -317,22 +329,15 @@ fun AppleMiniPlayer(
 
                 Spacer(modifier = Modifier.width(8.dp))
 
-                // Cast indicator
                 if (isCasting) {
-                    Icon(
-                        painter = painterResource(R.drawable.cast_connected),
-                        contentDescription = "Casting",
-                        tint = primaryColor,
-                        modifier = Modifier.size(20.dp)
-                    )
+                    SymbolIcon(symbol = sf("SFAirplayAudio"), contentDescription = "Casting", size = 20.dp, tint = primaryColor)
                     Spacer(modifier = Modifier.width(8.dp))
                 }
 
-                // Play/Pause Button
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(32.dp)
                         .clip(CircleShape)
                         .clickable {
                             if (isListenTogetherGuest) {
@@ -350,44 +355,31 @@ fun AppleMiniPlayer(
                             }
                         }
                 ) {
-                    val isPlaying by playerConnection.isPlaying.collectAsState()
-                    val castIsPlaying by castHandler?.castIsPlaying?.collectAsState() ?: remember { mutableStateOf(false) }
+                    val isPlaying by playerConnection.isPlaying.collectAsStateWithLifecycle()
+                    val castIsPlaying by castHandler?.castIsPlaying?.collectAsStateWithLifecycle() ?: remember { mutableStateOf(false) }
                     val effectiveIsPlaying = if (isCasting) castIsPlaying else isPlaying
-                    val isMuted by playerConnection.isMuted.collectAsState()
+                    val isMuted by playerConnection.isMuted.collectAsStateWithLifecycle()
 
-                    Icon(
-                        painter = painterResource(
-                            when {
-                                isListenTogetherGuest -> if (isMuted) R.drawable.volume_off else R.drawable.volume_up
-                                playbackState == Player.STATE_ENDED -> R.drawable.replay
-                                effectiveIsPlaying -> R.drawable.pause_applemusic
-                                else -> R.drawable.play_applemusic
-                            }
-                        ),
-                        contentDescription = null,
-                        tint = onSurfaceColor,
-                        modifier = Modifier.size(28.dp)
-                    )
+                    SymbolIcon(symbol = when {
+                            isListenTogetherGuest -> if (isMuted) sf("SFSpeakerSlashFill") else sf("SFSpeakerWave2Fill")
+                            playbackState == Player.STATE_ENDED -> sf("SFArrowCounterclockwise")
+                            effectiveIsPlaying -> sf("SFPauseFill")
+                            else -> sf("SFPlayFill")
+                        }, contentDescription = null, size = 17.dp, tint = onSurfaceColor)
                 }
 
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(4.dp))
 
-                // Next Button
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(32.dp)
                         .clip(CircleShape)
                         .clickable(enabled = canSkipNext && !isListenTogetherGuest) {
                             playerConnection.seekToNext()
                         }
                 ) {
-                    Icon(
-                        painter = painterResource(R.drawable.apple_skip_next),
-                        contentDescription = "Next",
-                        tint = if (canSkipNext && !isListenTogetherGuest) onSurfaceColor else onSurfaceColor.copy(alpha = 0.3f),
-                        modifier = Modifier.size(28.dp)
-                    )
+                    SymbolIcon(symbol = sf("SFForwardFill"), contentDescription = "Next", size = 17.dp, tint = if (canSkipNext && !isListenTogetherGuest) onSurfaceColor else onSurfaceColor.copy(alpha = 0.3f))
                 }
             }
         }

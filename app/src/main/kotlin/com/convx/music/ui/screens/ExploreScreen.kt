@@ -5,9 +5,20 @@
 
 package com.convx.music.ui.screens
 
+import com.convx.music.ui.utils.plusStart
+import com.convx.music.ui.utils.bleedStart
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+import com.convx.music.ui.screens.library.apple.SfStyle
+import com.convx.music.ui.screens.library.apple.YtPopTile
+import com.music.innertube.pages.ChartsPage.ChartType
+import com.convx.music.ui.utils.sharedArtworkSource
+import com.convx.music.ui.utils.youtubeBrowseRoute
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import com.convx.music.ui.utils.rememberEdgeAwareFlingBehavior
 import androidx.compose.foundation.layout.Arrangement
@@ -19,6 +30,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -29,480 +41,255 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyHorizontalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.IconButton
+import com.convx.music.ui.ios.compat.LocalContentColor
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import dev.chrisbanes.haze.hazeSource
+import com.convx.music.ui.component.TopFadeBlur
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavController
 import androidx.navigation.compose.currentBackStackEntryAsState
+import com.music.innertube.YouTube
+import com.music.innertube.models.AlbumItem
+import com.music.innertube.models.ArtistItem
+import com.music.innertube.models.PlaylistItem
 import com.music.innertube.models.SongItem
 import com.music.innertube.models.WatchEndpoint
+import com.music.innertube.models.YTItem
+import com.music.innertube.pages.BrowseResult
 import com.convx.music.LocalPlayerAwareWindowInsets
 import com.convx.music.LocalPlayerConnection
 import com.convx.music.R
+import com.composables.sfsymbols.SfSymbols
 import com.convx.music.constants.ListItemHeight
 import com.convx.music.models.toMediaMetadata
+import com.convx.music.playback.PlayerConnection
 import com.convx.music.playback.queues.YouTubeQueue
-import com.convx.music.ui.component.LargeScreenTitle
 import com.convx.music.ui.component.LocalMenuState
+import com.convx.music.ui.component.MenuState
 import com.convx.music.ui.component.NavigationTitle
 import com.convx.music.ui.component.YouTubeGridItem
-import androidx.compose.material3.Text
 import com.convx.music.ui.component.YouTubeListItem
-import com.convx.music.ui.component.HeroBackground
-import com.convx.music.ui.utils.rememberHeroZoom
-import com.convx.music.ui.utils.heroPullZoom
-import com.convx.music.ui.utils.listOverscroll
-import com.convx.music.ui.component.rememberHeroSource
-import com.convx.music.ui.component.rememberHeroTint
+import com.convx.music.ui.component.rememberAppBackgroundColor
+import com.convx.music.ui.component.SpotlightCard
+import com.convx.music.ui.component.SpotlightCardArtworkSize
+import com.convx.music.ui.component.SpotlightCardHeight
+import com.convx.music.ui.component.SpotlightCardSpacing
 import com.convx.music.ui.theme.AppleTokens
-import com.convx.music.ui.theme.HeroTintedContent
-import com.convx.music.ui.component.GlassComponent
-import com.convx.music.ui.component.LocalGlassEffectConfig
-import com.convx.music.ui.component.isGlassAllowed
-import com.convx.music.ui.component.liquidGlass
-import com.convx.music.ui.component.shapes.ContinuousRoundedRectangle
-import com.convx.music.ui.component.backdrop.backdrops.rememberLayerBackdrop
-import androidx.compose.ui.text.font.FontWeight
+import com.convx.music.ui.theme.LocalAccentTextColor
 import com.convx.music.ui.component.shimmer.GridItemPlaceHolder
 import com.convx.music.ui.component.shimmer.ShimmerHost
 import com.convx.music.ui.component.shimmer.TextPlaceholder
 import com.convx.music.ui.menu.YouTubeAlbumMenu
+import com.convx.music.ui.menu.YouTubeArtistMenu
+import com.convx.music.ui.menu.YouTubePlaylistMenu
 import com.convx.music.ui.menu.YouTubeSongMenu
 import com.convx.music.ui.utils.bounceClick
 import com.convx.music.ui.utils.combinedBounceClick
+import com.convx.music.ui.utils.albumRoute
+import com.convx.music.ui.utils.artistRoute
+import com.convx.music.ui.utils.onlinePlaylistRoute
 import com.convx.music.ui.utils.SnapLayoutInfoProvider
 import com.convx.music.utils.listItemShape
+import com.convx.music.utils.reportException
 import com.convx.music.viewmodels.ChartsViewModel
 import com.convx.music.viewmodels.ExploreViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+/**
+ * Explore, as an Apple Music category page (the "Spatial Audio" page pattern): a large
+ * title, a row of large editorial cards (new releases), then titled shelves —
+ * Recommended for You, New Releases, Top Songs — and Moods & Genres as Search's duotone
+ * category tiles. Every card pops Apple's menu on hold.
+ */
 @Composable
 fun ExploreScreen(
     navController: NavController,
     exploreViewModel: ExploreViewModel = hiltViewModel(),
     chartsViewModel: ChartsViewModel = hiltViewModel(),
+    tilesViewModel: com.convx.music.ui.screens.search.AppleSearchViewModel = hiltViewModel(),
 ) {
     val menuState = LocalMenuState.current
-    val haptic = LocalHapticFeedback.current
     val playerConnection = LocalPlayerConnection.current ?: return
-    val isPlaying by playerConnection.isEffectivelyPlaying.collectAsState()
-    val mediaMetadata by playerConnection.mediaMetadata.collectAsState()
-
-    val explorePage by exploreViewModel.explorePage.collectAsState()
-    val chartsPage by chartsViewModel.chartsPage.collectAsState()
-    val isChartsLoading by chartsViewModel.isLoading.collectAsState()
-
     val coroutineScope = rememberCoroutineScope()
-    val scrollState = rememberScrollState()
+    val explorePage by exploreViewModel.explorePage.collectAsStateWithLifecycle()
+    val recommended by exploreViewModel.recommendedForYou.collectAsStateWithLifecycle()
+    val chartsPage by chartsViewModel.chartsPage.collectAsStateWithLifecycle()
+    val art by tilesViewModel.art.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) { if (chartsPage == null) chartsViewModel.loadCharts() }
 
-    val backStackEntry by navController.currentBackStackEntryAsState()
-    val scrollToTop by backStackEntry?.savedStateHandle
-        ?.getStateFlow("scrollToTop", false)?.collectAsState() ?: return
+    val colors = com.convx.music.ui.ios.foundation.IosTheme.colors
+    val pageInsets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
+    val sideInset = pageInsets.calculateStartPadding(androidx.compose.ui.platform.LocalLayoutDirection.current)
+    val bottom = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding()
 
-    LaunchedEffect(Unit) {
-        if (chartsPage == null) {
-            chartsViewModel.loadCharts()
+    fun open(item: YTItem) {
+        when (item) {
+            is SongItem -> playerConnection.playQueue(
+                YouTubeQueue(com.music.innertube.models.WatchEndpoint(videoId = item.id), item.toMediaMetadata()),
+            )
+            is AlbumItem -> navController.navigate(albumRoute(item.id, item.thumbnail))
+            is ArtistItem -> navController.navigate(artistRoute(item.id, item.thumbnail))
+            is PlaylistItem -> navController.navigate(onlinePlaylistRoute(item.id, item.title, item.thumbnail))
         }
     }
 
-    LaunchedEffect(scrollToTop) {
-        if (scrollToTop) {
-            scrollState.animateScrollTo(0)
-            backStackEntry?.savedStateHandle?.set("scrollToTop", false)
+    fun sheet(item: YTItem) {
+        menuState.show {
+            when (item) {
+                is SongItem -> YouTubeSongMenu(song = item, navController = navController, onDismiss = menuState::dismiss)
+                is AlbumItem -> YouTubeAlbumMenu(albumItem = item, navController = navController, onDismiss = menuState::dismiss)
+                is ArtistItem -> YouTubeArtistMenu(artist = item, onDismiss = menuState::dismiss)
+                is PlaylistItem -> YouTubePlaylistMenu(playlist = item, coroutineScope = coroutineScope, onDismiss = menuState::dismiss)
+            }
         }
     }
 
-    val heroUrl = remember(chartsPage, explorePage) {
-        chartsPage?.sections?.firstOrNull()?.items?.filterIsInstance<SongItem>()?.firstOrNull()?.thumbnail
-            ?: explorePage?.newReleaseAlbums?.firstOrNull()?.thumbnail
-    }
-    val heroSource = rememberHeroSource(
-        staticArt = heroUrl,
-        songs = emptyList()
-    )
-    val tint = rememberHeroTint(heroUrl)
-    val onTint = AppleTokens.onColor(tint)
+    val albums = explorePage?.newReleaseAlbums.orEmpty().distinctBy { it.id }
+    val hero = albums.take(6)
+    val newReleases = albums.drop(6)
+    val topSongs = chartsPage?.sections?.firstOrNull { it.chartType == ChartType.TOP }?.items.orEmpty().distinctBy { it.id }
+    val moods = explorePage?.moodAndGenres.orEmpty()
+    val recommendedTitle = stringResource(R.string.recommended_for_you)
+    val newTitle = stringResource(R.string.new_release_albums)
+    val topTitle = stringResource(R.string.top_songs)
 
-    val glassConfig = LocalGlassEffectConfig.current
-    val useGlass = glassConfig.isEnabledFor(GlassComponent.NAV_BAR) && isGlassAllowed()
-    val heroBackdrop = rememberLayerBackdrop()
+    @Composable
+    fun Tile(item: YTItem, card: @Composable () -> Unit) = YtPopTile(
+        item = item,
+        navController = navController,
+        player = playerConnection,
+        subtitle = item.browseSubtitle(),
+        onClick = { open(item) },
+        onMore = { sheet(item) },
+    ) { card() }
 
-    val heroZoom = rememberHeroZoom()
-
-    HeroBackground(
-        tint = tint,
-        heroSource = heroSource,
-        heroScale = heroZoom.scale,
-        modifier = Modifier.fillMaxSize(),
+    // The activity owns the shared title and frosted top bar.
+    Box(Modifier.fillMaxSize().background(colors.systemBackground)) {
+    androidx.compose.foundation.lazy.LazyColumn(
+        modifier = Modifier
+            .fillMaxSize(),
+        contentPadding = PaddingValues(
+            start = sideInset,
+            top = maxOf(pageInsets.calculateTopPadding(), if (sideInset > 0.dp) 96.dp else 116.dp),
+            bottom = bottom + 16.dp,
+        ),
     ) {
-      HeroTintedContent(tint = tint, backdrop = heroBackdrop) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .heroPullZoom(heroZoom)
-                // No bounce here: the top pull drives the hero zoom instead.
-                .verticalScroll(scrollState, overscrollEffect = heroZoom.listOverscroll()),
-        ) {
-            Spacer(
-                Modifier.height(
-                    LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateTopPadding(),
-                ),
-            )
-            
-            LargeScreenTitle(
-                title = stringResource(R.string.tab_explore),
-                color = onTint,
-            )
-
-            if (isChartsLoading || chartsPage == null || explorePage == null) {
-                ShimmerHost {
-                    TextPlaceholder(
-                        height = 36.dp,
-                        modifier = Modifier
-                            .padding(12.dp)
-                            .fillMaxWidth(0.5f),
-                    )
-                    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                        val horizontalLazyGridItemWidthFactor = if (maxWidth * 0.475f >= 320.dp) 0.475f else 0.9f
-                        val horizontalLazyGridItemWidth = maxWidth * horizontalLazyGridItemWidthFactor
-
-                        LazyHorizontalGrid(
-                            rows = GridCells.Fixed(4),
-                            contentPadding = PaddingValues(start = 4.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(ListItemHeight * 4),
+        if (hero.isNotEmpty()) {
+            item(key = "hero", contentType = "hero") {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 16.dp).plusStart(sideInset),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.padding(bottom = 8.dp).bleedStart(sideInset),
+                ) {
+                    items(hero, key = { "hero_" + it.id }, contentType = { "hero_card" }) { item ->
+                        Tile(item) { EditorialCard(item) }
+                    }
+                }
+            }
+        }
+        exploreShelf("recommended", recommendedTitle, recommended.orEmpty().distinctBy { it.id }, sideInset) { item ->
+            Tile(item) { ShelfCard(item) }
+        }
+        exploreShelf("new", newTitle, newReleases, sideInset) { item ->
+            Tile(item) { ShelfCard(item) }
+        }
+        exploreShelf("top", topTitle, topSongs, sideInset) { item ->
+            Tile(item) { ShelfCard(item) }
+        }
+        if (moods.isNotEmpty()) {
+            item(key = "moods_title", contentType = "shelf_title") { ShelfTitle(stringResource(R.string.mood_and_genres)) }
+            item(key = "moods_row", contentType = "mood_tiles") {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 16.dp).plusStart(sideInset),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.padding(bottom = 12.dp).bleedStart(sideInset),
+                ) {
+                    items(
+                        items = moods,
+                        key = { "mood_${it.endpoint.browseId}_${it.endpoint.params}" },
+                        contentType = { "mood_tile" },
+                    ) { mood ->
+                        LaunchedEffect(mood) { tilesViewModel.loadArt(mood) }
+                        com.convx.music.ui.screens.search.CategoryTile(
+                            title = mood.title,
+                            color = Color(mood.stripeColor),
+                            art = art[mood.endpoint.browseId + "|" + mood.endpoint.params],
+                            modifier = Modifier.width(180.dp),
                         ) {
-                            items(4) {
-                                Row(
-                                    modifier = Modifier
-                                        .width(horizontalLazyGridItemWidth)
-                                        .padding(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(ListItemHeight - 16.dp)
-                                            .clip(RoundedCornerShape(4.dp))
-                                            .background(MaterialTheme.colorScheme.onSurface),
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Column(
-                                        modifier = Modifier.fillMaxHeight(),
-                                        verticalArrangement = Arrangement.Center,
-                                    ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .height(16.dp)
-                                                .width(120.dp)
-                                                .background(MaterialTheme.colorScheme.onSurface),
-                                        )
-                                        Spacer(modifier = Modifier.height(8.dp))
-                                        Box(
-                                            modifier = Modifier
-                                                .height(12.dp)
-                                                .width(80.dp)
-                                                .background(MaterialTheme.colorScheme.onSurface),
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    TextPlaceholder(
-                        height = 36.dp,
-                        modifier = Modifier
-                            .padding(vertical = 12.dp, horizontal = 12.dp)
-                            .width(250.dp),
-                    )
-                    Row {
-                        repeat(2) {
-                            GridItemPlaceHolder()
-                        }
-                    }
-
-                    TextPlaceholder(
-                        height = 36.dp,
-                        modifier = Modifier
-                            .padding(vertical = 12.dp, horizontal = 12.dp)
-                            .width(250.dp),
-                    )
-                    Row {
-                        repeat(2) {
-                            GridItemPlaceHolder()
-                        }
-                    }
-
-                    TextPlaceholder(
-                        height = 36.dp,
-                        modifier = Modifier
-                            .padding(vertical = 12.dp, horizontal = 12.dp)
-                            .width(250.dp),
-                    )
-                    repeat(4) {
-                        Row {
-                            repeat(2) {
-                                TextPlaceholder(
-                                    height = MoodAndGenresButtonHeight,
-                                    modifier = Modifier
-                                        .padding(horizontal = 6.dp)
-                                        .width(200.dp),
-                                )
-                            }
-                        }
-                    }
-                }
-            } else {
-                chartsPage?.sections?.filter { it.title != "Top music videos" }?.forEach { section ->
-                    NavigationTitle(
-                        title = when (section.title) {
-                            "Trending" -> stringResource(R.string.trending)
-                            else -> section.title.ifEmpty { stringResource(R.string.charts) }
-                        },
-                    )
-                    BoxWithConstraints(
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        val horizontalLazyGridItemWidthFactor = if (maxWidth * 0.475f >= 320.dp) 0.475f else 0.9f
-                        val horizontalLazyGridItemWidth = maxWidth * horizontalLazyGridItemWidthFactor
-
-                        val lazyGridState = rememberLazyGridState()
-                        val snapLayoutInfoProvider = remember(lazyGridState) {
-                            SnapLayoutInfoProvider(
-                                lazyGridState = lazyGridState,
-                                positionInLayout = { layoutSize, itemSize ->
-                                    (layoutSize * horizontalLazyGridItemWidthFactor / 2f - itemSize / 2f)
-                                },
-                            )
-                        }
-
-                        LazyHorizontalGrid(
-                            state = lazyGridState,
-                            rows = GridCells.Fixed(4),
-                            flingBehavior = rememberEdgeAwareFlingBehavior(
-                                lazyGridState,
-                                rememberSnapFlingBehavior(snapLayoutInfoProvider),
-                            ),
-                            contentPadding = WindowInsets.systemBars
-                                .only(WindowInsetsSides.Horizontal)
-                                .asPaddingValues(),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(ListItemHeight * 4),
-                        ) {
-                            itemsIndexed(
-                                items = section.items.filterIsInstance<SongItem>().distinctBy { it.id },
-                                key = { _, it -> it.id },
-                            ) { index, song ->
-                                YouTubeListItem(
-                                    item = song,
-                                    isActive = song.id == mediaMetadata?.id,
-                                    isPlaying = isPlaying,
-                                    isSwipeable = false,
-                                    flat = true,
-                                    shape = listItemShape(index % 4, 4),
-                                    trailingContent = {
-                                        IconButton(
-                                            onClick = {
-                                                menuState.show {
-                                                    YouTubeSongMenu(
-                                                        song = song,
-                                                        navController = navController,
-                                                        onDismiss = menuState::dismiss,
-                                                    )
-                                                }
-                                            },
-                                        ) {
-                                            Icon(
-                                                painter = painterResource(R.drawable.more_vert),
-                                                contentDescription = null,
-                                            )
-                                        }
-                                    },
-                                    modifier = Modifier
-                                        .width(horizontalLazyGridItemWidth)
-                                        .combinedBounceClick(
-                                            onClick = {
-                                                if (song.id == mediaMetadata?.id) {
-                                                    playerConnection.togglePlayPause()
-                                                } else {
-                                                    playerConnection.playQueue(
-                                                        YouTubeQueue(
-                                                            endpoint = WatchEndpoint(videoId = song.id),
-                                                            preloadItem = song.toMediaMetadata(),
-                                                        ),
-                                                    )
-                                                }
-                                            },
-                                            onLongClick = {
-                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                menuState.show {
-                                                    YouTubeSongMenu(
-                                                        song = song,
-                                                        navController = navController,
-                                                        onDismiss = menuState::dismiss,
-                                                    )
-                                                }
-                                            },
-                                        ),
-                                )
-                            }
-                        }
-                    }
-                }
-
-                explorePage?.newReleaseAlbums?.let { newReleaseAlbums ->
-                    NavigationTitle(
-                        title = stringResource(R.string.new_release_albums),
-                        onClick = {
-                            navController.navigate("new_release")
-                        },
-                    )
-                    LazyRow(
-                        contentPadding = WindowInsets.systemBars
-                            .only(WindowInsetsSides.Horizontal)
-                            .asPaddingValues(),
-                    ) {
-                        items(
-                            items = newReleaseAlbums.distinctBy { it.id },
-                            key = { it.id },
-                        ) { album ->
-                            YouTubeGridItem(
-                                item = album,
-                                isActive = mediaMetadata?.album?.id == album.id,
-                                isPlaying = isPlaying,
-                                coroutineScope = coroutineScope,
-                                modifier = Modifier
-                                    .combinedBounceClick(
-                                        onClick = {
-                                            navController.navigate("album/${album.id}")
-                                        },
-                                        onLongClick = {
-                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            menuState.show {
-                                                YouTubeAlbumMenu(
-                                                    albumItem = album,
-                                                    navController = navController,
-                                                    onDismiss = menuState::dismiss,
-                                                )
-                                            }
-                                        },
-                                    )
-                                    .animateItem(),
-                            )
-                        }
-                    }
-                }
-
-                chartsPage?.sections?.find { it.title == "Top music videos" }?.let { topVideosSection ->
-                    NavigationTitle(
-                        title = stringResource(R.string.top_music_videos),
-                    )
-                    LazyRow(
-                        contentPadding = WindowInsets.systemBars
-                            .only(WindowInsetsSides.Horizontal)
-                            .asPaddingValues(),
-                    ) {
-                        items(
-                            items = topVideosSection.items.filterIsInstance<SongItem>().distinctBy { it.id },
-                            key = { it.id },
-                        ) { video ->
-                            YouTubeGridItem(
-                                item = video,
-                                isActive = video.id == mediaMetadata?.id,
-                                isPlaying = isPlaying,
-                                coroutineScope = coroutineScope,
-                                modifier = Modifier
-                                    .combinedBounceClick(
-                                        onClick = {
-                                            if (video.id == mediaMetadata?.id) {
-                                                playerConnection.togglePlayPause()
-                                            } else {
-                                                playerConnection.playQueue(
-                                                    YouTubeQueue(
-                                                        endpoint = WatchEndpoint(videoId = video.id),
-                                                        preloadItem = video.toMediaMetadata(),
-                                                    ),
-                                                )
-                                            }
-                                        },
-                                        onLongClick = {
-                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            menuState.show {
-                                                YouTubeSongMenu(
-                                                    song = video,
-                                                    navController = navController,
-                                                    onDismiss = menuState::dismiss,
-                                                )
-                                            }
-                                        },
-                                    )
-                                    .animateItem(),
-                            )
-                        }
-                    }
-                }
-
-                explorePage?.moodAndGenres?.let { moodAndGenres ->
-                    NavigationTitle(
-                        title = stringResource(R.string.mood_and_genres),
-                        onClick = {
-                            navController.navigate("mood_and_genres")
-                        },
-                    )
-                    LazyHorizontalGrid(
-                        rows = GridCells.Fixed(4),
-                        contentPadding = PaddingValues(6.dp),
-                        modifier = Modifier.height((MoodAndGenresButtonHeight + 12.dp) * 4 + 12.dp),
-                    ) {
-                        items(moodAndGenres) {
-                            MoodAndGenresButton(
-                                title = it.title,
-                                onClick = {
-                                    navController.navigate("youtube_browse/${it.endpoint.browseId}?params=${it.endpoint.params}")
-                                },
-                                modifier = Modifier
-                                    .padding(6.dp)
-                                    .width(180.dp),
-                            )
+                            navController.navigate(youtubeBrowseRoute(mood.endpoint.browseId, mood.endpoint.params))
                         }
                     }
                 }
             }
-
-            Spacer(
-                Modifier.height(
-                    LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding() + 50.dp
-                )
-            )
         }
-      }
     }
+    }
+}
+
+/** A titled row of cards; nothing when [items] is empty. */
+private fun androidx.compose.foundation.lazy.LazyListScope.exploreShelf(
+    key: String,
+    title: String,
+    items: List<YTItem>,
+    sideInset: androidx.compose.ui.unit.Dp,
+    card: @Composable (YTItem) -> Unit,
+) {
+    if (items.isEmpty()) return
+    item(key = "${key}_title", contentType = "shelf_title") { ShelfTitle(title) }
+    item(key = "${key}_row", contentType = "shelf") {
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 16.dp).plusStart(sideInset),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.bleedStart(sideInset),
+        ) {
+            items(items, key = { "${key}_" + it.id }, contentType = { "shelf_card" }) { card(it) }
+        }
+    }
+}
+
+@Composable
+private fun ShelfTitle(title: String) {
+    Text(
+        text = title,
+        style = SfStyle(22.sp, 28.sp, FontWeight.Bold, (-0.26).sp),
+        color = com.convx.music.ui.ios.foundation.IosTheme.colors.label,
+        maxLines = 1,
+        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 10.dp),
+    )
 }

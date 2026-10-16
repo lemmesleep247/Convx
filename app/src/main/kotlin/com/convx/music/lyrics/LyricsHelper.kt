@@ -20,7 +20,6 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -31,6 +30,7 @@ class LyricsHelper
 constructor(
     @ApplicationContext private val context: Context,
     private val networkConnectivity: NetworkConnectivityObserver,
+    private val providerRepository: LyricsProviderRepository,
 ) {
     /**
      * Resolves the ordered list of lyrics providers from the user's saved priority order.
@@ -45,16 +45,18 @@ constructor(
             return LyricsProviderRegistry.getOrderedProviders(orderString)
         }
 
-        // Migration path: place the old preferred provider first in the default order
+        // Use the legacy provider only when the user explicitly saved it; an unset key must keep
+        // the LrcLib-first default instead of putting the slower YouLyPlus chain first.
         val preferredEnum = preferences[PreferredLyricsProviderKey]
-            .toEnum(PreferredLyricsProvider.YOULYPLUS)
-        val preferredName = LyricsProviderRegistry.getProviderNameForEnum(preferredEnum)
+            ?.let { it.toEnum(PreferredLyricsProvider.YOULYPLUS) }
+            ?.let(LyricsProviderSettings::idForLegacyPreference)
+            ?: return LyricsProviderRegistry.getDefaultProviderOrder()
+                .mapNotNull(LyricsProviderRegistry::getProvider)
+
         val defaultOrder = LyricsProviderRegistry.getDefaultProviderOrder()
-        val migratedOrder = listOf(preferredName) + defaultOrder.filter { it != preferredName }
-        return migratedOrder.mapNotNull { LyricsProviderRegistry.getProviderByName(it) }
+        val migratedOrder = listOf(preferredEnum) + defaultOrder.filter { it != preferredEnum }
+        return migratedOrder.mapNotNull(LyricsProviderRegistry::getProvider)
     }
-
-
 
     private val cache = LruCache<String, List<LyricsResult>>(MAX_CACHE_SIZE)
     private var currentLyricsJob: Job? = null
@@ -64,53 +66,37 @@ constructor(
 
         val cached = cache.get(mediaMetadata.id)?.firstOrNull()
         if (cached != null) {
-            return LyricsWithProvider(cached.lyrics, cached.providerName)
+            val providerId = LyricsProviderRegistry.getProviderForStoredName(cached.providerId)?.id
+                ?: cached.providerId
+            return LyricsWithProvider(cached.lyrics, providerId)
         }
 
-        // Check network connectivity before making network requests
-        // Use synchronous check as fallback if flow doesn't emit
-        val isNetworkAvailable = try {
-            networkConnectivity.isCurrentlyConnected()
-        } catch (e: Exception) {
-            // If network check fails, try to proceed anyway
-            true
-        }
-        
-        if (!isNetworkAvailable) {
-            // Still proceed but return not found to avoid hanging
+        if (!hasNetworkConnection()) {
             return LyricsWithProvider(LYRICS_NOT_FOUND, "Unknown")
         }
 
-        val providers = resolveLyricsProviders()
-        val scope = CoroutineScope(SupervisorJob())
-        val deferred = scope.async {
-            for (provider in providers) {
-                if (provider.isEnabled(context)) {
-                    try {
-                        val result = provider.getLyrics(
-                            mediaMetadata.id,
-                            mediaMetadata.title,
-                            mediaMetadata.artists.joinToString { it.name },
-                            mediaMetadata.duration,
-                            mediaMetadata.album?.title,
-                        )
-                        result.onSuccess { lyrics ->
-                            return@async LyricsWithProvider(lyrics, provider.name)
-                        }.onFailure {
-                            reportException(it)
-                        }
-                    } catch (e: Exception) {
-                        // Catch network-related exceptions like UnresolvedAddressException
-                        reportException(e)
-                    }
-                }
+        val providers = resolveLyricsProviders().usableFor(isLocalSong(mediaMetadata.id))
+        for (provider in providers) {
+            if (!LyricsProviderSettings.isEnabled(context, provider)) continue
+
+            try {
+                val result = providerRepository.fetch(
+                    provider,
+                    mediaMetadata.id,
+                    mediaMetadata.title,
+                    mediaMetadata.artists.joinToString { it.name },
+                    mediaMetadata.duration,
+                    mediaMetadata.album?.title,
+                )
+                val lyrics = result.getOrNull()
+                if (lyrics != null) return LyricsWithProvider(lyrics, provider.id)
+                result.exceptionOrNull()?.let(::reportException)
+            } catch (e: Exception) {
+                reportException(e)
             }
-            return@async LyricsWithProvider(LYRICS_NOT_FOUND, "Unknown")
         }
 
-        val result = deferred.await()
-        scope.cancel()
-        return result
+        return LyricsWithProvider(LYRICS_NOT_FOUND, "Unknown")
     }
 
     suspend fun getAllLyrics(
@@ -131,33 +117,21 @@ constructor(
             return
         }
 
-        // Check network connectivity before making network requests
-        // Use synchronous check as fallback if flow doesn't emit
-        val isNetworkAvailable = try {
-            networkConnectivity.isCurrentlyConnected()
-        } catch (e: Exception) {
-            // If network check fails, try to proceed anyway
-            true
-        }
-        
-        if (!isNetworkAvailable) {
-            // Still try to proceed in case of false negative
-            return
-        }
+        if (!hasNetworkConnection()) return
 
         val allResult = mutableListOf<LyricsResult>()
-        val providers = resolveLyricsProviders()
+        val providers = resolveLyricsProviders().usableFor(isLocalSong(mediaId))
         currentLyricsJob = CoroutineScope(SupervisorJob()).launch {
             providers.forEach { provider ->
-                if (provider.isEnabled(context)) {
+                if (LyricsProviderSettings.isEnabled(context, provider)) {
                     try {
+                        LyricsProviderSettings.initialize(context, provider)
                         provider.getAllLyrics(mediaId, songTitle, songArtists, duration, album) { lyrics ->
-                            val result = LyricsResult(provider.name, lyrics)
+                            val result = LyricsResult(provider.id, provider.displayName, lyrics)
                             allResult += result
                             callback(result)
                         }
                     } catch (e: Exception) {
-                        // Catch network-related exceptions like UnresolvedAddressException
                         reportException(e)
                     }
                 }
@@ -173,12 +147,26 @@ constructor(
         currentLyricsJob = null
     }
 
+    /** MediaStore content IDs cannot be used by providers that require a YouTube video ID. */
+    private fun isLocalSong(id: String): Boolean = id.startsWith("content://")
+
+    private fun hasNetworkConnection(): Boolean = try {
+        networkConnectivity.isCurrentlyConnected()
+    } catch (_: Exception) {
+        // Proceed when the connectivity probe itself fails.
+        true
+    }
+
+    private fun List<LyricsProvider>.usableFor(isLocalSong: Boolean): List<LyricsProvider> =
+        if (!isLocalSong) this else filterNot(LyricsProvider::requiresVideoId)
+
     companion object {
         private const val MAX_CACHE_SIZE = 3
     }
 }
 
 data class LyricsResult(
+    val providerId: String,
     val providerName: String,
     val lyrics: String,
 )

@@ -5,145 +5,62 @@
 
 package com.convx.music.ui.screens.recognition
 
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import com.convx.music.ui.component.sf
+import com.convx.music.ui.component.SymbolIcon
+import com.convx.music.utils.openSearchResults
+
 import androidx.compose.foundation.ExperimentalFoundationApi
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.background
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.ui.utils.bounceClick
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.ui.utils.combinedBounceClick
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.foundation.layout.Box
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.foundation.layout.Column
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.foundation.layout.Row
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.foundation.layout.Spacer
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.foundation.layout.only
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.foundation.layout.fillMaxSize
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.foundation.layout.fillMaxWidth
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.foundation.layout.height
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.foundation.layout.padding
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.foundation.layout.size
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.foundation.layout.width
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.lazy.items
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.shape.RoundedCornerShape
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.text.KeyboardOptions
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.Card
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import com.convx.music.ui.ios.compat.Card
 import androidx.compose.material3.CardDefaults
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.material3.ExperimentalMaterial3Api
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.Icon
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.IconButton
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.MaterialTheme
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.Scaffold
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.Text
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.TextButton
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.TextField
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.IconButton
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.Text
+import com.convx.music.ui.ios.compat.TextButton
+import com.convx.music.ui.ios.compat.OutlinedTextField as TextField
 import androidx.compose.material3.TextFieldDefaults
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.TopAppBar
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.runtime.Composable
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.runtime.collectAsState
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.runtime.getValue
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.runtime.mutableStateOf
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.runtime.remember
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.runtime.rememberCoroutineScope
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.runtime.setValue
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.Alignment
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.Modifier
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.draw.clip
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.graphics.Color
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.layout.ContentScale
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.ui.res.painterResource
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.res.stringResource
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.text.font.FontWeight
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.text.input.ImeAction
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.text.input.TextFieldValue
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.text.style.TextOverflow
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.unit.dp
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.navigation.NavController
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import coil3.compose.AsyncImage
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import com.composables.sfsymbols.SfSymbols
+import com.composables.sfsymbols.monochrome.SFClock
+import com.composables.sfsymbols.monochrome.SFMagnifyingglass
+import com.composables.sfsymbols.monochrome.SFTrash
+import com.composables.sfsymbols.monochrome.SFXmark
 import com.convx.music.LocalDatabase
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.LocalPlayerAwareWindowInsets
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.R
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.constants.ThumbnailCornerRadius
 import com.convx.music.constants.ThumbnailRoundedShape
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.db.entities.RecognitionHistory
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.component.DefaultDialog
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.ui.component.IconButton
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.component.LocalMenuState
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.component.NavigationTitle
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.utils.backToMain
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import com.convx.music.ui.utils.bounceClick
+import com.convx.music.ui.component.ScreenScaffold
+import com.convx.music.ui.component.topBarContentPadding
 import kotlinx.coroutines.Dispatchers
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import kotlinx.coroutines.launch
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import java.time.LocalDate
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -151,8 +68,7 @@ import java.time.format.DateTimeFormatter
 fun RecognitionHistoryScreen(
     navController: NavController
 ) {
-    val database = LocalDatabase.current
-    val menuState = LocalMenuState.current
+    val database = LocalDatabase.current.get()
     val coroutineScope = rememberCoroutineScope()
 
     val historyItems by database.recognitionHistory().collectAsState(initial = emptyList())
@@ -191,10 +107,7 @@ fun RecognitionHistoryScreen(
         DefaultDialog(
             onDismiss = { showClearDialog = false },
             icon = {
-                Icon(
-                    painter = painterResource(R.drawable.delete),
-                    contentDescription = null
-                )
+                SymbolIcon(symbol = sf("SFTrash"), contentDescription = null)
             },
             title = { Text(stringResource(R.string.clear_recognition_history)) },
             buttons = {
@@ -217,7 +130,7 @@ fun RecognitionHistoryScreen(
         ) {
             Text(
                 text = stringResource(R.string.clear_recognition_history_confirm),
-                style = MaterialTheme.typography.bodyMedium
+                style = AppTheme.typography.bodyMedium
             )
         }
     }
@@ -226,10 +139,7 @@ fun RecognitionHistoryScreen(
         DefaultDialog(
             onDismiss = { itemToDelete = null },
             icon = {
-                Icon(
-                    painter = painterResource(R.drawable.delete),
-                    contentDescription = null
-                )
+                SymbolIcon(symbol = sf("SFTrash"), contentDescription = null)
             },
             title = { Text(stringResource(R.string.delete)) },
             buttons = {
@@ -252,71 +162,47 @@ fun RecognitionHistoryScreen(
         ) {
             Text(
                 text = stringResource(R.string.delete_playlist_confirm, item.title),
-                style = MaterialTheme.typography.bodyMedium
+                style = AppTheme.typography.bodyMedium
             )
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-            windowInsets = appTopBarWindowInsets(),
-                title = { Text(stringResource(R.string.recognition_history)) },
-                navigationIcon = {
-                    IconButton(
-                        onClick = { navController.navigateUp() },
-                        onLongClick = { navController.backToMain() }
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.arrow_back),
-                            contentDescription = null
-                        )
-                    }
-                },
-                actions = {
-                    if (historyItems.isNotEmpty()) {
-                        IconButton(onClick = { showClearDialog = true }) {
-                            Icon(
-                                painter = painterResource(R.drawable.clear_all),
-                                contentDescription = stringResource(R.string.clear_recognition_history)
-                            )
-                        }
-                    }
+    ScreenScaffold(
+        title = stringResource(R.string.recognition_history),
+        titleAlpha = 1f,
+        onBack = { navController.navigateUp() },
+        onBackLongClick = { navController.backToMain() },
+        actions = {
+            if (historyItems.isNotEmpty()) {
+                IconButton(onClick = { showClearDialog = true }) {
+                    SymbolIcon(symbol = sf("SFTrash"), contentDescription = stringResource(R.string.delete))
                 }
-            )
-        }
-    ) { paddingValues ->
+            }
+        },
+    ) { chrome ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
+                .padding(top = topBarContentPadding())
         ) {
-            // ── Static search bar ──────────────────────────────────
+            // Static search bar
             TextField(
                 value = query,
                 onValueChange = { query = it },
                 placeholder = {
                     Text(
                         text = stringResource(R.string.search),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        style = AppTheme.typography.bodyLarge,
+                        color = AppTheme.colorScheme.onSurfaceVariant
                     )
                 },
                 leadingIcon = {
-                    Icon(
-                        painter = painterResource(R.drawable.search),
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    SymbolIcon(symbol = sf("SFMagnifyingglass"), contentDescription = null, tint = AppTheme.colorScheme.onSurfaceVariant)
                 },
                 trailingIcon = {
                     if (query.text.isNotEmpty()) {
                         IconButton(onClick = { query = TextFieldValue() }) {
-                            Icon(
-                                painter = painterResource(R.drawable.close),
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            SymbolIcon(symbol = sf("SFXmark"), contentDescription = null, tint = AppTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 },
@@ -324,8 +210,8 @@ fun RecognitionHistoryScreen(
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 shape = RoundedCornerShape(28.dp),
                 colors = TextFieldDefaults.colors(
-                    focusedContainerColor   = MaterialTheme.colorScheme.surfaceVariant,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    focusedContainerColor   = AppTheme.colorScheme.surfaceVariant,
+                    unfocusedContainerColor = AppTheme.colorScheme.surfaceVariant,
                     focusedIndicatorColor   = Color.Transparent,
                     unfocusedIndicatorColor = Color.Transparent,
                     disabledIndicatorColor  = Color.Transparent,
@@ -335,7 +221,7 @@ fun RecognitionHistoryScreen(
                     .padding(horizontal = 16.dp, vertical = 8.dp)
             )
 
-            // ── List / empty state ─────────────────────────────────
+            // List and empty state
             when {
                 historyItems.isEmpty() -> {
                     // No history at all
@@ -346,17 +232,12 @@ fun RecognitionHistoryScreen(
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Icon(
-                                painter = painterResource(R.drawable.history),
-                                contentDescription = null,
-                                modifier = Modifier.size(64.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                            )
+                            SymbolIcon(symbol = sf("SFClock"), contentDescription = null, size = 64.dp, tint = AppTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
                             Spacer(modifier = Modifier.height(16.dp))
                             Text(
                                 text = "No recognition history",
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                style = AppTheme.typography.bodyLarge,
+                                color = AppTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
@@ -370,17 +251,12 @@ fun RecognitionHistoryScreen(
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Icon(
-                                painter = painterResource(R.drawable.search),
-                                contentDescription = null,
-                                modifier = Modifier.size(64.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                            )
+                            SymbolIcon(symbol = sf("SFMagnifyingglass"), contentDescription = null, size = 64.dp, tint = AppTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
                             Spacer(modifier = Modifier.height(16.dp))
                             Text(
                                 text = "No results for \"${query.text}\"",
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                style = AppTheme.typography.bodyLarge,
+                                color = AppTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
@@ -400,7 +276,7 @@ fun RecognitionHistoryScreen(
                                         title = label,
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .background(MaterialTheme.colorScheme.surface)
+                                            .background(AppTheme.colorScheme.surface)
                                     )
                                 }
                                 items(
@@ -411,7 +287,7 @@ fun RecognitionHistoryScreen(
                                         item = item,
                                         onClick = {
                                             val searchQuery = "${item.title} ${item.artist}"
-                                            navController.navigate("search/${java.net.URLEncoder.encode(searchQuery, "UTF-8")}")
+                                            navController.openSearchResults(searchQuery)
                                         },
                                         onDelete = {
                                             itemToDelete = item
@@ -429,7 +305,7 @@ fun RecognitionHistoryScreen(
                                     item = item,
                                     onClick = {
                                         val searchQuery = "${item.title} ${item.artist}"
-                                        navController.navigate("search/${java.net.URLEncoder.encode(searchQuery, "UTF-8")}")
+                                        navController.openSearchResults(searchQuery)
                                     },
                                     onDelete = {
                                         itemToDelete = item
@@ -459,7 +335,7 @@ private fun RecognitionHistoryItem(
             .bounceClick { onClick() },
         shape = ThumbnailRoundedShape,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            containerColor = AppTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
         )
     ) {
         Row(
@@ -468,7 +344,6 @@ private fun RecognitionHistoryItem(
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Album art
             AsyncImage(
                 model = item.coverArtUrl,
                 contentDescription = null,
@@ -480,38 +355,32 @@ private fun RecognitionHistoryItem(
 
             Spacer(modifier = Modifier.width(12.dp))
 
-            // Track info
             Column(
                 modifier = Modifier.weight(1f)
             ) {
                 Text(
                     text = item.title,
-                    style = MaterialTheme.typography.titleMedium,
+                    style = AppTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     text = item.artist,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = AppTheme.typography.bodyMedium,
+                    color = AppTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     text = item.recognizedAt.format(dateFormatter),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    style = AppTheme.typography.bodySmall,
+                    color = AppTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                 )
             }
 
-            // Delete action
             IconButton(onClick = onDelete) {
-                Icon(
-                    painter = painterResource(R.drawable.delete),
-                    contentDescription = stringResource(R.string.delete_from_history),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                SymbolIcon(symbol = sf("SFTrash"), contentDescription = stringResource(R.string.delete_from_history), tint = AppTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

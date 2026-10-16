@@ -12,7 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CornerBasedShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
+import com.convx.music.ui.ios.compat.AppTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -33,6 +33,6 @@ fun TextPlaceholder(
             .height(height)
             .fillMaxWidth(remember { 0.25f + Random.nextFloat() * 0.5f })
             .clip(shape)
-            .background(MaterialTheme.colorScheme.onSurface)
+            .background(AppTheme.colorScheme.onSurface)
     )
 }

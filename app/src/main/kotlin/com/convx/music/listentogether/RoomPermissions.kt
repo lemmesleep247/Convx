@@ -5,20 +5,7 @@
 
 package com.convx.music.listentogether
 
-/**
- * Who is allowed to do what inside a room.
- *
- * The server enforces the coarse rule — in [ControlModes.OWNER] it refuses
- * playback actions from anyone but the host. It does not know about the finer
- * one: in [ControlModes.EVERYONE] a track belongs to whoever queued it, and only
- * that person or the host may skip past it. That rule lives here, on the client,
- * and is advisory — it decides what the UI offers, not what the server accepts.
- * A modified client could still send the action; the point is that the ordinary
- * one presents an honest interface rather than buttons that silently fail.
- *
- * Pure functions on purpose: this is the logic that decides whether a control is
- * greyed out, and it is much easier to be sure of when it can be tested directly.
- */
+/** Client-side control checks; the server remains authoritative for room actions. */
 object RoomPermissions {
 
     /**

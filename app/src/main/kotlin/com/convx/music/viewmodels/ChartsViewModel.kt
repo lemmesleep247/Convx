@@ -10,6 +10,7 @@ import androidx.lifecycle.viewModelScope
 import com.music.innertube.YouTube
 import com.music.innertube.pages.ChartsPage
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -26,8 +27,10 @@ class ChartsViewModel @Inject constructor() : ViewModel() {
     private val _error = MutableStateFlow<String?>(null)
     val error = _error.asStateFlow()
 
+    // IO, not Main: Ktor decodes the (large) charts JSON on the calling dispatcher,
+    // which froze the UI past the ANR limit on cold start.
     fun loadCharts() {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             _isLoading.value = true
             _error.value = null
             
@@ -44,7 +47,7 @@ class ChartsViewModel @Inject constructor() : ViewModel() {
     }
 
     fun loadMore() {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             _chartsPage.value?.continuation?.let { continuation ->
                 _isLoading.value = true
                 YouTube.getChartsPage(continuation)

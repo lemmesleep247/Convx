@@ -3,17 +3,7 @@ package com.dpi
 import android.content.Context
 import timber.log.Timber
 
-/**
- * DensityScaler - Main entry point for screen density scaling.
- *
- * Reads scale factor from user preferences with default of 1.0f (100% native).
- *
- * Supported scale factors:
- * - 1.0f (100%) - Native density (default)
- * - 0.75f (75%) - Compact
- * - 0.65f (65%) - Very Compact
- * - 0.55f (55%) - Ultra Compact
- */
+/** Applies the saved display scale during early ContentProvider initialization. */
 class DensityScaler : BaseLifecycleContentProvider() {
 
     override fun onCreate(): Boolean {

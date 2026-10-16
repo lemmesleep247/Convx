@@ -5,14 +5,15 @@
 
 package com.convx.music.ui.menu
 
-import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
+import com.convx.music.ui.component.sf
+import com.convx.music.ui.component.SymbolIcon
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.TextFieldValue
@@ -32,18 +33,15 @@ fun ImportPlaylistDialog(
     playlistTitle: String,
     onDismiss: () -> Unit,
 ) {
-    val database = LocalDatabase.current
-    val syncUtils = LocalSyncUtils.current
+    val database = LocalDatabase.current.get()
+    val syncUtils = LocalSyncUtils.current.get()
     val coroutineScope = rememberCoroutineScope()
 
     val textFieldValue by remember { mutableStateOf(TextFieldValue(text = playlistTitle)) }
-    var songIds by remember {
-        mutableStateOf<List<String>?>(null) // list is not saveable
-    }
 
     if (isVisible) {
         TextFieldDialog(
-            icon = { Icon(painter = painterResource(R.drawable.add), contentDescription = null) },
+            icon = { SymbolIcon(symbol = sf("plus"), contentDescription = null) },
             title = { Text(text = stringResource(R.string.import_playlist)) },
             initialTextFieldValue = textFieldValue,
             autoFocus = false,
@@ -58,9 +56,9 @@ fun ImportPlaylistDialog(
                     val playlist = database.playlist(newPlaylist.id).firstOrNull()
 
                     if (playlist != null) {
-                        songIds = onGetSong()
-                        database.addSongToPlaylist(playlist, songIds!!)
-                        syncUtils.uploadPlaylistToYouTube(playlist.id, songIds!!)
+                        val songIds = onGetSong()
+                        database.addSongToPlaylist(playlist, songIds)
+                        syncUtils.uploadPlaylistToYouTube(playlist.id, songIds)
                     }
 
                     onDismiss()

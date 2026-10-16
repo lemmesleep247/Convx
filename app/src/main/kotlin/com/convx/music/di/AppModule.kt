@@ -46,13 +46,7 @@ object AppModule {
         database: InternalDatabase,
     ) = database.dao
 
-    // Both of these come from InternalDatabase.newInstance, which is the ONLY
-    // place the builder is configured. This provider used to run its own bare
-    // Room.databaseBuilder(...).build() on the same DB_NAME — no addMigrations,
-    // no destructive fallback. Whichever builder opened song.db first won, so on
-    // a schema upgrade the app crashed with "A migration from 35 to 36 was
-    // required but not found" whenever this one got there first, and migrated
-    // fine when the configured one did. That race is why it looked intermittent.
+    // Use the shared database builder so this provider includes configured migrations.
     @Singleton
     @Provides
     fun provideDatabase(
@@ -114,5 +108,6 @@ object AppModule {
     fun provideListenTogetherManager(
         @ApplicationContext context: Context,
         client: ListenTogetherClient,
-    ): ListenTogetherManager = ListenTogetherManager(client, context)
+        playerConnectionBridge: com.convx.music.listentogether.ListenTogetherPlayerConnectionBridge,
+    ): ListenTogetherManager = ListenTogetherManager(client, context, playerConnectionBridge)
 }

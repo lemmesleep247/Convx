@@ -12,17 +12,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.abs
 
-/**
- * Lossless/Atmos streams can silently stop producing audio while playback
- * position keeps advancing (decoder/AudioTrack stall) — no PlaybackException
- * is ever thrown, so [SilenceDetectorAudioProcessor]'s bypass of non-16-bit
- * PCM (used by hi-res FLAC / passthrough) means the existing "skip silence"
- * feature can't catch it either, even when a user has that opt-in setting on.
- *
- * This is a dedicated, always-on (while [armed] is true) watchdog covering
- * 16/24/32-bit PCM and float PCM — the encodings lossless streams actually
- * use — independent of the SkipSilence user preference.
- */
+/** Detects silent lossless/Atmos output stalls when armed, independently of SkipSilence. */
 @UnstableApi
 class LosslessStallWatchdogAudioProcessor(
     private val minStallDurationUs: Long = 1_500_000L,
@@ -37,7 +27,10 @@ class LosslessStallWatchdogAudioProcessor(
     private var channelCount = 0
     private var bytesPerSample = 0
     private var isFloat = false
+    private var byteOrder = ByteOrder.LITTLE_ENDIAN
+    private var stallFrameThreshold = 0L
 
+    private var buffer: ByteBuffer = EMPTY_BUFFER
     private var outputBuffer: ByteBuffer = EMPTY_BUFFER
     private var inputEnded = false
 
@@ -50,6 +43,13 @@ class LosslessStallWatchdogAudioProcessor(
         val (bytes, float) = bytesPerSampleFor(inputAudioFormat.encoding)
         bytesPerSample = bytes
         isFloat = float
+        byteOrder = when (inputAudioFormat.encoding) {
+            C.ENCODING_PCM_16BIT_BIG_ENDIAN, C.ENCODING_PCM_24BIT_BIG_ENDIAN,
+            C.ENCODING_PCM_32BIT_BIG_ENDIAN -> ByteOrder.BIG_ENDIAN
+            else -> ByteOrder.LITTLE_ENDIAN
+        }
+        stallFrameThreshold = ((sampleRate.toLong() * minStallDurationUs + 999_999L) / 1_000_000L)
+            .coerceAtLeast(1L)
         if (bytesPerSample == 0) {
             sampleRate = 0
             channelCount = 0
@@ -65,19 +65,21 @@ class LosslessStallWatchdogAudioProcessor(
             return
         }
 
-        if (armed && sampleRate > 0 && channelCount > 0) {
-            detectStall(inputBuffer)
-        } else {
+        if (!armed || sampleRate <= 0 || channelCount <= 0) {
             resetTracking()
+            outputBuffer = inputBuffer.slice().order(inputBuffer.order())
+            inputBuffer.position(inputBuffer.limit())
+            return
         }
 
+        detectStall(inputBuffer)
         val out = replaceOutputBuffer(inputBuffer.remaining())
         out.put(inputBuffer)
         out.flip()
     }
 
     private fun detectStall(inputBuffer: ByteBuffer) {
-        inputBuffer.order(ByteOrder.LITTLE_ENDIAN)
+        inputBuffer.order(byteOrder)
 
         val frameSize = bytesPerSample * channelCount
         if (frameSize <= 0) return
@@ -86,16 +88,16 @@ class LosslessStallWatchdogAudioProcessor(
 
         repeat(frameCount) { frameIndex ->
             var framePeak = 0
-            repeat(channelCount) { channelIndex ->
+            for (channelIndex in 0 until channelCount) {
                 val sampleIndex = basePosition + (frameIndex * channelCount + channelIndex) * bytesPerSample
                 val magnitude = sampleMagnitude(inputBuffer, sampleIndex)
                 if (magnitude > framePeak) framePeak = magnitude
+                if (framePeak >= silenceThreshold) break
             }
 
             if (framePeak < silenceThreshold) {
                 consecutiveSilentFrames++
-                val stallDurationUs = (consecutiveSilentFrames * 1_000_000L) / sampleRate
-                if (stallDurationUs >= minStallDurationUs && !notifiedThisStall) {
+                if (consecutiveSilentFrames >= stallFrameThreshold && !notifiedThisStall) {
                     notifiedThisStall = true
                     onStallDetected()
                 }
@@ -113,13 +115,15 @@ class LosslessStallWatchdogAudioProcessor(
             when (bytesPerSample) {
                 2 -> abs(buffer.getShort(index).toInt())
                 3 -> {
-                    val b0 = buffer.get(index).toInt() and 0xFF
+                    val leastSignificant = if (byteOrder == ByteOrder.LITTLE_ENDIAN) index else index + 2
+                    val mostSignificant = if (byteOrder == ByteOrder.LITTLE_ENDIAN) index + 2 else index
+                    val b0 = buffer.get(leastSignificant).toInt() and 0xFF
                     val b1 = buffer.get(index + 1).toInt() and 0xFF
-                    val b2 = buffer.get(index + 2).toInt()
+                    val b2 = buffer.get(mostSignificant).toInt()
                     val value = (b2 shl 16) or (b1 shl 8) or b0
                     abs(value) shr 8
                 }
-                4 -> abs(buffer.getInt(index)) shr 16
+                4 -> (abs(buffer.getInt(index).toLong()) shr 16).toInt()
                 else -> 0
             }
         }
@@ -130,7 +134,7 @@ class LosslessStallWatchdogAudioProcessor(
         C.ENCODING_PCM_24BIT, C.ENCODING_PCM_24BIT_BIG_ENDIAN -> 3 to false
         C.ENCODING_PCM_32BIT, C.ENCODING_PCM_32BIT_BIG_ENDIAN -> 4 to false
         C.ENCODING_PCM_FLOAT -> 4 to true
-        else -> 0 to false // real bitstream passthrough (e.g. E-AC3) - can't sample amplitude, bypass
+        else -> 0 to false
     }
 
     private fun resetTracking() {
@@ -167,14 +171,16 @@ class LosslessStallWatchdogAudioProcessor(
         sampleRate = 0
         channelCount = 0
         bytesPerSample = 0
+        buffer = EMPTY_BUFFER
     }
 
     private fun replaceOutputBuffer(size: Int): ByteBuffer {
-        if (outputBuffer.capacity() < size) {
-            outputBuffer = ByteBuffer.allocateDirect(size).order(ByteOrder.nativeOrder())
+        if (buffer.capacity() < size) {
+            buffer = ByteBuffer.allocateDirect(size).order(ByteOrder.nativeOrder())
         } else {
-            outputBuffer.clear()
+            buffer.clear()
         }
+        outputBuffer = buffer
         return outputBuffer
     }
 

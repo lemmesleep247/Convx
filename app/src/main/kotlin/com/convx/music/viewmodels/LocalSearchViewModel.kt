@@ -10,6 +10,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.convx.music.constants.HideVideoSongsKey
 import com.convx.music.constants.DataSaverEnabledKey
+import com.convx.music.constants.LocalOnlyModeKey
 import com.convx.music.db.MusicDatabase
 import com.convx.music.db.entities.Album
 import com.convx.music.db.entities.Artist
@@ -18,6 +19,7 @@ import com.convx.music.db.entities.Playlist
 import com.convx.music.db.entities.Song
 import com.convx.music.utils.dataStore
 import com.convx.music.utils.fuzzyScore
+import com.convx.music.utils.LocalAudioScanner
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -31,13 +33,11 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 
-/**
- * The exact substring search (a typo returns nothing) is the fast path; only when it comes
- * back empty do we fall back to scanning the full [all] list and ranking it by [fuzzyScore]
- * against each item's title. Local libraries are small enough that this full scan is cheap,
- * and it only runs on the rare "typed something with no exact match" case.
- */
+/** Uses substring matches first; ranks the full list only when exact search returns nothing. */
+@OptIn(ExperimentalCoroutinesApi::class)
 private fun <T : LocalItem> exactOrFuzzy(
     query: String,
     exact: Flow<List<T>>,
@@ -61,41 +61,52 @@ private fun <T : LocalItem> exactOrFuzzy(
 class LocalSearchViewModel
 @Inject
 constructor(
-    @ApplicationContext context: Context,
-    database: MusicDatabase,
+    @ApplicationContext private val context: Context,
+    private val database: MusicDatabase,
 ) : ViewModel() {
     val query = MutableStateFlow("")
     val filter = MutableStateFlow(LocalFilter.ALL)
+    private var scanJob: Job? = null
+
+    fun scanLocalFiles() {
+        if (scanJob?.isActive == true) return
+        scanJob = viewModelScope.launch {
+            runCatching { LocalAudioScanner.scanAndInsert(context, database) }
+        }
+    }
 
     val result =
         combine(
             query,
             filter,
-            context.dataStore.data.map { (it[HideVideoSongsKey] ?: false) || (it[DataSaverEnabledKey] ?: false) }.distinctUntilChanged()
-        ) { query, filter, hideVideoSongs ->
-            Triple(query, filter, hideVideoSongs)
-        }.flatMapLatest { (query, filter, hideVideoSongs) ->
+            context.dataStore.data.map {
+                ((it[HideVideoSongsKey] ?: false) || (it[DataSaverEnabledKey] ?: false)) to (it[LocalOnlyModeKey] == true)
+            }.distinctUntilChanged()
+        ) { query, filter, preferences ->
+            Triple(query, filter, preferences)
+        }.flatMapLatest { (query, filter, preferences) ->
+            val (hideVideoSongs, localOnly) = preferences
             if (query.isEmpty()) {
                 flowOf(LocalSearchResult("", filter, emptyMap()))
             } else {
                 when (filter) {
                     LocalFilter.ALL ->
                         combine(
-                            exactOrFuzzy(query, database.searchSongs(query, PREVIEW_SIZE), database.allSearchableSongs(), PREVIEW_SIZE),
-                            exactOrFuzzy(query, database.searchAlbums(query, PREVIEW_SIZE), database.allSearchableAlbums(), PREVIEW_SIZE),
-                            exactOrFuzzy(query, database.searchArtists(query, PREVIEW_SIZE), database.allSearchableArtists(), PREVIEW_SIZE),
-                            exactOrFuzzy(query, database.searchPlaylists(query, PREVIEW_SIZE), database.allSearchablePlaylists(), PREVIEW_SIZE),
+                            exactOrFuzzy(query, database.searchSongs(query, PREVIEW_SIZE, localOnly), database.allSearchableSongs(localOnly), PREVIEW_SIZE),
+                            exactOrFuzzy(query, database.searchAlbums(query, PREVIEW_SIZE, localOnly), database.allSearchableAlbums(localOnly), PREVIEW_SIZE),
+                            exactOrFuzzy(query, database.searchArtists(query, PREVIEW_SIZE, localOnly), database.allSearchableArtists(localOnly), PREVIEW_SIZE),
+                            exactOrFuzzy(query, database.searchPlaylists(query, PREVIEW_SIZE, localOnly), database.allSearchablePlaylists(localOnly), PREVIEW_SIZE),
                         ) { songs, albums, artists, playlists ->
                             val filteredSongs = if (hideVideoSongs) songs.filter { !it.song.isVideo } else songs
                             filteredSongs + albums + artists + playlists
                         }
 
-                    LocalFilter.SONG -> exactOrFuzzy(query, database.searchSongs(query), database.allSearchableSongs()).map { songs ->
+                    LocalFilter.SONG -> exactOrFuzzy(query, database.searchSongs(query, localOnly = localOnly), database.allSearchableSongs(localOnly)).map { songs ->
                         if (hideVideoSongs) songs.filter { !it.song.isVideo } else songs
                     }
-                    LocalFilter.ALBUM -> exactOrFuzzy(query, database.searchAlbums(query), database.allSearchableAlbums())
-                    LocalFilter.ARTIST -> exactOrFuzzy(query, database.searchArtists(query), database.allSearchableArtists())
-                    LocalFilter.PLAYLIST -> exactOrFuzzy(query, database.searchPlaylists(query), database.allSearchablePlaylists())
+                    LocalFilter.ALBUM -> exactOrFuzzy(query, database.searchAlbums(query, localOnly = localOnly), database.allSearchableAlbums(localOnly))
+                    LocalFilter.ARTIST -> exactOrFuzzy(query, database.searchArtists(query, localOnly = localOnly), database.allSearchableArtists(localOnly))
+                    LocalFilter.PLAYLIST -> exactOrFuzzy(query, database.searchPlaylists(query, localOnly = localOnly), database.allSearchablePlaylists(localOnly))
                 }.map { list ->
                     LocalSearchResult(
                         query = query,

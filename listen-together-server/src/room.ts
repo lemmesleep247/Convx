@@ -166,7 +166,7 @@ export class Room {
     return new Response(null, { status: 101, webSocket: client });
   }
 
-  // ---- socket plumbing ----
+  // Socket plumbing.
 
   private send(ws: WebSocket, type: string, payload?: unknown) {
     try {
@@ -234,7 +234,7 @@ export class Room {
     this.send(ws, S2C.ERROR, { code, message });
   }
 
-  // ---- message handling ----
+  // Message handling.
 
   async webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer) {
     if (!this.room) return;
@@ -327,12 +327,13 @@ export class Room {
       case C2S.CHAT:
         // Echoed back under the same "chat" type the client sends — the
         // Kotlin side has no separate server->client constant for it.
+        // Cap length to prevent room spam/flood.
         return this.broadcast(C2S.CHAT, {
           user_id: me,
           username: this.members[me].username,
-          message: String(p.message ?? ''),
+          message: String(p.message ?? '').slice(0, 500),
           timestamp: Date.now(),
-          reply_to: p.reply_to ?? null,
+          reply_to: typeof p.reply_to === 'string' ? p.reply_to.slice(0, 100) : null,
         });
 
       case C2S.REQUEST_SYNC:
@@ -588,14 +589,22 @@ export class Room {
   }
 
   private async suggest(fromUserId: string, track: TrackInfo) {
-    if (!track) return;
+    if (!track || typeof track !== 'object') return;
+    const cleanId = typeof (track as any).id === 'string' ? (track as any).id.slice(0, 128) : '';
+    const cleanTitle = typeof (track as any).title === 'string' ? (track as any).title.slice(0, 200) : '';
+    if (!cleanId) return;
+    // Per-user cap to prevent suggestion spam.
+    const userCount = Object.values(this.suggestions).filter(
+      (s) => s.from_user_id === fromUserId,
+    ).length;
+    if (userCount >= 20) return;
     const suggestion_id = crypto.randomUUID();
     const from = this.members[fromUserId];
     this.suggestions[suggestion_id] = {
       suggestion_id,
       from_user_id: fromUserId,
       from_username: from.username,
-      track_info: { ...track, suggested_by: from.username },
+      track_info: { ...track, id: cleanId, title: cleanTitle, suggested_by: from.username },
     };
     await this.persist();
     const host = this.room!.host_id;
@@ -685,7 +694,7 @@ export class Room {
     }
   }
 
-  // ---- lifecycle ----
+  // Lifecycle.
 
   async webSocketClose(ws: WebSocket) {
     await this.onSocketGone(ws);

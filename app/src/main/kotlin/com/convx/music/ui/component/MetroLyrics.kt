@@ -12,8 +12,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -58,6 +58,7 @@ import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.exp
 import kotlin.math.sin
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 data class HyphenGroupWord(
     val pos: Int,
@@ -132,7 +133,7 @@ fun MetroLyricsLine(
     val (appleMusicLyricsBlur) = rememberPreference(AppleMusicLyricsBlurKey, true)
     val (romanizeAsMain) = rememberPreference(LyricsRomanizeAsMainKey, false)
     
-    val romanizedTextState by entry.romanizedTextFlow.collectAsState()
+    val romanizedTextState by entry.romanizedTextFlow.collectAsStateWithLifecycle()
     val isRomanizedAvailable = romanizedTextState != null
     
     val mainTextRaw = if (showRomanized && romanizeAsMain && isRomanizedAvailable) romanizedTextState else entry.text
@@ -195,42 +196,22 @@ fun MetroLyricsLine(
         )
         .background(
             if (isSelected && isSelectionModeActive)
-                MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                AppTheme.colorScheme.primary.copy(alpha = 0.2f)
             else Color.Transparent
         )
         .padding(horizontal = 24.dp, vertical = (8 * lyricsLineSpacing).dp)
         .blur(animatedBlur.dp)
 
-    val agentAlignment = when {
-        entry.isBackground -> Alignment.CenterHorizontally
-        entry.agent == "v1" -> Alignment.Start
-        entry.agent == "v2" -> Alignment.End
-        entry.agent == "v1000" -> Alignment.CenterHorizontally
-        else -> when (lyricsTextPosition) {
-            LyricsPosition.LEFT -> Alignment.Start
-            LyricsPosition.CENTER -> Alignment.CenterHorizontally
-            LyricsPosition.RIGHT -> Alignment.End
-        }
-    }
-
-    val agentTextAlign = when {
-        entry.isBackground -> TextAlign.Center
-        entry.agent == "v1" -> TextAlign.Left
-        entry.agent == "v2" -> TextAlign.Right
-        entry.agent == "v1000" -> TextAlign.Center
-        else -> when (lyricsTextPosition) {
-            LyricsPosition.LEFT -> TextAlign.Left
-            LyricsPosition.CENTER -> TextAlign.Center
-            LyricsPosition.RIGHT -> TextAlign.Right
-        }
-    }
+    val agentAlignment = singerLineAlignment(entry.agent, entry.isBackground, lyricsTextPosition)
+    val agentTextAlign = singerTextAlign(entry.agent, entry.isBackground, lyricsTextPosition)
 
     val lyricStyle = TextStyle(
         fontSize = lyricsTextSize.sp,
         fontWeight = FontWeight.Bold,
         fontStyle = if (entry.isBackground) FontStyle.Italic else FontStyle.Normal,
         lineHeight = (lyricsTextSize * lyricsLineSpacing).sp,
-        letterSpacing = (-0.5).sp,
+        // Keep tracking proportional to the lyric size.
+        letterSpacing = (lyricsTextSize * 0.012f).sp,
         textAlign = agentTextAlign,
         platformStyle = PlatformTextStyle(includeFontPadding = false),
         lineHeightStyle = LineHeightStyle(
@@ -307,14 +288,15 @@ fun MetroLyricsLine(
         }
 
         if (showTranslated) {
-            val translatedText by entry.translatedTextFlow.collectAsState()
+            val translatedText by entry.translatedTextFlow.collectAsStateWithLifecycle()
             translatedText?.let { translated ->
                 Text(
                     text = translated,
                     fontSize = 16.sp,
                     color = expressiveAccent.copy(alpha = 0.8f),
                     textAlign = agentTextAlign,
-                    fontWeight = FontWeight.Medium,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = (16 * -0.012f).sp,
                     modifier = Modifier.padding(top = 4.dp).fillMaxWidth(),
                     lineHeight = (16 * lyricsLineSpacing.coerceAtMost(1.3f)).sp
                 )
@@ -345,7 +327,7 @@ private fun WordLevelCanvasLyrics(
         }
     }
     
-    // Read playerConnection directly — same as Metrolist. This avoids the 8ms polling
+    // Read playerConnection directly — same as the reference app. This avoids the 8ms polling
     // lag from effectivePlaybackPosition which is only updated by the Lyrics.kt loop.
     val playerConnection = LocalPlayerConnection.current
 
@@ -353,7 +335,7 @@ private fun WordLevelCanvasLyrics(
     
     LaunchedEffect(isActiveLine) {
         if (isActiveLine && playerConnection != null) {
-            // Exact port of Metrolist's timing logic:
+            // Exact port of the reference app's timing logic:
             // Track the last reported player position and use system clock elapsed
             // time to interpolate between ExoPlayer position updates (~200ms apart).
             // ExoPlayer's player.currentPosition is computed in real-time, so resume
@@ -504,14 +486,10 @@ private fun WordLevelCanvasLyrics(
                 drawText(layoutResult, color = lineColor)
             } else {
                 if (useSafeRendering) {
-                    // Char-level physics path for complex scripts (Hindi/Devanagari, Thai, etc.).
-                    // This mirrors the LTR path exactly EXCEPT for one key change in rendering:
-                    //   LTR:     drawText(letterLayouts[i])                  -- measures each char alone, breaks shaping
-                    //   Complex: drawText(layoutResult, topLeft=charOffset)  -- clips from the full shaped layout
-                    // By shifting layoutResult so charBounds aligns at (0,0) then clipping to charBounds,
-                    // we extract the correctly-shaped glyph at each character position while still applying
-                    // the full per-character transform stack: wobble, nudge, crescendo, wave, gradient.
-                    // Glow is excluded: it needs native canvas drawText on letterLayouts, which breaks shaping.
+                    // Draw from the fully shaped layout and clip each character. Measuring
+                    // complex-script characters separately would break shaping. This path
+                    // keeps per-character animation; glow is omitted because it uses the
+                    // unshaped per-character drawing path.
                     val (wordIdxMap, charInWordMap, wordLenMap) = charToWordData
                     val wordFactors = effectiveWords.map { word ->
                         val wStartMs = (word.startTime * 1000).toLong()
@@ -839,7 +817,7 @@ private fun WordLevelCanvasLyrics(
                         }
                     }) {
                         if (shouldGlow) {
-                            val sMs = wordItem!!.startTime * 1000
+                            val sMs = wordItem.startTime * 1000
                             val eMs = wordItem.endTime * 1000
                             val dur = eMs - sMs
                             val wordLenText = wordItem.text.length.coerceAtLeast(1)

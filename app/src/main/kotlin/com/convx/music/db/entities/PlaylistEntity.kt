@@ -36,7 +36,9 @@ data class PlaylistEntity(
     @ColumnInfo(name = "isLocal", defaultValue = false.toString())
     val isLocal: Boolean = false,
     @ColumnInfo(name = "isAutoSync", defaultValue = false.toString())
-    val isAutoSync: Boolean = false
+    val isAutoSync: Boolean = false,
+    /** Pin timestamp; newer pins sort first without a separate position column. */
+    val pinnedAt: LocalDateTime? = null,
 ) {
     companion object {
         const val LIKED_PLAYLIST_ID = "LP_LIKED"
@@ -66,4 +68,6 @@ data class PlaylistEntity(
                 YouTube.likePlaylist(browseId, bookmarkedAt == null)
         }
     }
+
+    fun togglePin() = copy(pinnedAt = if (pinnedAt != null) null else LocalDateTime.now())
 }

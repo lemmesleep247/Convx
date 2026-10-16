@@ -84,7 +84,9 @@ class OnlinePlaylistViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     database: MusicDatabase
 ) : ViewModel() {
-    private val playlistId = savedStateHandle.get<String>("playlistId")!!
+    private val playlistId = requireNotNull(savedStateHandle.get<String>("playlistId")) { "Missing playlistId" }
+    val routeThumb = savedStateHandle.get<String>("thumbnail")?.takeIf { it.isNotEmpty() }
+    val routeTitle = savedStateHandle.get<String>("title")?.takeIf { it.isNotEmpty() }
 
     val playlist = MutableStateFlow<PlaylistItem?>(null)
     val playlistSongs = MutableStateFlow<List<SongItem>>(emptyList())
@@ -108,14 +110,32 @@ class OnlinePlaylistViewModel @Inject constructor(
     private var proactiveLoadJob: Job? = null
 
     init {
-        // Fast sync restore from memory cache
         val cached = PlaylistMemoryCache.get(playlistId)
         if (cached != null) {
             playlist.value = cached.playlist
             playlistSongs.value = applySongFilters(cached.songs)
+            com.convx.music.utils.AppleArt.prefetchArtistIds(playlistSongs.value)
             relatedItems.value = cached.related
             continuation = cached.continuation
             _isLoading.value = false
+        } else {
+            // Seed from the tapped tile's metadata carried in the route, so the hero
+            // image and background tint paint on the first frame rather than after the
+            // network round trip. The fetch below replaces this with the full page.
+            val seedTitle = savedStateHandle.get<String>("title")
+            val seedThumbnail = savedStateHandle.get<String>("thumbnail")
+            if (!seedTitle.isNullOrEmpty()) {
+                playlist.value = PlaylistItem(
+                    id = playlistId,
+                    title = seedTitle,
+                    author = null,
+                    songCountText = null,
+                    thumbnail = seedThumbnail,
+                    playEndpoint = null,
+                    shuffleEndpoint = null,
+                    radioEndpoint = null,
+                )
+            }
         }
         fetchInitialPlaylistData()
     }
@@ -133,6 +153,7 @@ class OnlinePlaylistViewModel @Inject constructor(
                     playlist.value = playlistPage.playlist
                     val filteredSongs = applySongFilters(playlistPage.songs)
                     playlistSongs.value = filteredSongs
+                    com.convx.music.utils.AppleArt.prefetchArtistIds(filteredSongs)
                     val related = playlistPage.related ?: emptyList()
                     relatedItems.value = related
                     continuation = playlistPage.songsContinuation

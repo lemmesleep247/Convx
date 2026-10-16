@@ -21,12 +21,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
-import androidx.compose.material3.Card
+import com.convx.music.ui.ios.compat.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ProvideTextStyle
-import androidx.compose.material3.Text
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.ProvideTextStyle
+import com.convx.music.ui.ios.compat.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,17 +48,15 @@ fun IntegrationCard(
         modifier = Modifier
             .fillMaxWidth()
     ) {
-        // Section title
         title?.let {
             Text(
                 text = it,
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
+                style = AppTheme.typography.labelLarge,
+                color = AppTheme.colorScheme.primary,
                 modifier = Modifier.padding(bottom = 8.dp, top = 8.dp)
             )
         }
 
-        // Settings items
         Column(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -77,7 +75,7 @@ fun IntegrationCard(
                         .animateContentSize(),
                     shape = shape,
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                        containerColor = AppTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
                     ),
                     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                 ) {
@@ -88,9 +86,6 @@ fun IntegrationCard(
     }
 }
 
-/**
- * Individual settings item row with Material 3 styling
- */
 @Composable
 private fun IntegrationCardItemRow(
     item: IntegrationCardItem
@@ -105,14 +100,13 @@ private fun IntegrationCardItemRow(
             .padding(horizontal = 20.dp, vertical = 16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Icon with background
         item.icon?.let { icon ->
             Box(
                 modifier = Modifier
                     .size(40.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .background(
-                        MaterialTheme.colorScheme.primary.copy(
+                        AppTheme.colorScheme.primary.copy(
                             alpha = if (item.isHighlighted) 0.15f else 0.1f
                         )
                     ),
@@ -122,7 +116,7 @@ private fun IntegrationCardItemRow(
                     BadgedBox(
                         badge = {
                             Badge(
-                                containerColor = MaterialTheme.colorScheme.error
+                                containerColor = AppTheme.colorScheme.error
                             )
                         }
                     ) {
@@ -130,9 +124,9 @@ private fun IntegrationCardItemRow(
                             painter = icon,
                             contentDescription = null,
                             tint = if (item.isHighlighted)
-                                MaterialTheme.colorScheme.primary
+                                AppTheme.colorScheme.primary
                             else
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
+                                AppTheme.colorScheme.primary.copy(alpha = 0.9f),
                             modifier = Modifier.size(24.dp)
                         )
                     }
@@ -141,9 +135,9 @@ private fun IntegrationCardItemRow(
                         painter = icon,
                         contentDescription = null,
                         tint = if (item.isHighlighted)
-                            MaterialTheme.colorScheme.primary
+                            AppTheme.colorScheme.primary
                         else
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
+                            AppTheme.colorScheme.primary.copy(alpha = 0.9f),
                         modifier = Modifier.size(24.dp)
                     )
                 }
@@ -152,21 +146,18 @@ private fun IntegrationCardItemRow(
             Spacer(modifier = Modifier.width(16.dp))
         }
 
-        // Title and description
         Column(
             modifier = Modifier.weight(1f)
         ) {
-            // Title content
-            ProvideTextStyle(MaterialTheme.typography.titleMedium) {
+            ProvideTextStyle(AppTheme.typography.titleMedium) {
                 item.title()
             }
 
-            // Description if provided
             item.description?.let { desc ->
                 Spacer(modifier = Modifier.height(2.dp))
                 ProvideTextStyle(
-                    MaterialTheme.typography.bodyMedium.copy(
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    AppTheme.typography.bodyMedium.copy(
+                        color = AppTheme.colorScheme.onSurfaceVariant
                     )
                 ) {
                     desc()
@@ -174,7 +165,6 @@ private fun IntegrationCardItemRow(
             }
         }
 
-        // Trailing content
         item.trailingContent?.let { trailing ->
             Spacer(modifier = Modifier.width(8.dp))
             trailing()

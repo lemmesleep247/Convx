@@ -5,6 +5,11 @@
 
 package com.convx.music.ui.component
 
+import com.convx.music.ui.utils.MenuIconChrome
+import com.convx.music.ui.utils.additiveChrome
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
@@ -13,6 +18,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.BoxWithConstraintsScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -27,9 +33,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
@@ -43,18 +49,24 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.luminance
+import com.convx.music.ui.theme.isHueless
 import androidx.compose.ui.graphics.isSpecified
+import androidx.compose.ui.graphics.luminance
+import com.convx.music.LocalAmbientBackgroundColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.convx.music.ui.utils.sharedArtworkSource
 import coil3.compose.AsyncImage
+import com.composables.sfsymbols.SfSymbols
+import com.composables.sfsymbols.dualtone.SFSquareGrid2x2Fill
 import com.convx.music.R
 import com.convx.music.ui.component.backdrop.catalog.utils.InteractiveHighlight
 import com.convx.music.ui.component.backdrop.drawBackdrop
@@ -65,20 +77,20 @@ import com.convx.music.ui.component.backdrop.shadow.Shadow
 import com.convx.music.ui.component.shapes.ContinuousRoundedRectangle
 import com.convx.music.ui.player.FloatingMiniPlayer
 import com.convx.music.ui.screens.Screens
-import com.convx.music.ui.theme.BrandName
-import com.convx.music.ui.theme.rememberBrandFontFamily
+import com.convx.music.ui.screens.library.apple.SfStyle
+import com.convx.music.ui.theme.LocalAccentColor
 import com.convx.music.ui.utils.fadingEdge
 
 /** Panel corner. A tall panel, so a rounded rect rather than the phone bar's capsule. */
-private val SideBarShape = ContinuousRoundedRectangle(28.dp)
+private val SideBarShape = ContinuousRoundedRectangle(20.dp)
 
 /** Row/puck corner inside the panel: a full capsule. */
 private val SideRowShape = ContinuousRoundedRectangle(percent = 50)
 
 /** Width of the whole floating panel. */
-val SideBarWidth: Dp = 260.dp
+val SideBarWidth: Dp = 320.dp
 
-/** Width when collapsed to an icon-only rail — just enough for the icon + padding. */
+/** Width when collapsed to an icon-only rail: just enough for the icon and padding. */
 val SideBarCollapsedWidth: Dp = 72.dp
 
 /**
@@ -88,47 +100,52 @@ val SideBarCollapsedWidth: Dp = 72.dp
 val TabletWidthThreshold: Dp = 840.dp
 
 /** Panel inset from the screen edge, and the gap it leaves to the content. */
-val SideBarMargin: Dp = 12.dp
+val SideBarMargin: Dp = 30.dp
+private val SideBarDesignHeight: Dp = 600.dp
 
-/**
- * Horizontal space content should reserve on the start edge.
- *
- * Applied as *content padding*, never as a layout inset: rows begin clear of the
- * panel at rest but the list still spans the full width, so scrolling carries
- * them under the glass rather than clipping them short of it.
- */
-val SideBarContentInset: Dp = SideBarWidth + SideBarMargin * 2
+/** Content padding keeps rows clear of the panel at rest while letting them scroll underneath. */
+val SideBarContentInset: Dp = SideBarWidth + 20.dp
 
-/**
- * Rim and shadow the puck keeps when it is NOT pressed. Driving both straight
- * off pressProgress leaves the puck shapeless at rest, which is exactly how it
- * vanishes into the panel over dark content.
- */
+/** Keep the puck's rim and shadow visible when it is not pressed. */
 private const val PuckRestHighlightAlpha = 0.5f
 private const val PuckRestShadowAlpha = 0.35f
 
-private val SideTabHeight = 48.dp
-private val SideBarContentPadding = PaddingValues(6.dp)
+private val SideTabHeight = 44.dp
+private val SideBarContentPadding = PaddingValues(horizontal = 6.dp)
 
-/**
- * Fixed leading slot every row's icon/artwork/avatar is centred in, so the labels
- * all start at the same x. Without it a 22dp icon row and a 24dp artwork row put
- * their text 2dp apart, which is exactly what reads as "the icons don't line up".
- */
+/** Fixed leading slot keeps labels aligned across icons, artwork, and avatars. */
 private val SideRowLeadingSlot = 24.dp
 private val SideRowIconSize = 22.dp
 
-/**
- * The free-floating now playing pill in tab view: 80% of the width left over
- * after the side bar, centred in it, with the height following from that width
- * so it keeps its proportions on any screen.
- */
+/** Width of the floating mini player as a fraction of the available content width. */
 const val FloatingMiniPlayerWidthFraction = 0.8f
 
 /** Height as a share of the pill's own width, clamped to stay a bar. */
 private const val FloatingMiniPlayerAspect = 0.11f
 private val FloatingMiniPlayerMinHeight = 64.dp
 private val FloatingMiniPlayerMaxHeight = 64.dp
+
+/** Scopes that let the side panel and the top pill morph into each other as one shared element. */
+@OptIn(ExperimentalSharedTransitionApi::class)
+class NavMorph(val scope: SharedTransitionScope, val visibility: AnimatedVisibilityScope)
+
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Composable
+internal fun Modifier.navMorph(
+    morph: NavMorph?,
+    key: String,
+    resizeMode: SharedTransitionScope.ResizeMode = SharedTransitionScope.ResizeMode.RemeasureToBounds,
+): Modifier {
+    if (morph == null) return this
+    return with(morph.scope) {
+        this@navMorph.sharedBounds(
+            sharedContentState = rememberSharedContentState(key),
+            animatedVisibilityScope = morph.visibility,
+            resizeMode = resizeMode,
+            boundsTransform = { _, _ -> spring(dampingRatio = 0.85f, stiffness = 380f) },
+        )
+    }
+}
 
 /** A non-tab destination in the side bar: history, stats, a playlist, and so on. */
 @Immutable
@@ -137,6 +154,8 @@ data class SideBarLink(
     val iconRes: Int? = null,
     /** Playlist/album art, shown instead of [iconRes] when set. */
     val thumbnailUrl: String? = null,
+    /** Enables the artwork morph when this row opens an album or playlist. */
+    val sharedArtworkId: String? = null,
     val onClick: () -> Unit,
 )
 
@@ -154,20 +173,7 @@ private data class SideTab(
     val onClick: () -> Unit,
 )
 
-/**
- * The tab-view side bar: a full-height floating glass panel.
- *
- * Three zones, as in the reference. The wordmark is pinned at the top and the
- * account/settings row at the bottom; everything between them scrolls, and fades
- * out under both so rows slide beneath rather than being cut off.
- *
- * The primary tab group inside it is the phone's floating nav bar rebuilt on the
- * vertical axis — same [GlassEffectConfig] glass, the same glass selection puck
- * and the same [InteractiveHighlight] finger glow.
- *
- * The panel floats OVER the content: nothing reserves layout width for it, so
- * screens run full width and scroll underneath its glass.
- */
+/** Full-height floating glass navigation with fixed header/footer and scrollable tabs over screen content. */
 @Composable
 fun AppFloatingSideBar(
     navigationItems: List<Screens>,
@@ -177,8 +183,11 @@ fun AppFloatingSideBar(
     footer: @Composable (collapsed: Boolean) -> Unit,
     collapsed: Boolean,
     onToggleCollapsed: () -> Unit,
+    onEditClick: () -> Unit,
+    puckColorIsDefault: Boolean = true,
     modifier: Modifier = Modifier,
     pureBlack: Boolean = false,
+    morph: NavMorph? = null,
 ) {
     val glassConfig = LocalGlassEffectConfig.current
     val useGlass = glassConfig.isEnabledFor(GlassComponent.SIDE_PANEL) && isGlassAllowed()
@@ -189,36 +198,27 @@ fun AppFloatingSideBar(
         animationSpec = spring(0.9f, 400f),
         label = "sideBarWidth",
     )
-
-    // Same finger-tracking glow the mini player carries: it follows the touch
-    // across the whole panel, so every row lights up under the finger, not just
-    // the tab group.
-    // radiusScale is much smaller than the default 1.5f: minDimension here is the
-    // panel's full width, not a row's — at the default scale the glow bloom
-    // covered several rows and buried the icon/label under the finger.
+    // The glow is measured against the whole panel, so keep its radius small enough for one row.
     val interactiveHighlight = remember(animationScope) {
         InteractiveHighlight(animationScope = animationScope, radiusScale = 0.3f)
     }
 
+    val panelChrome = com.convx.music.ui.ios.foundation.IosTheme.colors.label
     val backgroundColor = when {
         useGlass -> Color.Transparent
         pureBlack -> Color.Black
-        else -> MaterialTheme.colorScheme.surfaceContainerHigh
+        else -> if (AppTheme.colorScheme.surface.luminance() <= 0.5f) Color(0xFF0A0A0A) else Color(0xFFF2F2F7)
     }
-    // Collapsed rail is narrow and tall — a full capsule (same shape as the
-    // tab rows/puck) reads as a pill, where the expanded panel's fixed 28dp
-    // corner radius would look like a barely-rounded rectangle instead.
+    // A capsule when collapsed; the fixed panel radius would look square at this width.
     val panelShape = if (collapsed) SideRowShape else SideBarShape
-    // The fold is a width animation on the app's largest glass surface:
-    // re-capturing and re-blurring the whole screen on every frame of it is what
-    // makes the collapse stutter. Hold the last capture until the width settles —
-    // the panel is moving, so a frame-old backdrop behind it is not perceptible.
-    // Shared with the tab group below, which draws two more backdrops of its own
-    // and was re-capturing both through the whole fold.
-    val backdropFrozen: () -> Boolean = { panelWidth != targetPanelWidth }
+    // Freeze the shared backdrop while the panel width animates, and honor the app-level freeze.
+    val appBackdropFrozen = LocalAppBackdropFrozen.current
+    val backdropFrozen: () -> Boolean = remember(appBackdropFrozen, panelWidth, targetPanelWidth) {
+        { panelWidth != targetPanelWidth || appBackdropFrozen() }
+    }
     val panelSurface = if (useGlass) {
         Modifier.liquidGlass(
-            config = glassConfig.forSidePanel(),
+            config = glassConfig.forSidePanel(isDark = glassUsesDarkAppearance()),
             shape = panelShape,
             highlightAlpha = 0.3f,
             frozen = backdropFrozen,
@@ -227,46 +227,49 @@ fun AppFloatingSideBar(
         Modifier
     }
 
+    // A short landscape screen scales the whole panel down so the header, tabs and footer all fit.
+    BoxWithConstraints(modifier) {
+    com.convx.music.ui.utils.ProvideFittedDensity(maxHeight, SideBarDesignHeight, minScale = 0.72f) {
     Column(
-        modifier
+        Modifier
+            .navMorph(morph, "navContainer")
             .width(panelWidth)
             .shadow(shape = panelShape, elevation = 10.dp)
             .background(backgroundColor, panelShape)
             .clip(panelShape)
             .then(panelSurface)
             .then(interactiveHighlight.modifier)
-            .then(interactiveHighlight.gestureModifier)
-            .padding(vertical = 14.dp),
+            .then(interactiveHighlight.gestureModifier),
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = if (collapsed) 0.dp else 22.dp, bottom = 10.dp),
+                .height(54.dp)
+                .padding(start = if (collapsed) 0.dp else 16.dp, end = if (collapsed) 0.dp else 6.dp),
             horizontalArrangement = if (collapsed) Arrangement.Center else Arrangement.SpaceBetween,
         ) {
             if (!collapsed) {
                 Text(
-                    text = BrandName,
-                    fontFamily = rememberBrandFontFamily(),
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 22.sp,
-                    letterSpacing = 1.5.sp,
-                    color = glassConfig.textColor,
+                    text = stringResource(R.string.edit),
+                    style = SfStyle(17.sp, 22.sp, FontWeight.SemiBold),
+                    color = panelChrome,
+                    modifier = Modifier.height(44.dp).clickable(onClick = onEditClick).padding(top = 11.dp),
                 )
             }
-            Icon(
-                painter = painterResource(if (collapsed) R.drawable.chevron_right_px else R.drawable.chevron_leftpx),
-                contentDescription = stringResource(
-                    if (collapsed) R.string.expand_side_panel else R.string.collapse_side_panel
-                ),
-                tint = glassConfig.textColor.copy(alpha = 0.7f),
-                modifier = Modifier
-                    .padding(end = if (collapsed) 0.dp else 16.dp)
-                    .size(22.dp)
-                    .clip(CircleShape)
-                    .clickable(onClick = onToggleCollapsed),
-            )
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.size(44.dp).clip(CircleShape).clickable(onClick = onToggleCollapsed),
+            ) {
+                SymbolIcon(
+                    symbol = sf("sidebar.left"),
+                    contentDescription = stringResource(
+                        if (collapsed) R.string.expand_side_panel else R.string.collapse_side_panel
+                    ),
+                    size = 20.dp,
+                    tint = panelChrome,
+                )
+            }
         }
 
         // Pinned above the scroll area: the primary tabs stay reachable however
@@ -279,7 +282,9 @@ fun AppFloatingSideBar(
             backgroundColor = backgroundColor,
             collapsed = collapsed,
             frozen = backdropFrozen,
-            modifier = Modifier.padding(horizontal = 6.dp),
+            puckColorIsDefault = puckColorIsDefault,
+            morph = morph,
+            modifier = Modifier.padding(horizontal = 10.dp),
         )
 
         Column(
@@ -289,31 +294,30 @@ fun AppFloatingSideBar(
                 // being clipped by a hard edge.
                 .fadingEdge(vertical = 18.dp)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 6.dp),
+                .padding(horizontal = 16.dp),
         ) {
             // The library sections (playlists, history, ...) need a text label to
-            // mean anything — an icon-only rail collapses to just the primary tabs,
-            // same as NavigationRail never showing arbitrary link lists either.
+            // mean anything, so the icon-only rail keeps just the primary tabs.
             if (!collapsed) {
                 sections.forEach { section ->
                     section.title?.let { title ->
                         Text(
                             text = title,
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.SemiBold,
-                            color = glassConfig.textColor.copy(alpha = 0.6f),
-                            modifier = Modifier.padding(start = 16.dp, top = 18.dp, bottom = 4.dp),
+                            style = SfStyle(17.sp, 22.sp, FontWeight.SemiBold, (-0.43).sp),
+                            color = panelChrome.copy(alpha = 0.6f),
+                            modifier = Modifier.padding(start = 12.dp, top = 24.dp, bottom = 14.dp),
                         )
                     }
                     section.links.forEach { link ->
-                        SideBarLinkRow(link = link, contentColor = glassConfig.textColor)
+                        SideBarLinkRow(link = link, contentColor = panelChrome)
                     }
                 }
             }
         }
 
-        Spacer(Modifier.height(6.dp))
         footer(collapsed)
+    }
+    }
     }
 }
 
@@ -334,32 +338,43 @@ private fun SideNavTabs(
     backgroundColor: Color,
     collapsed: Boolean,
     frozen: () -> Boolean,
+    puckColorIsDefault: Boolean,
+    morph: NavMorph? = null,
     modifier: Modifier = Modifier,
 ) {
-    // Deliberately the global config, not forSidePanel(): the tab group is the
-    // phone nav bar stood on its end, so its puck answers to the same "normal
-    // liquid glass" settings the phone bar's does. Only the PANEL behind it uses
-    // the side-panel tuning.
+    // The tab group uses the phone nav bar's glass settings; only the panel uses side-panel tuning.
     val glassConfig = LocalGlassEffectConfig.current
     val appleMusicUi = LocalAppleMusicUi.current
 
-    val selectedContentColor = glassConfig.textColor
-    val unselectedContentColor = glassConfig.textColor.copy(alpha = 0.75f)
+    val sideThemeDark = AppTheme.colorScheme.surface.luminance() <= 0.5f
+    val sideAmbient = Color.Unspecified // plain: no artwork-driven tinting
 
-    // Same wash the phone puck uses: the configured colour, or one that follows
-    // the theme rather than assuming a dark bar.
-    val puckWash = if (glassConfig.puckColor.isSpecified) {
+    val selectedContentColor = com.convx.music.ui.ios.foundation.IosTheme.tint
+    val inactiveContentColor = if (sideThemeDark) Color(0xFF8E8E93) else Color(0xFF6C6C70)
+
+    val puckWash = if (appleMusicUi && sideThemeDark && puckColorIsDefault) {
+        Color(0xFF333333)
+    } else if (glassConfig.puckColor.isSpecified) {
         glassConfig.puckColor
-    } else if (MaterialTheme.colorScheme.surface.luminance() > 0.5f) {
-        Color(0xFFF2F2F2)
+    } else if (sideAmbient.isSpecified && !sideAmbient.isHueless()) {
+        sideAmbient.asPuckTint(sideThemeDark)
     } else {
-        Color(28, 27, 28)
+        com.convx.music.ui.theme.GlassTintTokens.neutralTintColor(sideThemeDark)
     }
-    val puckRestAlpha = glassConfig.puckOpacity.coerceIn(0f, 1f)
+    val isHeroContext = sideAmbient.isSpecified && !sideAmbient.isHueless()
+    val puckRestAlpha = if (appleMusicUi && sideThemeDark && puckColorIsDefault) {
+        0.80f
+    } else if (!glassConfig.puckColor.isSpecified) {
+        if (sideThemeDark) {
+            if (isHeroContext) 0.80f else 0.55f
+        } else {
+            if (isHeroContext) 0.70f else 0.45f
+        }
+    } else {
+        glassConfig.puckOpacity.coerceIn(0f, 1f)
+    }
 
-    // Puck + tint follow the sticky selection so a non-tab destination holds the
-    // last tab instead of snapping to Home; the click passes the REAL route state
-    // so tapping a held tab from a sub-screen still navigates to it.
+    // Keep the last selected tab highlighted on detail routes; clicks still use the current route.
     val selectedRoute = rememberStickySelectedRoute(currentRoute, navigationItems)
     val tabs = navigationItems.map { screen ->
         SideTab(
@@ -377,10 +392,10 @@ private fun SideNavTabs(
 
     val selectedIndex = tabs.indexOfFirst { it.selected }.coerceAtLeast(0)
 
-    // The puck's position, in tab indices. Nothing drives it but the selection.
+    // Use an underdamped spring to match the phone nav bar's puck motion.
     val puckPosition = remember { Animatable(selectedIndex.toFloat()) }
     LaunchedEffect(selectedIndex) {
-        puckPosition.animateTo(selectedIndex.toFloat(), spring(0.9f, 400f, 0.001f))
+        puckPosition.animateTo(selectedIndex.toFloat(), spring(0.6f, 380f, 0.001f))
     }
 
     Box(
@@ -388,9 +403,7 @@ private fun SideNavTabs(
             .fillMaxWidth()
             .height(SideTabHeight * tabsCount + SideBarContentPadding.calculateTopPadding() * 2)
     ) {
-        // Drawn FIRST, so the icons sit on top of it. The phone bar has to sample
-        // a hidden copy of its row because its puck covers the icon; putting this
-        // one underneath gets the same look with one icon instead of three.
+        // Draw the puck under the real icons so the backdrop does not duplicate them.
         Box(
             Modifier
                 .padding(SideBarContentPadding)
@@ -414,9 +427,7 @@ private fun SideNavTabs(
                                     chromaticAberration = true,
                                 )
                             },
-                            highlight = {
-                                Highlight.Default.copy(alpha = PuckRestHighlightAlpha)
-                            },
+                            highlight = { null },
                             shadow = { Shadow(alpha = PuckRestShadowAlpha) },
                             onDrawSurface = { drawRect(puckWash.copy(alpha = puckRestAlpha)) },
                             frozen = frozen,
@@ -424,7 +435,7 @@ private fun SideNavTabs(
                     } else {
                         Modifier
                             .shadow(shape = SideRowShape, elevation = 3.dp)
-                            .background(backgroundColor.copy(alpha = 0.5f), SideRowShape)
+                            .background(if (sideThemeDark) Color(0xFF282828) else Color(0xFFD1D1D6), SideRowShape)
                             .clip(SideRowShape)
                     }
                 )
@@ -439,9 +450,10 @@ private fun SideNavTabs(
                 SideTabRow(
                     tab = tab,
                     appleMusicUi = appleMusicUi,
-                    contentColor = if (tab.selected) selectedContentColor else unselectedContentColor,
-                    alpha = if (tab.selected) 1f else 0.6f,
+                    contentColor = if (tab.selected) selectedContentColor else inactiveContentColor,
+                    alpha = 1f,
                     collapsed = collapsed,
+                    morph = morph,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(SideTabHeight)
@@ -481,13 +493,10 @@ fun BoxWithConstraintsScope.AppFloatingNowPlayingPill(
     val background = when {
         useGlass -> Color.Transparent
         pureBlack -> Color.Black
-        else -> MaterialTheme.colorScheme.surfaceContainerHigh
+        else -> AppTheme.colorScheme.surfaceContainerLow
     }
     val surface = if (useGlass) {
-        // This is the mini player pill, not the side panel — it uses the
-        // global glass settings directly, same as the phone's docked
-        // accessory. (forSidePanel() here was a bug: dialing the side panel
-        // rail's glass was leaking into this pill too.)
+        // The mini player uses global glass settings, independently of the side panel rail.
         Modifier.liquidGlass(config = glassConfig, shape = pillShape, highlightAlpha = 0.3f)
     } else {
         Modifier.background(background, pillShape)
@@ -496,7 +505,7 @@ fun BoxWithConstraintsScope.AppFloatingNowPlayingPill(
     FloatingMiniPlayer(
         isInline = false,
         // See AppNavigation: hardcoded white disappeared on light themes.
-        contentColor = if (useGlass) glassConfig.textColor else MaterialTheme.colorScheme.onSurface,
+        contentColor = if (useGlass) com.convx.music.ui.ios.foundation.IosTheme.colors.label else AppTheme.colorScheme.onSurface,
         onClick = onClick,
         onLyricsClick = onLyricsClick,
         onQueueClick = onQueueClick,
@@ -516,51 +525,29 @@ fun BoxWithConstraintsScope.AppFloatingNowPlayingPill(
 @Composable
 fun SideBarAccountRow(
     accountImageUrl: String?,
+    accountName: String = "",
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     collapsed: Boolean = false,
 ) {
-    val contentColor = LocalGlassEffectConfig.current.textColor
+    val contentColor = com.convx.music.ui.ios.foundation.IosTheme.colors.label
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 6.dp)
-            .height(SideTabHeight)
+            .height(82.dp)
             .clip(SideRowShape)
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp),
+            .padding(horizontal = if (collapsed) 20.dp else 25.dp),
     ) {
-        Box(
-            modifier = Modifier.size(SideRowLeadingSlot),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (accountImageUrl != null) {
-                AsyncImage(
-                    model = accountImageUrl,
-                    contentDescription = stringResource(R.string.account),
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clip(CircleShape),
-                )
-            } else {
-                Icon(
-                    painter = painterResource(R.drawable.settings),
-                    contentDescription = stringResource(R.string.settings),
-                    tint = contentColor,
-                    modifier = Modifier.size(SideRowIconSize),
-                )
-            }
-        }
+        AccountAvatar(accountImageUrl, accountName, size = 32.dp,
+            description = stringResource(R.string.account))
         if (!collapsed) {
-            Spacer(Modifier.width(14.dp))
+            Spacer(Modifier.width(8.dp))
             Text(
-                text = stringResource(
-                    if (accountImageUrl != null) R.string.account else R.string.settings
-                ),
+                text = accountName.ifBlank { stringResource(R.string.account) },
                 color = contentColor,
-                style = MaterialTheme.typography.bodyLarge,
+                style = SfStyle(13.sp, 18.sp, FontWeight.SemiBold, (-0.08).sp),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -576,35 +563,44 @@ private fun SideTabRow(
     alpha: Float,
     modifier: Modifier = Modifier,
     collapsed: Boolean = false,
+    morph: NavMorph? = null,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = if (collapsed) Arrangement.Center else Arrangement.Start,
         modifier = modifier
             .graphicsLayer { this.alpha = alpha }
-            .padding(horizontal = if (collapsed) 0.dp else 16.dp),
+            .padding(horizontal = if (collapsed) 0.dp else 12.dp),
     ) {
         Box(
             modifier = Modifier.size(SideRowLeadingSlot),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(
-                painter = painterResource(
-                    tab.screen.icon(appleMusicUi)
-                ),
-                contentDescription = stringResource(tab.screen.titleId),
-                tint = contentColor,
-                modifier = Modifier.size(SideRowIconSize),
-            )
+            val navName = tab.screen.navSymbol()
+            if (navName != null) {
+                SymbolIcon(
+                    symbol = sf(navName),
+                    contentDescription = stringResource(tab.screen.titleId),
+                    size = SideRowIconSize,
+                    chrome = MenuIconChrome,
+                    tint = LocalAccentColor.current,
+                    mode = com.composables.sfsymbols.SfRenderingMode.Monochrome,
+                    bounceOnEnter = tab.selected,
+                    selected = tab.selected,
+                )
+            } else {
+                Icon(painter = painterResource(tab.screen.icon(appleMusicUi)), contentDescription = stringResource(tab.screen.titleId), modifier = Modifier.size(SideRowIconSize), tint = LocalAccentColor.current)
+            }
         }
         if (!collapsed) {
-            Spacer(Modifier.width(14.dp))
+            Spacer(Modifier.width(12.dp))
             Text(
                 text = stringResource(tab.screen.titleId),
                 color = contentColor,
-                style = MaterialTheme.typography.bodyLarge,
+                style = SfStyle(17.sp, 22.sp, tracking = (-0.43).sp),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.navMorph(morph, "tab_${tab.screen.route}"),
             )
         }
     }
@@ -612,14 +608,16 @@ private fun SideTabRow(
 
 @Composable
 private fun SideBarLinkRow(link: SideBarLink, contentColor: Color) {
+    com.convx.music.ui.utils.ArtworkSourceHost(Modifier) { sourceModifier ->
+    val artworkOwner = com.convx.music.ui.utils.rememberArtworkSourceOwner()
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
+        modifier = sourceModifier
             .fillMaxWidth()
             .height(SideTabHeight)
             .clip(SideRowShape)
             .clickable(onClick = link.onClick)
-            .padding(horizontal = 16.dp),
+            .padding(horizontal = 12.dp),
     ) {
         Box(
             modifier = Modifier.size(SideRowLeadingSlot),
@@ -628,9 +626,11 @@ private fun SideBarLinkRow(link: SideBarLink, contentColor: Color) {
             when {
                 link.thumbnailUrl != null -> AsyncImage(
                     model = link.thumbnailUrl,
+                    onSuccess = com.convx.music.ui.utils.sharedArtworkImageListener(artworkOwner, link.thumbnailUrl),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
+                        .sharedArtworkSource(link.sharedArtworkId, link.thumbnailUrl, artworkOwner)
                         .fillMaxSize()
                         .clip(ContinuousRoundedRectangle(6.dp)),
                 )
@@ -638,19 +638,148 @@ private fun SideBarLinkRow(link: SideBarLink, contentColor: Color) {
                 link.iconRes != null -> Icon(
                     painter = painterResource(link.iconRes),
                     contentDescription = null,
-                    tint = contentColor,
+                    tint = LocalAccentColor.current,
                     modifier = Modifier.size(SideRowIconSize),
                 )
             }
         }
-        Spacer(Modifier.width(14.dp))
+        Spacer(Modifier.width(12.dp))
         Text(
             text = link.label,
             color = contentColor,
-            style = MaterialTheme.typography.bodyLarge,
+            style = SfStyle(17.sp, 22.sp, tracking = (-0.43).sp),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+    }
+    }
+}
+
+/** Below this width the pill keeps icons for every tab and a label only for the selected one. */
+private val PillLabelsMinWidth = 520.dp
+
+/** The closed side bar: menu button, primary tabs and search in one glass capsule, centred at the top. */
+@Composable
+fun AppTabViewTopPill(
+    navigationItems: List<Screens>,
+    currentRoute: String?,
+    onItemClick: (Screens, Boolean) -> Unit,
+    onOpenSidebar: () -> Unit,
+    modifier: Modifier = Modifier,
+    pureBlack: Boolean = false,
+    morph: NavMorph? = null,
+) {
+    val glassConfig = LocalGlassEffectConfig.current
+    val useGlass = glassConfig.isEnabledFor(GlassComponent.SIDE_PANEL) && isGlassAllowed()
+    val shape = ContinuousRoundedRectangle(percent = 50)
+    val chrome = com.convx.music.ui.ios.foundation.IosTheme.colors.label
+    val accent = com.convx.music.ui.ios.foundation.IosTheme.tint
+    val selectedRoute = rememberStickySelectedRoute(currentRoute, navigationItems)
+    val tabs = navigationItems.filter { it != Screens.Search }
+    val search = navigationItems.firstOrNull { it == Screens.Search }
+
+    androidx.compose.foundation.layout.BoxWithConstraints(
+        modifier.fillMaxWidth().padding(horizontal = 12.dp),
+        contentAlignment = Alignment.TopCenter,
+    ) {
+        val labels = maxWidth >= PillLabelsMinWidth
+        val surface = if (useGlass) {
+            Modifier.liquidGlass(config = glassConfig, shape = shape, highlightAlpha = 0.3f)
+        } else {
+            Modifier.background(if (pureBlack) Color.Black else AppTheme.colorScheme.surfaceContainerLow, shape)
+        }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .navMorph(morph, "navContainer")
+                .shadow(shape = shape, elevation = 10.dp)
+                .clip(shape)
+                .then(surface)
+                .padding(6.dp),
+        ) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.size(40.dp).clip(CircleShape).clickable(onClick = onOpenSidebar),
+            ) {
+                SymbolIcon(
+                    symbol = sf("line.3.horizontal"),
+                    contentDescription = stringResource(R.string.expand_side_panel),
+                    size = 20.dp,
+                    tint = chrome,
+                )
+            }
+            tabs.forEach { screen ->
+                PillTab(
+                    screen = screen,
+                    selected = screen.route == selectedRoute,
+                    labels = labels,
+                    chrome = chrome,
+                    morph = morph,
+                    onClick = { onItemClick(screen, isRouteSelected(currentRoute, screen.route, navigationItems)) },
+                )
+            }
+            search?.let { screen ->
+                Spacer(Modifier.width(4.dp))
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .background(accent.copy(alpha = 0.2f), CircleShape)
+                        .clip(CircleShape)
+                        .clickable { onItemClick(screen, isRouteSelected(currentRoute, screen.route, navigationItems)) },
+                ) {
+                    SymbolIcon(
+                        symbol = sf("magnifyingglass"),
+                        contentDescription = stringResource(screen.titleId),
+                        size = 18.dp,
+                        tint = accent,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PillTab(
+    screen: Screens,
+    selected: Boolean,
+    labels: Boolean,
+    chrome: Color,
+    morph: NavMorph?,
+    onClick: () -> Unit,
+) {
+    val symbol = screen.navSymbol()
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier
+            .height(40.dp)
+            .background(if (selected) chrome.copy(alpha = 0.14f) else Color.Transparent, SideRowShape)
+            .clip(SideRowShape)
+            .clickable(onClick = onClick)
+            .padding(horizontal = if (labels) 14.dp else 11.dp),
+    ) {
+        if (!labels && symbol != null) {
+            SymbolIcon(
+                symbol = sf(symbol),
+                contentDescription = stringResource(screen.titleId),
+                size = 20.dp,
+                tint = if (selected) chrome else chrome.copy(alpha = 0.7f),
+                mode = com.composables.sfsymbols.SfRenderingMode.Monochrome,
+                selected = selected,
+            )
+        }
+        if (labels || selected) {
+            Text(
+                text = stringResource(screen.titleId),
+                color = if (selected) chrome else chrome.copy(alpha = 0.85f),
+                style = SfStyle(17.sp, 22.sp, if (selected) FontWeight.SemiBold else FontWeight.Medium, (-0.43).sp),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.navMorph(morph, "tab_${screen.route}"),
+            )
+        }
     }
 }
 

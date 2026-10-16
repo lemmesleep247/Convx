@@ -17,12 +17,14 @@ import com.convx.music.models.MediaMetadata
 import java.util.ArrayDeque
 
 fun Player.togglePlayPause() {
+    if (playbackState == Player.STATE_ENDED) {
+        seekTo(currentMediaItemIndex, 0)
+        playWhenReady = true
+        return
+    }
     if (!playWhenReady) {
         when (playbackState) {
             Player.STATE_IDLE -> prepare()
-            // Queue ran out: playWhenReady=true alone won't restart playback from
-            // STATE_ENDED, so the play button would silently do nothing.
-            Player.STATE_ENDED -> seekTo(currentMediaItemIndex, 0)
             else -> {}
         }
     }

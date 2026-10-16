@@ -5,6 +5,8 @@
 
 package com.convx.music.ui.utils
 
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
@@ -14,26 +16,9 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.Dp
 
-/**
- * Lets a horizontally scrolling row escape its parent's start padding and run
- * under the floating side bar.
- *
- * The vertical list keeps its start content padding, so rows stay clear of the
- * panel. A carousel inside that list would inherit the same offset and stop dead
- * at the panel's edge — nothing is ever drawn beneath it, so the glass has
- * nothing to blur and the cards look cut off rather than tucked under.
- *
- * This measures the child [inset] wider than the slot and places it that far to
- * the left, while still reporting the slot's original width so the list's own
- * layout is untouched. Pair it with [plusStart] on the carousel's own
- * contentPadding so its FIRST card still starts clear of the panel and only the
- * ones you scroll past travel underneath.
- *
- * Start-edge only: the offset is applied on the physical left, matching the side
- * bar, which is itself pinned to the left rather than to the layout direction.
- */
+/** Extends a carousel under the left-pinned side bar while reporting its original slot width. Pair with [plusStart] to keep the first card clear. */
 fun Modifier.bleedStart(inset: Dp): Modifier = layout { measurable, constraints ->
-    val extra = inset.roundToPx()
+    val extra = inset.roundToPx().coerceAtLeast(0)
     val widened = if (constraints.hasBoundedWidth) {
         constraints.copy(
             minWidth = constraints.minWidth + extra,
@@ -49,6 +34,13 @@ fun Modifier.bleedStart(inset: Dp): Modifier = layout { measurable, constraints 
         placeable.place(-extra, 0)
     }
 }
+
+/** Width the floating side bar covers at the start edge; zero when there is none. */
+@Composable
+fun sideBarInset(): Dp = com.convx.music.LocalPlayerAwareWindowInsets.current
+    .asPaddingValues()
+    .calculateStartPadding(LocalLayoutDirection.current)
+    .coerceAtLeast(0.dp)
 
 /** [PaddingValues] with [extra] added to the start edge. */
 @Composable

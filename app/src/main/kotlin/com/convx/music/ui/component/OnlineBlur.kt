@@ -8,7 +8,7 @@ package com.convx.music.ui.component
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
+import com.convx.music.ui.ios.compat.AppTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -45,7 +45,7 @@ fun OnlineBlur(
                     Brush.verticalGradient(
                         colors = listOf(
                             Color.Transparent,
-                            MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
+                            AppTheme.colorScheme.surface.copy(alpha = 0.6f)
                         )
                     )
                 )

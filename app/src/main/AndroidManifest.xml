@@ -2,11 +2,20 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- lyrics-ui declares minSdk 29, the app ships to 26. The only thing that
+         reaches it is the ARCHIVE_TUNE lyrics style, and Lyrics.kt gates that
+         branch on API 29 so the library is unreachable below its own floor;
+         everything else on 26-28 falls through to the plain lyrics list. -->
+    <uses-sdk tools:overrideLibrary="com.mocharealm.accompanist.lyrics.ui" />
+
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
@@ -20,17 +29,16 @@
          RingtoneHelper.kt's Q+ branch uses MediaStore instead and needs none. -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
 
-    <!--    bluetooth connect-->
+    <!-- Bluetooth device connection -->
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-    <!-- For Android 11 (API 30) and below -->
+    <!-- Legacy Bluetooth permissions for Android 11 and below -->
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
-    <!-- Optional: If you also need to scan for Bluetooth devices -->
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
 
     <!-- Microphone feature for music recognition (not required) -->
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
-<!--    install permission-->
+    <!-- Required for installing downloaded updates. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- Android TV -->
@@ -77,11 +85,13 @@
             android:icon="@mipmap/ic_launcher"
             android:label="@string/app_name"
             android:roundIcon="@mipmap/ic_launcher_round"
-            android:theme="@style/Theme.Convx" />
+            android:theme="@style/Theme.Convx.Starting" />
 
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout"
+            android:supportsPictureInPicture="true"
             android:launchMode="singleTask"
             android:theme="@style/Theme.Convx"
             android:windowSoftInputMode="adjustResize">
@@ -104,6 +114,17 @@
                 <data android:scheme="https" />
                 <data android:host="vivimusic-listen-together.onrender.com" />
                 <data android:pathPrefix="/listen" />
+            </intent-filter>
+
+            <!-- Party invite: convx://party/CODE -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data android:scheme="convx" />
+                <data android:host="party" />
             </intent-filter>
 
             <!-- Custom scheme for direct opens from browser (works in ALL browsers) -->

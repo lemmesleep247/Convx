@@ -11,4 +11,6 @@ enum class LibraryFilter {
     ALBUMS,
     PLAYLISTS,
     LIBRARY,
+    /** Songs stored on this phone. */
+    LOCAL,
 }

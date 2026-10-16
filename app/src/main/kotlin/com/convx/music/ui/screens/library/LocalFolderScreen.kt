@@ -5,6 +5,8 @@
 
 package com.convx.music.ui.screens.library
 
+import com.convx.music.ui.component.sf
+import com.convx.music.ui.component.SymbolIcon
 import androidx.compose.foundation.lazy.rememberLazyListState
 import com.convx.music.ui.component.ListScrollRail
 import androidx.compose.foundation.layout.Box
@@ -15,12 +17,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.material3.Button
+import com.convx.music.ui.ios.compat.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.IconButton
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.Text
+import com.composables.sfsymbols.SfSymbols
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
@@ -40,6 +43,7 @@ import com.convx.music.extensions.toMediaItem
 import com.convx.music.playback.queues.ListQueue
 import com.convx.music.ui.component.LocalMenuState
 import com.convx.music.ui.component.SongListItem
+import com.convx.music.ui.component.SeededShimmerHero
 import com.convx.music.ui.menu.SongMenu
 import com.convx.music.ui.utils.bounceClick
 import com.convx.music.ui.theme.rememberGlobalAccentColors
@@ -61,7 +65,7 @@ fun LocalFolderScreen(
     path: String,
 ) {
     val context = LocalContext.current
-    val database = LocalDatabase.current
+    val database = LocalDatabase.current.get()
     val menuState = LocalMenuState.current
     val playerConnection = LocalPlayerConnection.current ?: return
 
@@ -85,98 +89,106 @@ fun LocalFolderScreen(
 
     val lazyListState = rememberLazyListState()
 
-    Box(modifier = Modifier.fillMaxSize()) {
-    LazyColumn(
-        state = lazyListState,
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues(),
-    ) {
-        item(key = "title") {
-            Text(
-                text = path.substringAfterLast('/'),
-                style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
-            )
-        }
+    fun playFolder(shuffle: Boolean) {
+        val queueSongs = if (shuffle) songs.shuffled() else songs
+        playerConnection.playQueue(
+            ListQueue(items = queueSongs.map { it.toMediaItem() }, startIndex = 0),
+        )
+    }
 
-        if (songs.isNotEmpty()) {
-            item(key = "actions") {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Button(
-                        onClick = {
-                            playerConnection.playQueue(
-                                ListQueue(items = songs.map { it.toMediaItem() }, startIndex = 0),
-                            )
-                        },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = accentColor,
-                            contentColor = onAccentColor,
-                        ),
-                    ) { Text(stringResource(R.string.play)) }
-                    Button(
-                        onClick = {
-                            playerConnection.playQueue(
-                                ListQueue(items = songs.shuffled().map { it.toMediaItem() }, startIndex = 0),
-                            )
-                        },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = accentColor,
-                            contentColor = onAccentColor,
-                        ),
-                    ) { Text(stringResource(R.string.shuffle)) }
+    Box(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            state = lazyListState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues(),
+        ) {
+            if (songs.isNotEmpty()) {
+                item(key = "folder_artwork") {
+                    SeededShimmerHero(
+                        thumbUrl = songs.firstOrNull()?.thumbnailUrl,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                    )
                 }
             }
-        }
 
-        itemsIndexed(
-            items = songs,
-            key = { _, song -> song.id },
-        ) { index, song ->
-            SongListItem(
-                song = song,
-                isActive = song.id == mediaMetadata?.id,
-                isPlaying = isPlaying,
-                showLikedIcon = false,
-                showDownloadIcon = false,
-                shape = listItemShape(index, songs.size),
-                trailingContent = {
-                    IconButton(
-                        onClick = {
-                            menuState.show {
-                                SongMenu(
-                                    originalSong = song,
-                                    navController = navController,
-                                    onDismiss = menuState::dismiss,
+            item(key = "title") {
+                Text(
+                    text = path.substringAfterLast('/'),
+                    style = AppTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                )
+            }
+
+            if (songs.isNotEmpty()) {
+                item(key = "actions") {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Button(
+                            onClick = { playFolder(shuffle = false) },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = accentColor,
+                                contentColor = onAccentColor,
+                            ),
+                        ) { Text(stringResource(R.string.play)) }
+                        Button(
+                            onClick = { playFolder(shuffle = true) },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = accentColor,
+                                contentColor = onAccentColor,
+                            ),
+                        ) { Text(stringResource(R.string.shuffle)) }
+                    }
+                }
+            }
+
+            itemsIndexed(
+                items = songs,
+                key = { _, song -> song.id },
+            ) { index, song ->
+                SongListItem(
+                    song = song,
+                    isActive = song.id == mediaMetadata?.id,
+                    isPlaying = isPlaying,
+                    showLikedIcon = false,
+                    showDownloadIcon = false,
+                    shape = listItemShape(index, songs.size),
+                    trailingContent = {
+                        IconButton(
+                            onClick = {
+                                menuState.show {
+                                    SongMenu(
+                                        originalSong = song,
+                                        navController = navController,
+                                        onDismiss = menuState::dismiss,
+                                    )
+                                }
+                            },
+                        ) {
+                            SymbolIcon(bounceOnEnter = true, symbol = sf("ellipsis"), contentDescription = null)
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .bounceClick {
+                            if (song.id == mediaMetadata?.id) {
+                                playerConnection.togglePlayPause()
+                            } else {
+                                playerConnection.playQueue(
+                                    ListQueue(items = songs.map { it.toMediaItem() }, startIndex = index),
                                 )
                             }
                         },
-                    ) {
-                        Icon(painter = painterResource(R.drawable.more_vert), contentDescription = null)
-                    }
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .bounceClick {
-                        if (song.id == mediaMetadata?.id) {
-                            playerConnection.togglePlayPause()
-                        } else {
-                            playerConnection.playQueue(
-                                ListQueue(items = songs.map { it.toMediaItem() }, startIndex = index),
-                            )
-                        }
-                    },
-            )
+                )
+            }
         }
-    }
 
         // The folder keeps MediaStore's own order, which is not alphabetical, so the rail
         // is a proportional thumb.

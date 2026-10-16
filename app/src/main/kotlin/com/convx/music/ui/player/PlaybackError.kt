@@ -5,6 +5,8 @@
 
 package com.convx.music.ui.player
 
+import com.convx.music.ui.component.sf
+import com.convx.music.ui.component.SymbolIcon
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,18 +17,17 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
+import com.convx.music.ui.ios.compat.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.Text
+import com.convx.music.ui.ios.compat.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -36,6 +37,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.PlaybackException
 import androidx.media3.datasource.HttpDataSource
+import com.composables.sfsymbols.SfSymbols
+import com.composables.sfsymbols.monochrome.SFArrowCounterclockwise
+import com.composables.sfsymbols.monochrome.SFExclamationmarkTriangle
+import com.composables.sfsymbols.monochrome.SFSquareOnSquare
 import com.convx.music.R
 
 @Composable
@@ -43,10 +48,7 @@ fun PlaybackError(
     error: PlaybackException,
     retry: () -> Unit,
 ) {
-    // Walk the whole cause chain, not just two levels. ExoPlayer buckets most
-    // network failures into ERROR_CODE_IO_UNSPECIFIED (2000) with no message of
-    // its own, so the old two-level lookup fell through to "Unknown error" and
-    // every screenshotted report arrived with nothing to act on.
+    // ExoPlayer wraps network errors, so inspect nested causes too.
     val causeChain = remember(error) {
         generateSequence(error as Throwable) { it.cause }.take(8).toList()
     }
@@ -54,13 +56,11 @@ fun PlaybackError(
         causeChain.filterIsInstance<HttpDataSource.InvalidResponseCodeException>()
             .firstOrNull()?.responseCode
     }
-    // First real message anywhere in the chain, innermost first — that's the one
-    // that names the actual failure.
+    // Prefer the deepest available error message.
     val chainMessage = remember(causeChain) {
         causeChain.reversed().firstNotNullOfOrNull { it.message?.takeIf { m -> m.isNotBlank() } }
     }
-    // Last resort when nothing carries a message: the exception types themselves
-    // still say a lot (e.g. UnknownHostException vs SocketTimeoutException).
+    // Exception types still identify failures with no message.
     val chainTypes = remember(causeChain) {
         causeChain.map { it.javaClass.simpleName }.distinct().joinToString(" <- ")
     }
@@ -73,8 +73,7 @@ fun PlaybackError(
         else -> unknownLabel
     }
 
-    // What the Copy button hands over — everything, untruncated, so a pasted
-    // report is diagnosable without a follow-up round trip.
+    // Copy the full error details, even when the on-screen message is truncated.
     val copyDetails = remember(error, rawErrorMessage) {
         buildString {
             appendLine("Convx playback error")
@@ -86,7 +85,6 @@ fun PlaybackError(
     }
     val clipboard = LocalClipboardManager.current
 
-    // Check if this is an age-restricted content error
     // Age-restricted content typically returns 403 Forbidden or contains age-related messages
     val isAgeRestricted = rawErrorMessage.contains("age", ignoreCase = true) ||
             rawErrorMessage.contains("Sign in to confirm your age", ignoreCase = true) ||
@@ -112,31 +110,23 @@ fun PlaybackError(
             .fillMaxWidth()
             .padding(16.dp)
     ) {
-        // Error icon
-        Icon(
-            painter = painterResource(R.drawable.error),
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.error,
-            modifier = Modifier.size(48.dp)
-        )
+        SymbolIcon(symbol = sf("SFExclamationmarkTriangle"), contentDescription = null, size = 48.dp, tint = AppTheme.colorScheme.error)
         
         Spacer(modifier = Modifier.height(12.dp))
         
-        // Main error message
         Text(
             text = stringResource(R.string.error_playback_failed),
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.error,
+            style = AppTheme.typography.titleMedium,
+            color = AppTheme.colorScheme.error,
             textAlign = TextAlign.Center
         )
         
         Spacer(modifier = Modifier.height(8.dp))
         
-        // Error details
         Text(
             text = errorMessage,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = AppTheme.typography.bodyMedium,
+            color = AppTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
             maxLines = 3,
             overflow = TextOverflow.Ellipsis
@@ -144,14 +134,13 @@ fun PlaybackError(
         
         Spacer(modifier = Modifier.height(4.dp))
         
-        // Error code
         Text(
             text = "Code: ${getErrorCodeName(error.errorCode)} (${error.errorCode})",
-            style = MaterialTheme.typography.bodySmall.copy(
+            style = AppTheme.typography.bodySmall.copy(
                 fontFamily = FontFamily.Monospace,
                 fontSize = 11.sp
             ),
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+            color = AppTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
             textAlign = TextAlign.Center
         )
         
@@ -161,34 +150,23 @@ fun PlaybackError(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // Retry button
             Button(
                 onClick = retry,
                 shape = RoundedCornerShape(20.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary
+                    containerColor = AppTheme.colorScheme.primary
                 )
             ) {
-                Icon(
-                    painter = painterResource(R.drawable.replay),
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
+                SymbolIcon(symbol = sf("SFArrowCounterclockwise"), contentDescription = null, size = 18.dp)
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(text = stringResource(R.string.retry))
             }
 
-            // The on-screen detail is clamped to 3 lines; this hands over the
-            // whole thing so a bug report arrives diagnosable the first time.
             TextButton(
                 onClick = { clipboard.setText(AnnotatedString(copyDetails)) },
                 shape = RoundedCornerShape(20.dp),
             ) {
-                Icon(
-                    painter = painterResource(R.drawable.content_copy),
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
+                SymbolIcon(symbol = sf("SFSquareOnSquare"), contentDescription = null, size = 18.dp)
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(text = stringResource(R.string.error_copy_details))
             }
@@ -196,9 +174,6 @@ fun PlaybackError(
     }
 }
 
-/**
- * Get human-readable error code name from PlaybackException error code
- */
 private fun getErrorCodeName(errorCode: Int): String {
     return when (errorCode) {
         PlaybackException.ERROR_CODE_UNSPECIFIED -> "UNSPECIFIED"

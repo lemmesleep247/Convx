@@ -5,6 +5,7 @@
 
 package com.convx.music.viewmodels
 
+import android.content.Context
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -13,27 +14,32 @@ import com.music.innertube.models.AlbumItem
 import com.convx.music.db.MusicDatabase
 import com.convx.music.utils.reportException
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import com.convx.music.utils.Wikipedia
 import com.convx.music.utils.AppleMusicAboutAlbum
+import com.convx.music.utils.ArtistWordmarkAssets
 import javax.inject.Inject
+import java.io.File
 
 @HiltViewModel
 class AlbumViewModel
 @Inject
 constructor(
-    // A property, not a plain constructor param: refresh() is a member function,
-    // and a bare param is only in scope for initializers and init blocks.
+    @ApplicationContext private val context: Context,
     private val database: MusicDatabase,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
-    val albumId = savedStateHandle.get<String>("albumId")!!
+    val albumId = requireNotNull(savedStateHandle.get<String>("albumId")) { "Missing albumId" }
+    val thumbArg = savedStateHandle.get<String>("thumb")?.takeIf { it.isNotEmpty() }
     val playlistId = MutableStateFlow("")
+    val loadFailed = MutableStateFlow(false)
     val albumWithSongs =
         database
             .albumWithSongs(albumId)
@@ -42,13 +48,39 @@ constructor(
     var releasesForYou = MutableStateFlow<List<AlbumItem>>(emptyList())
     var description = MutableStateFlow<String?>(null)
     var descriptionRuns = MutableStateFlow<List<com.music.innertube.models.Run>?>(null)
+    val artistSignatureUrl = MutableStateFlow<String?>(null)
+    val artistBundledLogo = MutableStateFlow<File?>(null)
+    private var signatureLookupName: String? = null
 
     init {
         refresh()
+        viewModelScope.launch {
+            albumWithSongs.filterNotNull().first()
+                .artists.firstOrNull()?.name
+                ?.let(::fetchArtistSignature)
+        }
+    }
+
+    private fun fetchArtistSignature(name: String) {
+        val normalized = name.trim()
+        if (normalized.isBlank() || signatureLookupName == normalized) return
+        signatureLookupName = normalized
+        val saved = ArtistWordmarkAssets.saved(context, normalized)
+        artistBundledLogo.value = saved.appleLogo
+        artistSignatureUrl.value = saved.signatureUrl
+        if (saved.appleLogo != null && saved.signature != null) return
+        viewModelScope.launch {
+            val assets = ArtistWordmarkAssets.bundle(context, normalized)
+            if (signatureLookupName == normalized) {
+                artistBundledLogo.value = assets.appleLogo
+                artistSignatureUrl.value = assets.signatureUrl
+            }
+        }
     }
 
     /** Re-fetches the album page. Bound to the pull-to-refresh gesture. */
     fun refresh() {
+        loadFailed.value = false
         viewModelScope.launch {
             val album = database.album(albumId).first()
             if (album?.description != null) {
@@ -118,6 +150,7 @@ constructor(
                         }
                     }
                 }.onFailure {
+                    loadFailed.value = true
                     reportException(it)
                     if (it.message?.contains("NOT_FOUND") == true) {
                         val albumToDelete = album?.album

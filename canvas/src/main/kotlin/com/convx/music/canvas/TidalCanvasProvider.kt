@@ -2,7 +2,7 @@ package com.convx.music.canvas
 
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
-import io.ktor.client.engine.okhttp.OkHttp
+import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.cache.HttpCache
 import io.ktor.client.plugins.compression.ContentEncoding
@@ -32,6 +32,11 @@ import kotlinx.coroutines.sync.withLock
 object TidalCanvasProvider {
     private const val BASE_URL = "https://api.tidal.com/v1/"
     private const val TIDAL_TOKEN = "vNVdglQOjFJJGG2U"
+    private val artistSplitRegex = Regex(
+        "(?:\\s*,\\s*|\\s*&\\s*|\\s+×\\s+|\\s+x\\s+|\\bfeat\\.?\\b|\\bft\\.?\\b|\\bfeaturing\\b|\\bwith\\b)",
+        RegexOption.IGNORE_CASE,
+    )
+    private val whitespaceRegex = Regex("\\s+")
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -40,7 +45,7 @@ object TidalCanvasProvider {
     }
 
     private val client by lazy {
-        HttpClient(OkHttp) {
+        HttpClient(CIO) {
             install(ContentNegotiation) { json(json) }
             install(HttpTimeout) {
                 connectTimeoutMillis = 15_000
@@ -133,35 +138,35 @@ object TidalCanvasProvider {
             val key = types.lowercase(Locale.ROOT) // "tracks" or "albums"
             val section = findSearchSection(root, key) ?: return null
             val items = section.jsonObject["items"]?.jsonArray ?: return null
+            val requestedArtists = artistValidation?.let(::normalizeArtistNames)
 
             for (item in items) {
                 val obj = item.jsonObject
 
-                // Validate track title if searching tracks
                 val resultTitle = obj["title"]?.jsonPrimitive?.contentOrNull
                 if (songValidation != null && resultTitle != null && !resultTitle.contains(songValidation, ignoreCase = true)) {
                     continue
                 }
 
-                // Validate album title if searching albums
                 if (albumValidation != null && resultTitle != null && !resultTitle.contains(albumValidation, ignoreCase = true) && !albumValidation.contains(resultTitle, ignoreCase = true)) {
                     continue
                 }
 
-                // Validate artist (either in array of artists or artist object)
+                // Tidal returns artists as either a top-level object or an array.
                 val artists = obj["artists"]?.jsonArray
                 val primaryArtist = obj["artist"]?.jsonObject?.get("name")?.jsonPrimitive?.contentOrNull
                     ?: artists?.firstOrNull()?.jsonObject?.get("name")?.jsonPrimitive?.contentOrNull
-                
-                if (artistValidation != null && primaryArtist != null) {
-                    val splitDelimiters = Regex("(?:\\s*,\\s*|\\s*&\\s*|\\s+×\\s+|\\s+x\\s+|\\bfeat\\.?\\b|\\bft\\.?\\b|\\bfeaturing\\b|\\bwith\\b)", RegexOption.IGNORE_CASE)
-                    val requestedList = artistValidation.split(splitDelimiters).map { it.replace(Regex("\\s+"), " ").trim().lowercase(Locale.ROOT) }.filter { it.isNotBlank() }
-                    val returnedList = primaryArtist.split(splitDelimiters).map { it.replace(Regex("\\s+"), " ").trim().lowercase(Locale.ROOT) }.filter { it.isNotBlank() }
-                    val artistMatches = requestedList.any { req -> returnedList.any { res -> res.contains(req) || req.contains(res) } }
-                    if (!artistMatches) continue
+
+                if (requestedArtists != null && primaryArtist != null) {
+                    val returnedArtists = normalizeArtistNames(primaryArtist)
+                    val matchesArtist = requestedArtists.any { requested ->
+                        returnedArtists.any { returned ->
+                            returned.contains(requested) || requested.contains(returned)
+                        }
+                    }
+                    if (!matchesArtist) continue
                 }
 
-                // Retrieve videoCover
                 val albumObj = if (types == "TRACKS") obj["album"]?.jsonObject else obj
                 val videoCover = albumObj?.get("videoCover")?.jsonPrimitive?.contentOrNull
 
@@ -172,25 +177,32 @@ object TidalCanvasProvider {
                             name = resultTitle ?: songValidation ?: albumValidation ?: "",
                             artist = primaryArtist ?: artistValidation ?: "",
                             videoUrl = videoUrl,
-                            albumName = if (types == "TRACKS") albumObj?.get("title")?.jsonPrimitive?.contentOrNull else resultTitle
+                            albumName = if (types == "TRACKS") albumObj["title"]?.jsonPrimitive?.contentOrNull else resultTitle
                         )
                     }
                 }
             }
-        } catch (e: Exception) {
-            // Ignore & return null
+        } catch (_: Exception) {
+            // Tidal artwork is optional; request and response failures return no artwork.
         }
         return null
     }
 
+    private fun normalizeArtistNames(value: String): List<String> =
+        value.split(artistSplitRegex)
+            .map { whitespaceRegex.replace(it, " ").trim().lowercase(Locale.ROOT) }
+            .filter { it.isNotBlank() }
+
     private fun findSearchSection(source: JsonElement, key: String): JsonElement? {
         if (source is JsonObject) {
             if (source.containsKey("items") && source["items"] is JsonArray) return source
-            if (source.containsKey(key)) {
-                val found = findSearchSection(source[key]!!, key)
+            val preferredChild = source[key]
+            if (preferredChild != null) {
+                val found = findSearchSection(preferredChild, key)
                 if (found != null) return found
             }
-            for (value in source.values) {
+            for ((childKey, value) in source) {
+                if (childKey == key) continue
                 val found = findSearchSection(value, key)
                 if (found != null) return found
             }

@@ -19,12 +19,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.convx.music.ui.ios.compat.Button
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.Surface
+import com.convx.music.ui.ios.compat.Text
+import com.convx.music.ui.ios.compat.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
@@ -59,7 +59,7 @@ fun PlaybackLogsDialog(
 
     DefaultDialog(
         onDismiss = onDismiss,
-        icon = { Icon(painterResource(R.drawable.bug_report), contentDescription = null) },
+        icon = { SymbolIcon(symbol = sf("ladybug"), contentDescription = null) },
         title = { Text(stringResource(R.string.playback_logs_title)) },
         buttons = {
             TextButton(
@@ -110,7 +110,7 @@ fun PlaybackLogsDialog(
                 ) {
                     Text(
                         text = stringResource(R.string.no_playback_logs),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = AppTheme.colorScheme.onSurfaceVariant
                     )
                 }
             } else {
@@ -140,31 +140,31 @@ private fun PlaybackLogEntryItem(log: PlaybackLogEntry) {
         ) {
             Text(
                 text = log.timestamp,
-                style = MaterialTheme.typography.labelSmall,
+                style = AppTheme.typography.labelSmall,
                 fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = AppTheme.colorScheme.onSurfaceVariant
             )
             Spacer(modifier = Modifier.width(8.dp))
             Surface(
                 shape = RoundedCornerShape(8.dp),
                 color = when (log.level) {
-                    PlaybackLogLevel.ERROR -> MaterialTheme.colorScheme.errorContainer
+                    PlaybackLogLevel.ERROR -> AppTheme.colorScheme.errorContainer
                     PlaybackLogLevel.WARNING -> Color(0xFFFFF3CD)
-                    PlaybackLogLevel.BOT -> MaterialTheme.colorScheme.secondaryContainer
-                    PlaybackLogLevel.INFO -> MaterialTheme.colorScheme.primaryContainer
-                    PlaybackLogLevel.DEBUG -> MaterialTheme.colorScheme.surfaceVariant
+                    PlaybackLogLevel.BOT -> AppTheme.colorScheme.secondaryContainer
+                    PlaybackLogLevel.INFO -> AppTheme.colorScheme.primaryContainer
+                    PlaybackLogLevel.DEBUG -> AppTheme.colorScheme.surfaceVariant
                 }
             ) {
                 Text(
                     text = log.level.name,
-                    style = MaterialTheme.typography.labelSmall,
+                    style = AppTheme.typography.labelSmall,
                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
                     color = when (log.level) {
-                        PlaybackLogLevel.ERROR -> MaterialTheme.colorScheme.onErrorContainer
+                        PlaybackLogLevel.ERROR -> AppTheme.colorScheme.onErrorContainer
                         PlaybackLogLevel.WARNING -> Color(0xFF856404)
-                        PlaybackLogLevel.BOT -> MaterialTheme.colorScheme.onSecondaryContainer
-                        PlaybackLogLevel.INFO -> MaterialTheme.colorScheme.onPrimaryContainer
-                        PlaybackLogLevel.DEBUG -> MaterialTheme.colorScheme.onSurfaceVariant
+                        PlaybackLogLevel.BOT -> AppTheme.colorScheme.onSecondaryContainer
+                        PlaybackLogLevel.INFO -> AppTheme.colorScheme.onPrimaryContainer
+                        PlaybackLogLevel.DEBUG -> AppTheme.colorScheme.onSurfaceVariant
                     }
                 )
             }
@@ -172,16 +172,16 @@ private fun PlaybackLogEntryItem(log: PlaybackLogEntry) {
 
         Text(
             text = log.message,
-            style = MaterialTheme.typography.bodySmall,
+            style = AppTheme.typography.bodySmall,
             fontFamily = FontFamily.Monospace,
             fontWeight = if (log.level == PlaybackLogLevel.BOT) androidx.compose.ui.text.font.FontWeight.Bold else null
         )
         log.details?.let { details ->
             Text(
                 text = details,
-                style = MaterialTheme.typography.bodySmall,
+                style = AppTheme.typography.bodySmall,
                 fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = AppTheme.colorScheme.onSurfaceVariant,
                 maxLines = 3,
                 overflow = TextOverflow.Ellipsis
             )

@@ -26,16 +26,15 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
+import com.convx.music.ui.ios.compat.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.Text
+import com.convx.music.ui.ios.compat.TextButton
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -58,7 +57,9 @@ import com.convx.music.LocalPlayerAwareWindowInsets
 import com.convx.music.R
 import com.convx.music.constants.AppIconKey
 import com.convx.music.ui.component.IconButton
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import com.convx.music.ui.component.rememberTitleCollapseProgressState
+import com.convx.music.ui.component.topBarContentPadding
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import com.convx.music.ui.utils.backToMain
 import com.convx.music.utils.AppIcon
 import com.convx.music.utils.rememberPreference
@@ -104,34 +105,32 @@ fun AppIconScreen(
         )
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                windowInsets = appTopBarWindowInsets(),
-                title = { Text(stringResource(R.string.app_icon)) },
-                navigationIcon = {
-                    IconButton(
-                        onClick = navController::navigateUp,
-                        onLongClick = navController::backToMain,
-                    ) {
-                        Icon(painterResource(R.drawable.arrow_back), contentDescription = null)
-                    }
-                },
-                scrollBehavior = scrollBehavior,
-            )
-        },
-    ) { padding ->
+    val gridState = rememberLazyGridState()
+    val appIconTitleProgress = rememberTitleCollapseProgressState(gridState)
+
+    SettingsScaffold(
+        navController = navController,
+        title = stringResource(R.string.app_icon),
+        titleAlpha = 0f,
+        titleAlphaProvider = { appIconTitleProgress.value },
+        pageColor = AppTheme.colorScheme.background,
+    ) { chrome ->
         LazyVerticalGrid(
+            state = gridState,
             columns = GridCells.Adaptive(96.dp),
-            modifier = Modifier
-                .padding(padding)
+            modifier = chrome.contentModifier()
                 .windowInsetsPadding(
-                    LocalPlayerAwareWindowInsets.current.only(
-                        WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom,
-                    ),
+                    LocalPlayerAwareWindowInsets.current.only(WindowInsetsSides.Horizontal)
                 )
                 .fillMaxSize(),
-            contentPadding = PaddingValues(16.dp),
+            // Top padding, not a top inset on the grid itself: the tiles have to
+            // travel under the bar for the blur to have anything to frost.
+            contentPadding = PaddingValues(
+                start = 16.dp,
+                end = 16.dp,
+                top = topBarContentPadding(),
+                bottom = 16.dp,
+            ),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
@@ -154,7 +153,7 @@ private fun AppIconTile(
 ) {
     val borderWidth by animateDpAsState(if (selected) 3.dp else 0.dp, label = "appIconBorder")
     val borderColor by animateColorAsState(
-        if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+        if (selected) AppTheme.colorScheme.primary else Color.Transparent,
         label = "appIconBorderColor",
     )
     Column(
@@ -182,7 +181,7 @@ private fun AppIconTile(
         }
         Text(
             text = stringResource(icon.labelRes),
-            style = MaterialTheme.typography.labelMedium,
+            style = AppTheme.typography.labelMedium,
             textAlign = TextAlign.Center,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,

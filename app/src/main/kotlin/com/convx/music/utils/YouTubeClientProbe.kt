@@ -13,22 +13,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import kotlin.system.measureTimeMillis
 
-/**
- * Asks every InnerTube client, one at a time, whether it can still produce a playable
- * stream — and says which ones did.
- *
- * Which clients YouTube honours is a moving target: they are fingerprints, and YouTube
- * silently starts rejecting them. When playback breaks for a lot of people at once the
- * question is never "is our fallback chain correct" (it is) but "which of these eleven
- * still work today", and that cannot be answered by reading source. It needs a real
- * request against a real videoId from a real device on a real network — which is also why
- * this lives in the app rather than in a unit test: the answer depends on the user's IP,
- * their login state and their region, and it differs between them.
- *
- * Diagnostic only. Nothing calls this during playback; it is driven from the debug screen
- * so a user reporting "nothing plays" can produce a result worth acting on instead of a
- * guess.
- */
+/** Diagnostic tool that checks which InnerTube clients can play a real video on this device and network. */
 object YouTubeClientProbe {
 
     /** How each client fared. */
@@ -67,11 +52,7 @@ object YouTubeClientProbe {
         SKIPPED("-- "),
     }
 
-    /**
-     * Probe [clients] against [videoId] in order. Sequential on purpose: eleven parallel
-     * player requests from one IP is itself a bot-detection signal, and a probe that
-     * changes the thing it measures is worthless.
-     */
+    /** Probes clients sequentially to avoid triggering bot detection with parallel requests. */
     suspend fun run(
         videoId: String,
         clients: List<YouTubeClient>,

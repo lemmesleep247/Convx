@@ -20,8 +20,13 @@ import com.convx.music.utils.get
 import com.convx.music.utils.reportException
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 @HiltViewModel
@@ -31,10 +36,13 @@ constructor(
     @ApplicationContext val context: Context,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
-    private val browseId = savedStateHandle.get<String>("browseId")!!
+    private val browseId = requireNotNull(savedStateHandle.get<String>("browseId")) { "Missing browseId" }
     private val params = savedStateHandle.get<String>("params")
 
     val result = MutableStateFlow<BrowseResult?>(null)
+    val isLoading = MutableStateFlow(true)
+    val hasError = MutableStateFlow(false)
+    private var loadJob: Job? = null
 
     init {
         refresh()
@@ -42,20 +50,39 @@ constructor(
 
     /** Re-fetches this browse page. Bound to the pull-to-refresh gesture. */
     fun refresh() {
-        viewModelScope.launch {
-            val hideExplicit = context.dataStore.get(HideExplicitKey, false)
-            val hideVideoSongs = context.dataStore.get(HideVideoSongsKey, false) || context.dataStore.get(DataSaverEnabledKey, false)
-            val hideYoutubeShorts = context.dataStore.get(HideYoutubeShortsKey, false)
-            YouTube
-                .browse(browseId, params)
-                .onSuccess {
+        loadJob?.cancel()
+        val job = viewModelScope.launch {
+            isLoading.value = true
+            hasError.value = false
+            try {
+                val page = withContext(Dispatchers.IO) {
+                    val hideExplicit = context.dataStore.get(HideExplicitKey, false)
+                    val hideVideoSongs = context.dataStore.get(HideVideoSongsKey, false) || context.dataStore.get(DataSaverEnabledKey, false)
+                    val hideYoutubeShorts = context.dataStore.get(HideYoutubeShortsKey, false)
+                    Triple(
+                        YouTube.browse(browseId, params),
+                        hideExplicit,
+                        hideVideoSongs to hideYoutubeShorts,
+                    )
+                }
+                page.first.onSuccess {
                     result.value = it
-                        .filterExplicit(hideExplicit)
-                        .filterVideoSongs(hideVideoSongs)
-                        .filterYoutubeShorts(hideYoutubeShorts)
+                        .filterExplicit(page.second)
+                        .filterVideoSongs(page.third.first)
+                        .filterYoutubeShorts(page.third.second)
                 }.onFailure {
+                    hasError.value = true
                     reportException(it)
                 }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                hasError.value = true
+                reportException(error)
+            } finally {
+                if (loadJob === currentCoroutineContext()[Job]) isLoading.value = false
+            }
         }
+        loadJob = job
     }
 }

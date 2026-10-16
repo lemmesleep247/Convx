@@ -12,16 +12,17 @@ import androidx.compose.foundation.Indication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.graphics.graphicsLayer
+import com.convx.music.ui.utils.Motion
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.IconButtonColors
-import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.LocalContentColor
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.minimumInteractiveComponentSize
-import androidx.compose.material3.ripple
+import com.convx.music.ui.ios.compat.LocalContentColor
+import com.convx.music.ui.ios.foundation.IosTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
@@ -32,6 +33,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.convx.music.ui.player.customize.PlayerIconSlot
@@ -44,22 +47,36 @@ import com.convx.music.ui.player.customize.rememberPlayerIcon
 @Composable
 fun ResizableIconButton(
     @DrawableRes icon: Int,
+    iconVector: ImageVector? = null,
     modifier: Modifier = Modifier,
-    color: Color = MaterialTheme.colorScheme.onSurface,
+    color: Color = IosTheme.colors.label,
     enabled: Boolean = true,
     indication: Indication? = null,
     slot: PlayerIconSlot? = null,
     onClick: () -> Unit = {},
 ) {
     val custom = if (slot != null) rememberPlayerIcon(slot) else null
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed && enabled) 0.97f else 1f,
+        animationSpec = Motion.press(),
+        label = "ResizableIconPress",
+    )
     Image(
-        painter = custom?.painter ?: painterResource(icon),
+        painter = if (custom != null) custom.painter else {
+            if (iconVector != null) rememberVectorPainter(iconVector) else painterResource(icon)
+        },
         contentDescription = null,
         colorFilter = if (custom == null) ColorFilter.tint(color) else custom.colorFilterFor(color),
         modifier = modifier
+            .graphicsLayer {
+                scaleX = pressScale
+                scaleY = pressScale
+            }
             .clickable(
-                indication = indication ?: ripple(bounded = false),
-                interactionSource = remember { MutableInteractionSource() },
+                indication = indication,
+                interactionSource = interactionSource,
                 enabled = enabled,
                 onClick = onClick,
             )
@@ -74,30 +91,36 @@ fun IconButton(
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    colors: IconButtonColors = IconButtonDefaults.iconButtonColors(),
+    containerColor: Color = Color.Transparent,
+    contentColor: Color = IosTheme.tint,
     interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
     content: @Composable () -> Unit,
 ) {
+    val pressed by interactionSource.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed && enabled) 0.97f else 1f,
+        animationSpec = Motion.press(),
+        label = "IconButtonPress",
+    )
     Box(
         modifier = modifier
-            .minimumInteractiveComponentSize()
-            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+            .graphicsLayer {
+                scaleX = pressScale
+                scaleY = pressScale
+            }
+            .sizeIn(minWidth = 44.dp, minHeight = 44.dp)
             .clip(CircleShape)
-            .background(color = colors.containerColor)
+            .background(color = containerColor)
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onLongClick,
                 enabled = enabled,
                 role = Role.Button,
                 interactionSource = interactionSource,
-                indication = ripple(
-                    bounded = false,
-                    radius = 24.dp
-                ),
+                indication = null,
             ),
         contentAlignment = Alignment.Center,
     ) {
-        val contentColor = colors.contentColor
         CompositionLocalProvider(LocalContentColor provides contentColor, content = content)
     }
 }

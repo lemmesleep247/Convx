@@ -31,9 +31,14 @@ data class MediaMetadata(
     val libraryAddToken: String? = null,
     val libraryRemoveToken: String? = null,
     val suggestedBy: String? = null,
+    val isPodcastEpisode: Boolean = false,
 ) : Serializable {
     val isVideoSong: Boolean
         get() = musicVideoType != null && musicVideoType != MUSIC_VIDEO_TYPE_ATV
+
+    /** A file on the device: its id is a content URI, not a YouTube video id. */
+    val isLocalFile: Boolean
+        get() = id.startsWith("content://") || id.startsWith("file://") || id.startsWith("/storage/")
 
     data class Artist(
         val id: String?,
@@ -59,7 +64,8 @@ data class MediaMetadata(
             inLibrary = inLibrary,
             libraryAddToken = libraryAddToken,
             libraryRemoveToken = libraryRemoveToken,
-            isVideo = isVideoSong
+            isVideo = isVideoSong,
+            isPodcastEpisode = isPodcastEpisode,
         )
 }
 
@@ -91,6 +97,7 @@ fun Song.toMediaMetadata() =
         explicit = song.explicit,
         // Use a non-ATV type if isVideo is true to indicate it's a video song
         musicVideoType = if (song.isVideo) "MUSIC_VIDEO_TYPE_OMV" else null,
+        isPodcastEpisode = song.isPodcastEpisode,
         suggestedBy = null,
     )
 
@@ -119,5 +126,6 @@ fun SongItem.toMediaMetadata() =
         musicVideoType = musicVideoType,
         libraryAddToken = libraryAddToken,
         libraryRemoveToken = libraryRemoveToken,
+        isPodcastEpisode = isPodcastEpisode,
         suggestedBy = null
     )

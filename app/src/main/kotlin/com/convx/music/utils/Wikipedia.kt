@@ -64,7 +64,6 @@ object Wikipedia {
      * @return The extract/summary text if found, or null.
      */
     suspend fun fetchAlbumInfo(albumTitle: String, artistName: String?): String? {
-        // Precise queries: explicitly include artist name in the search term
         if (artistName != null) {
             val preciseQueries = listOf(
                 "$albumTitle ($artistName album)",
@@ -78,7 +77,6 @@ object Wikipedia {
             }
         }
 
-        // Generic queries: rely on validation of the returned content
         val genericQueries = listOf(
             "$albumTitle (album)",
             albumTitle
@@ -87,13 +85,7 @@ object Wikipedia {
         for (query in genericQueries) {
             val summary = fetchPageSummary(query)
             if (summary != null && !summary.contains("may refer to", ignoreCase = true)) {
-                // If we know the artist, ensure the summary actually mentions them.
-                // This prevents "Greatest Hits" returning the wrong album.
-                if (artistName != null) {
-                    if (summary.contains(artistName, ignoreCase = true)) {
-                        return summary
-                    }
-                } else {
+                if (artistName == null || summary.contains(artistName, ignoreCase = true)) {
                     return summary
                 }
             }

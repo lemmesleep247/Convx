@@ -5,8 +5,7 @@
 
 package com.convx.music.utils
 
-/** Delimiter for LocalExcludedFoldersKey — a filesystem path can never contain a
- *  newline, unlike '/' or ','. */
+/** Newline-separated preference format; paths containing newlines cannot round-trip. */
 private const val DELIMITER = "\n"
 
 fun encodeExcludedFolders(paths: Set<String>): String = paths.joinToString(DELIMITER)

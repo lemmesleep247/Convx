@@ -19,20 +19,7 @@ import com.convx.music.constants.SwipeToSongKey
 import com.convx.music.utils.rememberEnumPreference
 import com.convx.music.utils.rememberPreference
 
-/**
- * The handful of preferences that every list row and grid tile reads.
- *
- * These used to be read with [rememberPreference] inside the item composables
- * themselves. That is once per item, and `remember` does not help in a lazy list
- * because an item scrolling into view IS a first composition — so each arriving
- * row paid a `runBlocking` DataStore read on the main thread for its seed value,
- * plus a fresh Flow collector for updates. On a dense list that is the scroll
- * budget spent on settings that change maybe twice a year.
- *
- * Read once at the app root instead and passed down. [staticCompositionLocalOf]
- * on purpose: reads cost nothing, and a change invalidating the subtree is the
- * right trade for values that change this rarely.
- */
+/** Preferences shared by item rows; read once to avoid blocking DataStore reads per lazy item. */
 @Immutable
 data class ItemPrefs(
     val cropAlbumArt: Boolean = false,
@@ -65,15 +52,5 @@ fun rememberItemPrefs(): ItemPrefs {
     }
 }
 
-/**
- * Every song's download state, collected once instead of once per row.
- *
- * The download badge used to call `downloadUtil.getDownload(id)`, which builds a
- * fresh `downloads.map { it[id] }` cold Flow, and collect it per row. In a lazy
- * list that is a coroutine per visible row, torn down and started again on every
- * recycle, for a value that changes only while something is actually downloading.
- *
- * [androidx.compose.runtime.compositionLocalOf] rather than static: rows must
- * recompose when a download completes, which is the whole point of the badge.
- */
+/** Download state shared by rows; this dynamic local updates the badge when downloads change. */
 val LocalDownloads = androidx.compose.runtime.compositionLocalOf<Map<String, androidx.media3.exoplayer.offline.Download>> { emptyMap() }

@@ -13,10 +13,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import timber.log.Timber
 
-/**
- * Manages Google Cast integration for the music player.
- * Handles switching between local ExoPlayer and remote CastPlayer.
- */
+/** Switches playback between ExoPlayer and CastPlayer and tracks Cast session state. */
 class CastManager(
     private val context: Context
 ) : SessionAvailabilityListener, CastStateListener {
@@ -33,22 +30,20 @@ class CastManager(
     private var onCastSessionStarted: ((CastPlayer) -> Unit)? = null
     private var onCastSessionEnded: (() -> Unit)? = null
 
-    /**
-     * Initialize the Cast context. Should be called when the activity is created.
-     * This is safe to call even if Google Play Services is not available.
-     */
+    /** Initializes Cast for the activity when Google Play Services are available. */
     @Suppress("DEPRECATION")
     fun initialize() {
         try {
-            castContext = CastContext.getSharedInstance(context)
-            castContext?.addCastStateListener(this)
+            val initializedContext = CastContext.getSharedInstance(context)
+            castContext = initializedContext
+            initializedContext.addCastStateListener(this)
             
             // Using deprecated constructor and setSessionAvailabilityListener as the new
             // CastPlayer.Builder API requires a local player which we don't use in this architecture
-            castPlayer = CastPlayer(castContext!!)
+            castPlayer = CastPlayer(initializedContext)
             castPlayer?.setSessionAvailabilityListener(this)
             
-            _castState.value = castContext?.castState ?: CastState.NO_DEVICES_AVAILABLE
+            _castState.value = initializedContext.castState
             
             Timber.d("CastManager initialized successfully")
         } catch (e: Exception) {
@@ -58,9 +53,7 @@ class CastManager(
         }
     }
 
-    /**
-     * Set callbacks for cast session events.
-     */
+    /** Registers callbacks for Cast session start and end. */
     fun setSessionCallbacks(
         onStarted: (CastPlayer) -> Unit,
         onEnded: () -> Unit
@@ -69,30 +62,16 @@ class CastManager(
         onCastSessionEnded = onEnded
     }
 
-    /**
-     * Get the CastPlayer instance if available.
-     */
     fun getCastPlayer(): CastPlayer? = castPlayer
 
-    /**
-     * Check if casting is currently active.
-     */
     @Suppress("DEPRECATION")
     fun isCastSessionAvailable(): Boolean = castPlayer?.isCastSessionAvailable == true
 
-    /**
-     * Get the current playback position from the cast player.
-     */
+    /** Returns `0` when there is no active Cast player. */
     fun getCurrentPosition(): Long = castPlayer?.currentPosition ?: 0
 
-    /**
-     * Get whether the cast player is currently playing.
-     */
     fun isPlaying(): Boolean = castPlayer?.isPlaying == true
 
-    /**
-     * Load media items into the cast player.
-     */
     fun loadMediaItems(
         mediaItems: List<MediaItem>,
         startIndex: Int = 0,
@@ -105,16 +84,10 @@ class CastManager(
         }
     }
 
-    /**
-     * Add a listener to the cast player.
-     */
     fun addListener(listener: Player.Listener) {
         castPlayer?.addListener(listener)
     }
 
-    /**
-     * Remove a listener from the cast player.
-     */
     fun removeListener(listener: Player.Listener) {
         castPlayer?.removeListener(listener)
     }
@@ -151,9 +124,6 @@ class CastManager(
     }
 
     companion object {
-        /**
-         * Check if Cast is available on this device.
-         */
         fun isCastAvailable(context: Context): Boolean {
             return try {
                 CastContext.getSharedInstance(context)

@@ -17,7 +17,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.Icon
+import com.convx.music.ui.ios.compat.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -74,15 +74,8 @@ fun PlayingIndicator(
                 Modifier
                     .fillMaxHeight()
                     .width(barWidth)
-                    // Own RenderNode per bar. Without it these Canvases draw
-                    // straight into whatever display list encloses them — and on
-                    // every list screen that is the NavHost subtree carrying
-                    // Modifier.layerBackdrop. A bar tick then re-recorded the
-                    // WHOLE screen (measured: ~235 FillRectOps + 4 liquid-glass
-                    // runtime shaders, 113ms) 16×/s for as long as a song played,
-                    // even with the app otherwise idle. With a layer of its own
-                    // the parent's recording replays this node by reference and
-                    // only the 4dp bar re-records. Purely structural — same pixels.
+                    // Isolate each animated bar so its frames don't re-record the
+                    // parent screen and backdrop. This changes recording scope only.
                     .graphicsLayer(),
             ) {
                 drawRoundRect(
@@ -102,8 +95,7 @@ fun PlayingIndicatorBox(
     isActive: Boolean,
     playWhenReady: Boolean,
     color: Color = Color.White,
-    // Speed Dial doesn't want the static paused-play glyph on its active tile —
-    // just the animated bars while actually playing.
+    // Speed Dial shows animated bars while playing and no glyph while paused.
     showPausedIcon: Boolean = true,
 ) {
     AnimatedVisibility(
@@ -121,11 +113,7 @@ fun PlayingIndicatorBox(
                     modifier = Modifier.height(24.dp),
                 )
             } else {
-                Icon(
-                    painter = painterResource(R.drawable.play),
-                    contentDescription = null,
-                    tint = color,
-                )
+                SymbolIcon(symbol = sf("play.fill"), contentDescription = null, tint = color)
             }
         }
     }

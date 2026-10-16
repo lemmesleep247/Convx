@@ -27,10 +27,18 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.ui.window.Dialog
+import com.convx.music.ui.component.shapes.ContinuousCapsule
+import com.convx.music.ui.component.shapes.ContinuousRoundedRectangle
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.IosTextField
+import com.convx.music.ui.ios.compat.SegmentedButton
+import com.convx.music.ui.ios.compat.SingleChoiceSegmentedButtonRow
+import com.convx.music.ui.ios.component.IosSlider
+import com.convx.music.ui.ios.component.IosText
+import com.convx.music.ui.ios.foundation.IosTheme
+import com.convx.music.ui.ios.compat.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -114,28 +122,38 @@ object ColorPickerConversions {
     }
 }
 
-private val presetColors = listOf(
-    Color.White,
-    Color(0xFFE0E0E0),
-    Color(0xFF9E9E9E),
-    Color.Black,
-    Color(0xFFEF5350),
-    Color(0xFFFFB74D),
-    Color(0xFFFFF176),
-    Color(0xFF81C784),
-    Color(0xFF4FC3F7),
-    Color(0xFF7986CB),
-    Color(0xFFBA68C8),
-    Color(0xFFF06292),
-)
+/**
+ * The swatch grid iOS shows on its Colours tab: hue across, lightness down, with a
+ * neutral row on top. Generated rather than written out — 72 hard-coded hex literals
+ * would say nothing that these two loops do not.
+ */
+private const val GridColumns = 12
+
+private val gridColors: List<Color> = buildList {
+    // iOS puts the neutrals first: white through black across the top row.
+    repeat(GridColumns) { i ->
+        val level = 1f - i / (GridColumns - 1f)
+        add(Color(level, level, level))
+    }
+    // Then bands of the hue wheel, darkest to palest.
+    val bands = listOf(0.45f to 1f, 0.65f to 1f, 0.85f to 1f, 1f to 0.7f, 1f to 0.35f)
+    bands.forEach { (v, sat) ->
+        repeat(GridColumns) { i ->
+            add(ColorPickerConversions.hsvToColor(i * 360f / GridColumns, sat, v))
+        }
+    }
+}
+
+private enum class PickerTab(val label: String) {
+    Grid("Grid"),
+    Spectrum("Spectrum"),
+    Sliders("Sliders"),
+}
 
 /**
- * A full HSV color picker dialog with a saturation/value area, hue slider, hex input
- * and preset swatches. Calls [onConfirm] with the chosen color.
- *
- * The reset button selects [defaultColor] in the picker; when [onReset] is provided
- * it is invoked instead (for defaults that aren't a fixed color, e.g. theme-adaptive)
- * and the dialog is expected to be dismissed by the callback.
+ * iOS colour picker: segmented Grid/Spectrum/Sliders over a swatch grid, HSB area,
+ * or RGB sliders, with the chosen colour and hex below. Signature is unchanged from
+ * the Material version, so call sites are untouched.
  */
 @Composable
 fun ColorPickerDialog(
@@ -150,6 +168,7 @@ fun ColorPickerDialog(
     var hue by rememberSaveable(initialColor) { mutableStateOf(initialHsv.first) }
     var saturation by rememberSaveable(initialColor) { mutableStateOf(initialHsv.second) }
     var value by rememberSaveable(initialColor) { mutableStateOf(initialHsv.third) }
+    var tab by rememberSaveable(initialColor) { mutableStateOf(PickerTab.Grid) }
 
     val selectedColor = ColorPickerConversions.hsvToColor(hue, saturation, value)
     var hexInput by rememberSaveable(initialColor) {
@@ -166,120 +185,181 @@ fun ColorPickerDialog(
         hexError = false
     }
 
-    DefaultDialog(
-        onDismiss = onDismiss,
-        title = { Text(title) },
-        buttons = {
-            if (defaultColor != null || onReset != null) {
-                TextButton(
-                    onClick = {
-                        if (onReset != null) {
-                            onReset()
-                        } else {
-                            defaultColor?.let(::selectColor)
-                        }
-                    }
-                ) {
-                    Text(stringResource(R.string.reset))
-                }
-                Spacer(Modifier.weight(1f))
-            }
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(android.R.string.cancel))
-            }
-            TextButton(onClick = { onConfirm(selectedColor) }) {
-                Text(stringResource(android.R.string.ok))
-            }
-        },
-    ) {
+    fun syncHex() {
+        hexInput = ColorPickerConversions.colorToHex(
+            ColorPickerConversions.hsvToColor(hue, saturation, value)
+        )
+        hexError = false
+    }
+
+    val iosColors = IosTheme.colors
+
+    Dialog(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
-                .padding(horizontal = 16.dp)
-                // No scroll here overflowed in landscape/tab-view, where the
-                // dialog has much less height to work with than portrait —
-                // the lower preset swatches and OK/Cancel buttons became
-                // unreachable.
-                .verticalScroll(rememberScrollState())
+                .width(340.dp)
+                .clip(ContinuousRoundedRectangle(30.dp))
+                .background(iosColors.systemBackground)
+                .padding(20.dp)
+                .verticalScroll(rememberScrollState()),
         ) {
-            SaturationValuePanel(
-                hue = hue,
-                saturation = saturation,
-                value = value,
-                onChange = { s, v ->
-                    saturation = s
-                    value = v
-                    hexInput = ColorPickerConversions.colorToHex(
-                        ColorPickerConversions.hsvToColor(hue, s, v)
-                    )
-                    hexError = false
-                },
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IosText(
+                    text = title,
+                    style = IosTheme.typography.headline,
+                    color = iosColors.label,
+                    modifier = Modifier.weight(1f),
+                )
+                IosText(
+                    text = stringResource(android.R.string.cancel),
+                    style = IosTheme.typography.body,
+                    color = IosTheme.tint,
+                    modifier = Modifier.clickable(onClick = onDismiss),
+                )
+            }
 
             Spacer(Modifier.height(16.dp))
 
-            HueSlider(
-                hue = hue,
-                onChange = { h ->
-                    hue = h
-                    hexInput = ColorPickerConversions.colorToHex(
-                        ColorPickerConversions.hsvToColor(h, saturation, value)
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                PickerTab.entries.forEach { entry ->
+                    SegmentedButton(
+                        selected = tab == entry,
+                        onClick = { tab = entry },
+                        label = { IosText(entry.label) },
                     )
-                    hexError = false
-                },
-            )
+                }
+            }
 
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(20.dp))
+
+            when (tab) {
+                PickerTab.Grid -> ColorGrid(selectedColor) { selectColor(it) }
+
+                PickerTab.Spectrum -> {
+                    SaturationValuePanel(hue, saturation, value) { s, v ->
+                        saturation = s
+                        value = v
+                        syncHex()
+                    }
+                    Spacer(Modifier.height(16.dp))
+                    HueSlider(hue) { h ->
+                        hue = h
+                        syncHex()
+                    }
+                }
+
+                PickerTab.Sliders -> {
+                    ChannelSlider("Red", selectedColor.red, Color.Red) {
+                        selectColor(selectedColor.copy(red = it))
+                    }
+                    ChannelSlider("Green", selectedColor.green, Color.Green) {
+                        selectColor(selectedColor.copy(green = it))
+                    }
+                    ChannelSlider("Blue", selectedColor.blue, Color.Blue) {
+                        selectColor(selectedColor.copy(blue = it))
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(20.dp))
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
+                        .size(44.dp)
+                        .clip(ContinuousCapsule())
                         .background(selectedColor)
-                        .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
+                        .border(1.dp, iosColors.separator, ContinuousCapsule())
                 )
-
                 Spacer(Modifier.width(12.dp))
-
-                OutlinedTextField(
+                IosTextField(
                     value = hexInput,
                     onValueChange = { input ->
                         hexInput = input.take(7)
                         val parsed = ColorPickerConversions.parseHexColor(input)
                         hexError = parsed == null
                         if (parsed != null) {
-                            val (h, s, v) = ColorPickerConversions.colorToHsv(parsed)
+                            val (h, sat, v) = ColorPickerConversions.colorToHsv(parsed)
                             hue = h
-                            saturation = s
+                            saturation = sat
                             value = v
                         }
                     },
-                    prefix = { Text("#") },
-                    isError = hexError,
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
-                    label = { Text(stringResource(R.string.color_picker_hex)) },
+                    placeholder = stringResource(R.string.color_picker_hex),
                     modifier = Modifier.weight(1f),
                 )
             }
 
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(20.dp))
 
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                presetColors.take(6).forEach { preset ->
-                    PresetSwatch(preset, selectedColor) { selectColor(preset) }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (defaultColor != null || onReset != null) {
+                    PickerAction(
+                        label = stringResource(R.string.reset),
+                        prominent = false,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        if (onReset != null) onReset() else defaultColor?.let { selectColor(it) }
+                    }
                 }
+                PickerAction(
+                    label = stringResource(android.R.string.ok),
+                    prominent = true,
+                    modifier = Modifier.weight(1f),
+                ) { onConfirm(selectedColor) }
             }
-            Spacer(Modifier.height(8.dp))
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                presetColors.drop(6).forEach { preset ->
-                    PresetSwatch(preset, selectedColor) { selectColor(preset) }
+        }
+    }
+}
+
+@Composable
+private fun PickerAction(
+    label: String,
+    prominent: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val iosColors = IosTheme.colors
+    Box(
+        modifier = modifier
+            .clip(ContinuousCapsule())
+            .background(if (prominent) IosTheme.tint else iosColors.secondarySystemFill)
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        IosText(
+            text = label,
+            style = IosTheme.typography.headline,
+            color = if (prominent) iosColors.onAccent else iosColors.label,
+        )
+    }
+}
+
+@Composable
+private fun ColorGrid(selectedColor: Color, onPick: (Color) -> Unit) {
+    val selectedArgb = selectedColor.toArgb()
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        gridColors.chunked(GridColumns).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                row.forEach { swatch ->
+                    val isSelected = swatch.toArgb() == selectedArgb
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .aspectRatio(1f)
+                            .clip(CircleShape)
+                            .background(swatch)
+                            // iOS rings the chosen swatch; it does not check it.
+                            .then(
+                                if (isSelected) {
+                                    Modifier.border(2.dp, IosTheme.colors.label, CircleShape)
+                                } else {
+                                    Modifier
+                                }
+                            )
+                            .clickable { onPick(swatch) }
+                    )
                 }
             }
         }
@@ -287,28 +367,28 @@ fun ColorPickerDialog(
 }
 
 @Composable
-private fun PresetSwatch(
-    color: Color,
-    selectedColor: Color,
-    onClick: () -> Unit,
+private fun ChannelSlider(
+    label: String,
+    channel: Float,
+    accent: Color,
+    onChange: (Float) -> Unit,
 ) {
-    val isSelected = color.toArgb() == selectedColor.toArgb()
-    Box(
-        modifier = Modifier
-            .size(32.dp)
-            .clip(CircleShape)
-            .background(color)
-            .border(
-                width = if (isSelected) 2.dp else 1.dp,
-                color = if (isSelected) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
-                },
-                shape = CircleShape,
+    Column(Modifier.padding(bottom = 12.dp)) {
+        Row {
+            IosText(
+                text = label,
+                style = IosTheme.typography.footnote,
+                color = IosTheme.colors.secondaryLabel,
+                modifier = Modifier.weight(1f),
             )
-            .clickable(onClick = onClick)
-    )
+            IosText(
+                text = (channel * 255f).toInt().toString(),
+                style = IosTheme.typography.footnote,
+                color = IosTheme.colors.secondaryLabel,
+            )
+        }
+        IosSlider(value = channel, onValueChange = onChange, tint = accent)
+    }
 }
 
 @Composable

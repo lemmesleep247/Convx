@@ -7,10 +7,7 @@ if (localPropertiesFile.exists()) {
     localProperties.load(localPropertiesFile.inputStream())
 }
 
-// Single source of truth for the app version — see version.properties and the
-// bumpVersion task at the bottom of this file. versionCode is DERIVED, not hand-set,
-// so it can never drift from versionName the way it did before (versionCode 5 sat
-// next to versionName "1.5.1" with no relationship between them at all).
+// Derive versionCode from version.properties so it stays in sync with versionName.
 val versionProps = Properties().apply {
     load(rootProject.file("version.properties").inputStream())
 }
@@ -52,7 +49,6 @@ android {
         buildConfigField("String", "LASTFM_API_KEY", "\"$lastFmKey\"")
         buildConfigField("String", "LASTFM_SECRET", "\"$lastFmSecret\"")
 
-//add nightly build label support
         val isNightly = project.hasProperty("nightly") && project.property("nightly") == "true"
         buildConfigField("Boolean", "IS_NIGHTLY", isNightly.toString())
         // CI stamps the workflow run number so a nightly build knows which one it is.
@@ -80,21 +76,16 @@ android {
         create("universal") {
             dimension = "abi"
             buildConfigField("String", "ARCHITECTURE", "\"universal\"")
+            // 64-bit only: MMKV (native KV store) ships no 32-bit binaries, so a
+            // 32-bit slice would crash at load time. armeabi/x86 flavors removed.
+            ndk {
+                abiFilters.addAll(listOf("arm64-v8a", "x86_64"))
+            }
         }
         create("arm64") {
             dimension = "abi"
             buildConfigField("String", "ARCHITECTURE", "\"arm64\"")
             ndk { abiFilters.add("arm64-v8a") }
-        }
-        create("armeabi") {
-            dimension = "abi"
-            buildConfigField("String", "ARCHITECTURE", "\"armeabi\"")
-            ndk { abiFilters.add("armeabi-v7a") }
-        }
-        create("x86") {
-            dimension = "abi"
-            buildConfigField("String", "ARCHITECTURE", "\"x86\"")
-            ndk { abiFilters.add("x86") }
         }
         create("x86_64") {
             dimension = "abi"
@@ -159,6 +150,13 @@ android {
         targetCompatibility = JavaVersion.VERSION_21
     }
 
+    // JVM unit tests touch framework stubs (ColorUtils in tint math). Return
+    // defaults instead of throwing — Robolectric would be heavier than these
+    // token tests warrant.
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
+
     kotlin {
         jvmToolchain(21)
         compilerOptions {
@@ -186,6 +184,13 @@ android {
 
     androidResources {
         generateLocaleConfig = true
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/analyzer/CMakeLists.txt")
+            version = "3.22.1"
+        }
     }
 
     packaging {
@@ -255,6 +260,7 @@ dependencies {
     implementation(libs.activity)
     implementation(libs.hilt.navigation)
     implementation(libs.datastore)
+    implementation(libs.mmkv)
     implementation(libs.webkit)
 
     implementation(libs.compose.runtime)
@@ -287,11 +293,24 @@ dependencies {
 
     implementation(libs.shimmer)
 
+    implementation(libs.haze)
+    implementation(libs.haze.materials)
+
+    // Apple-Music-style karaoke lyrics: per-syllable timing, background/accompaniment
+    // lines, and left/right alignment for duets. Same renderer the reference app uses --
+    // writing this by hand is ~1400 lines of text layout and interruptible scroll.
+    implementation(libs.accompanist.lyrics.ui)
+    implementation(libs.accompanist.lyrics.core)
+
     implementation(libs.media3)
     implementation(libs.media3.session)
     implementation(libs.media3.hls)
     implementation(libs.media3.ui)
     implementation(libs.media3.okhttp)
+    // FFmpeg audio decoder fallback for local files the platform MediaCodec can't
+    // decode (e.g. ALAC — no AOSP device ships a decoder for it). Only engages when
+    // the platform has no decoder for a format; every existing decode path is untouched.
+    implementation(libs.nextlib.media3ext)
 
     // Google Cast - only included in GMS flavor (not available in F-Droid/FOSS builds)
     "gmsImplementation"(libs.media3.cast)
@@ -300,7 +319,10 @@ dependencies {
 
     implementation(libs.room.runtime)
     implementation(libs.kuromoji.ipadic)
-    implementation(libs.tinypinyin)
+    // Vendored: JitPack serves an empty 295-byte jar for com.github.promeG:tinypinyin:2.0.3
+    // (upstream build broke), so the real jar (compiled from v2.0.3 sources) + its
+    // aho-corasick dep live in app/libs. Do not switch back to libs.tinypinyin.
+    implementation(files("libs/tinypinyin-2.0.3.jar", "libs/ahocorasick-0.3.0.jar"))
     ksp(libs.room.compiler)
     implementation(libs.room.ktx)
 
@@ -311,29 +333,22 @@ dependencies {
     ksp(libs.hilt.compiler)
 
     implementation(project(":innertube"))
-    implementation(project(":kugou"))
-    implementation(project(":lrclib"))
-    implementation(project(":kizzy"))
-    implementation(project(":lastfm"))
-    implementation(project(":betterlyrics"))
-    implementation(project(":simpmusic"))
-    implementation(project(":youlyplus"))
-    implementation(project(":canvas"))
-    implementation(project(":shazamkit"))
-    implementation(project(":artistvideo"))
-    implementation(project(":applecanvas"))
-    implementation(project(":vivimusiccanvas"))
-    implementation(project(":paxsenixlyrics"))
-    implementation(project(":musixmatchlyrics"))
-    implementation(project(":jiosaavn"))
+    implementation(project(":lyrics"))
+    implementation(project(":integrations"))
     implementation(project(":spotify"))
+    implementation(project(":artwork"))
+    implementation(project(":network-storage"))
+    implementation(project(":canvas"))
     implementation(project(":spine"))
+    implementation(project(":hig"))
 
 
     implementation(libs.ktor.client.core)
+    implementation(libs.ktor.client.cio)
     implementation(libs.ktor.client.okhttp)
     implementation(libs.ktor.client.content.negotiation)
     implementation(libs.ktor.serialization.json)
+    implementation(libs.ktor.client.encoding)
 
     // Protobuf for message serialization (lite version for Android)
     implementation(libs.protobuf.javalite)
@@ -346,6 +361,11 @@ dependencies {
     implementation(libs.androidx.material.icons.extended.v178)
     implementation(libs.work.runtime.ktx)
     implementation(libs.androidx.core.splashscreen)
+
+    implementation(libs.jetpackSfSymbols)
+
+    // Smart analysis ONNX models (Beat This + Open-Unmix vocal separator)
+    implementation(libs.onnxruntime)
 
     testImplementation(libs.junit)
 }

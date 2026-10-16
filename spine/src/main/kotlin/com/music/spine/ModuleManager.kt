@@ -1,108 +1,106 @@
 package com.music.spine
 
-import android.util.Log
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.get
+import io.ktor.client.request.header
+import io.ktor.http.HttpHeaders
 import io.ktor.client.statement.bodyAsText
-import io.ktor.http.HttpStatusCode
-import io.ktor.serialization.kotlinx.json.json
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import timber.log.Timber
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonObject
+import java.io.File
+import java.net.URI
+import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
 
+/** Hosts the searchTracks / getTrackStreamUrl contract. Reuse [shared] for playback. */
 class ModuleManager {
-
-    private val json = Json {
-        isLenient = true
-        ignoreUnknownKeys = true
-        explicitNulls = false
-    }
-
-    private val client by lazy {
-        HttpClient(OkHttp) {
-            install(ContentNegotiation) { json(json) }
-            install(HttpTimeout) {
-                requestTimeoutMillis = 15_000
-                connectTimeoutMillis = 10_000
-                socketTimeoutMillis = 15_000
-            }
-            expectSuccess = false
-        }
-    }
-
-    private val loadedModules = mutableMapOf<String, LoadedModule>()
+    private val json = Json { isLenient = true; ignoreUnknownKeys = true; explicitNulls = false }
+    private val indexes = SharedModuleCalls<List<SpineModule>>(10 * 60_000L)
+    private val loads = SharedModuleCalls<LoadedModule>(0)
+    private val searches = SharedModuleCalls<ModuleSearchResponse>(60_000L)
+    private val streams = SharedModuleCalls<ModuleStreamResponse>(30_000L)
+    private val liveStreams = SharedModuleCalls<ModuleStreamResponse>(0)
+    private val loadedModules = ConcurrentHashMap<String, LoadedModule>()
 
     data class LoadedModule(
         val module: SpineModule,
         val jsCode: String,
         val baseUrl: String,
+        val engineId: String,
+        val manifest: ModuleManifest = ModuleManifest(),
     )
 
-    suspend fun fetchIndex(sourceUrl: String): Result<List<SpineModule>> = withContext(Dispatchers.IO) {
-        Log.d(TAG, "▶ fetchIndex($sourceUrl)")
-        runCatching {
-            val resp = client.get(sourceUrl)
-            Log.d(TAG, "  HTTP ${resp.status.value}")
-            if (resp.status != HttpStatusCode.OK) {
-                val errBody = resp.bodyAsText().take(500)
-                Log.e(TAG, "  ✗ HTTP ${resp.status.value}: $errBody")
-                throw Exception("HTTP ${resp.status.value} from $sourceUrl")
+    suspend fun fetchIndex(sourceUrl: String, refresh: Boolean = false): Result<List<SpineModule>> {
+        if (refresh) indexes.remove(sourceUrl)
+        return indexes.get(sourceUrl) {
+            catching {
+                require(EclipseAddon.isAllowedUrl(sourceUrl)) { "Module index must be https" }
+                val body = download(sourceUrl)
+                // An Eclipse addon's manifest URL installs that one addon as a module.
+                if (EclipseAddon.isManifest(json, body)) return@catching listOf(EclipseAddon.toModule(json, sourceUrl, body))
+                ModuleIndex.parseModules(json, body).map { module ->
+                    fun imageUrl(value: String?): String? = value?.takeIf(String::isNotBlank)?.let {
+                        URI(sourceUrl).resolve(it).toString()
+                    }
+                    module.copy(
+                        download = URI(sourceUrl).resolve(module.download).toString(),
+                        logo = imageUrl(module.logo),
+                        icon = imageUrl(module.icon),
+                    )
+                }
             }
-            val body = resp.bodyAsText()
-            Log.d(TAG, "  Index body: ${body.length} chars")
-            Log.d(TAG, "  First 500: ${body.take(500)}")
-            val modules = ModuleIndex.parseModules(json, body)
-            Log.d(TAG, "  Parsed ${modules.size} modules")
-            for (m in modules) {
-                Log.d(TAG, "    • [${m.id}] ${m.name} v${m.version} tags=${m.tags} download=${m.download}")
-            }
-            modules
-        }.onFailure {
-            Log.e(TAG, "  ✗ fetchIndex FAILED for $sourceUrl: ${it.message}", it)
         }
     }
 
-    suspend fun loadModule(module: SpineModule, resolveBaseUrl: suspend (String) -> String = { it }): Result<LoadedModule> = withContext(Dispatchers.IO) {
-        val cached = loadedModules[module.id]
-        if (cached != null) {
-            Log.d(TAG, "▶ loadModule(${module.id}) — CACHE HIT")
-            return@withContext Result.success(cached)
+    suspend fun loadModule(
+        module: SpineModule,
+        resolveBaseUrl: suspend (String) -> String = { it },
+    ): Result<LoadedModule> = catching {
+        if (module.type == EclipseAddon.TYPE) {
+            return@catching LoadedModule(module, "", module.download, digest("eclipse|${module.download}|${module.version}"))
         }
-
-        Log.d(TAG, "▶ loadModule(${module.id}) download=${module.download}")
-        runCatching {
-            val downloadUrl = if (module.download.startsWith("http")) {
-                module.download
-            } else {
-                val base = resolveBaseUrl(module.download)
-                "$base/${module.download}"
-            }
-
-            Log.d(TAG, "  Resolved download URL: $downloadUrl")
-            val resp = client.get(downloadUrl)
-            Log.d(TAG, "  HTTP ${resp.status.value}")
-            if (resp.status != HttpStatusCode.OK) {
-                val errBody = resp.bodyAsText().take(500)
-                Log.e(TAG, "  ✗ HTTP ${resp.status.value}: $errBody")
-                throw Exception("HTTP ${resp.status.value} downloading module ${module.id}")
-            }
-            val jsCode = resp.bodyAsText()
-            val baseUrl = downloadUrl.substringBeforeLast("/")
-
-            QuickJsExecutor.loadModule(module.id, jsCode, baseUrl).getOrThrow()
-
-            val loaded = LoadedModule(module = module, jsCode = jsCode, baseUrl = baseUrl)
-            loadedModules[module.id] = loaded
-            Log.d(TAG, "  ✓ Loaded module ${module.id}: ${jsCode.length} chars, baseUrl=$baseUrl")
-            Log.d(TAG, "  First 300: ${jsCode.take(300)}")
-            loaded
-        }.onFailure {
-            Log.e(TAG, "  ✗ loadModule FAILED for ${module.id}: ${it.message}", it)
+        val downloadUrl = if (module.download.startsWith("https://")) module.download else {
+            val base = resolveBaseUrl(module.download).trimEnd('/') + "/"
+            URI(base).resolve(module.download).toString()
         }
+        require(URI(downloadUrl).scheme == "https") { "Module download must be https" }
+        val engineId = digest("$downloadUrl|${module.version}|${module.code}|${module.lastUpdated}")
+        loadedModules[engineId]?.let { loaded ->
+            val current = if (loaded.module == module) loaded else loaded.copy(module = module)
+            loadedModules[engineId] = current
+            return@catching current
+        }
+        loads.get(engineId) {
+            catching {
+                val cached = loadedModules[engineId]
+                val sourceFile = cacheDir?.resolve("$engineId.js")
+                val source = cached?.jsCode
+                    ?: readCachedSource(sourceFile)
+                    ?: download(downloadUrl)
+                val baseUrl = downloadUrl.substringBeforeLast('/')
+                val result = QuickJsExecutor.loadModule(engineId, source, baseUrl)
+                if (result.isFailure) {
+                    withContext(Dispatchers.IO) { sourceFile?.delete() }
+                    loadedModules.remove(engineId)
+                }
+                val manifest = json.decodeFromString<ModuleManifest>(result.getOrThrow())
+                val loaded = LoadedModule(module, source, baseUrl, engineId, manifest)
+                if (cached == null) writeCachedSource(sourceFile, source)
+                if (loadedModules.size >= 32 && !loadedModules.containsKey(engineId)) {
+                    loadedModules.keys.firstOrNull()?.let(loadedModules::remove)
+                }
+                loadedModules[engineId] = loaded
+                loaded
+            }
+        }.getOrThrow()
     }
 
     suspend fun searchTracks(
@@ -110,35 +108,16 @@ class ModuleManager {
         query: String,
         limit: Int = 50,
         settings: Map<String, String> = emptyMap(),
-    ): Result<ModuleSearchResponse> = withContext(Dispatchers.IO) {
-        val settingsJson = settings.entries.joinToString(",") { "\"${it.key}\":\"${it.value}\"" }
-        val contextArg = "{settings:{value:{$settingsJson}}}"
-        Log.d(TAG, "▶ searchTracks() module=${loaded.module.id} query=\"$query\" limit=$limit settings=$settings")
-        Log.d(TAG, "  contextArg: $contextArg")
-
-        runCatching {
-            val result = QuickJsExecutor.callExport(
-                moduleId = loaded.module.id,
-                functionName = "searchTracks",
-                args = listOf("\"$query\"", limit.toString(), contextArg),
-            ).getOrThrow()
-
-            Log.d(TAG, "  searchTracks result: ${result.length} chars")
-            Log.d(TAG, "  Full result: $result")
-
-            try {
-                val parsed = json.decodeFromString<ModuleSearchResponse>(result)
-                Log.d(TAG, "  ✓ Parsed ${parsed.tracks.size} tracks (total=${parsed.total})")
-                for ((i, t) in parsed.tracks.withIndex()) {
-                    Log.d(TAG, "    [$i] id=${t.id} title=\"${t.title}\" artist=\"${t.artist}\" quality=${t.audioQuality} duration=${t.duration}s")
-                }
-                parsed
-            } catch (e: Exception) {
-                Log.e(TAG, "  ✗ JSON parse FAILED for searchTracks: ${result.take(500)}", e)
-                throw e
+    ): Result<ModuleSearchResponse> {
+        val context = contextArg(settings)
+        return searches.get(keyOf(loaded.engineId, query, limit.toString(), context)) {
+            catching {
+                if (loaded.module.type == EclipseAddon.TYPE) {
+                    EclipseAddon.parseSearch(json, download(EclipseAddon.searchUrl(loaded.baseUrl, query)), limit)
+                } else json.decodeFromString<ModuleSearchResponse>(call(
+                    loaded, "searchTracks", listOf(Json.encodeToString(query), limit.toString(), context),
+                ))
             }
-        }.onFailure {
-            Log.e(TAG, "  ✗ searchTracks FAILED for module ${loaded.module.id} query='$query': ${it.message}", it)
         }
     }
 
@@ -146,55 +125,123 @@ class ModuleManager {
         loaded: LoadedModule,
         trackId: String,
         settings: Map<String, String> = emptyMap(),
-    ): Result<ModuleStreamResponse> = withContext(Dispatchers.IO) {
-        val settingsJson = settings.entries.joinToString(",") { "\"${it.key}\":\"${it.value}\"" }
-        val contextArg = "{settings:{value:{$settingsJson}}}"
-        Log.d(TAG, "▶ getStreamUrl() module=${loaded.module.id} trackId=$trackId settings=$settings")
-        Log.d(TAG, "  contextArg: $contextArg")
-
-        runCatching {
-            val result = QuickJsExecutor.callExport(
-                moduleId = loaded.module.id,
-                functionName = "getTrackStreamUrl",
-                args = listOf("\"$trackId\"", "\"\"", contextArg),
-            ).getOrThrow()
-
-            Log.d(TAG, "  getStreamUrl result: ${result.length} chars")
-            Log.d(TAG, "  Full result: $result")
-
-            try {
-                val parsed = json.decodeFromString<ModuleStreamResponse>(result)
-                Log.d(TAG, "  ✓ Parsed stream response:")
-                Log.d(TAG, "    streamUrl: ${parsed.streamUrl?.take(200)}")
-                Log.d(TAG, "    track?.id: ${parsed.track?.id}")
-                Log.d(TAG, "    track?.audioQuality: ${parsed.track?.audioQuality}")
-                Log.d(TAG, "    track?.mimeType: ${parsed.track?.mimeType}")
-                Log.d(TAG, "    track?.bitDepth: ${parsed.track?.bitDepth}")
-                Log.d(TAG, "    track?.sampleRate: ${parsed.track?.sampleRate}")
-                Log.d(TAG, "    track?.audioModes: ${parsed.track?.audioModes}")
-                parsed
-            } catch (e: Exception) {
-                Log.e(TAG, "  ✗ JSON parse FAILED for getStreamUrl: ${result.take(500)}", e)
-                throw e
+        quality: String = settings["quality"].orEmpty(),
+    ): Result<ModuleStreamResponse> {
+        val context = contextArg(settings)
+        val calls = if (loaded.manifest.noStreamCache) liveStreams else streams
+        return calls.get(keyOf(loaded.engineId, trackId, quality, context)) {
+            catching {
+                if (loaded.module.type == EclipseAddon.TYPE) {
+                    EclipseAddon.parseStream(json, trackId, download(EclipseAddon.streamUrl(loaded.baseUrl, trackId)))
+                } else json.decodeFromString<ModuleStreamResponse>(call(
+                    loaded, "getTrackStreamUrl",
+                    listOf(Json.encodeToString(trackId), Json.encodeToString(quality), context),
+                ))
             }
-        }.onFailure {
-            Log.e(TAG, "  ✗ getStreamUrl FAILED for module ${loaded.module.id} trackId=$trackId: ${it.message}", it)
+        }
+    }
+
+    private suspend fun call(loaded: LoadedModule, export: String, args: List<String>): String {
+        // Recreate the engine if its pool was evicted while the module stayed cached.
+        QuickJsExecutor.loadModule(loaded.engineId, loaded.jsCode, loaded.baseUrl).getOrThrow()
+        return QuickJsExecutor.callExport(loaded.engineId, export, args).getOrThrow()
+    }
+
+    private suspend fun readCachedSource(file: File?): String? = withContext(Dispatchers.IO) {
+        runCatching { file?.takeIf { it.isFile }?.readText() }.getOrNull()
+    }
+
+    private suspend fun writeCachedSource(file: File?, source: String) {
+        withContext(Dispatchers.IO) {
+            runCatching {
+                file?.parentFile?.mkdirs()
+                file?.writeText(source)
+                file?.parentFile?.listFiles()
+                    ?.filter { it.extension == "js" }
+                    ?.sortedByDescending { it.lastModified() }
+                    ?.drop(64)
+                    ?.forEach { it.delete() }
+            }
         }
     }
 
     fun unloadModule(moduleId: String) {
-        loadedModules.remove(moduleId)
-        QuickJsExecutor.unload(moduleId)
-        Log.d(TAG, "Unloaded module $moduleId")
+        loadedModules.entries.filter { it.value.module.id == moduleId }.forEach { (key, _) ->
+            loadedModules.remove(key)
+            loads.remove(key)
+            QuickJsExecutor.unload(key)
+        }
+        searches.clear()
+        streams.clear()
+        liveStreams.clear()
     }
 
     fun unloadAll() {
+        loadedModules.keys.forEach(QuickJsExecutor::unload)
         loadedModules.clear()
-        QuickJsExecutor.unloadAll()
-        Log.d(TAG, "Unloaded all modules")
+        indexes.clear()
+        loads.clear()
+        searches.clear()
+        streams.clear()
+        liveStreams.clear()
+    }
+
+    private suspend fun download(url: String): String = withContext(Dispatchers.IO) {
+        val response = client.get(url) { header(HttpHeaders.UserAgent, userAgent) }
+        val body = response.bodyAsText()
+        if (response.status.value !in 200..299) {
+            val reason = runCatching {
+                json.decodeFromString(kotlinx.serialization.json.JsonObject.serializer(), body)["error"]
+                    ?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
+            }.getOrNull()
+            error(reason ?: "Module request failed: HTTP ${response.status.value}")
+        }
+        body
+    }
+
+    private suspend fun <T> catching(block: suspend () -> T): Result<T> = try {
+        Result.success(block())
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Result.failure(e)
     }
 
     companion object {
-        private const val TAG = "SpineDebug"
+        val shared by lazy { ModuleManager() }
+        @Volatile var cacheDir: File? = null
+        /** Eclipse addons require `Convx/<app-version>`, supplied by the app at startup. */
+        @Volatile var userAgent: String = "Convx"
+        private val client by lazy {
+            HttpClient(OkHttp) {
+                install(HttpTimeout) {
+                    requestTimeoutMillis = 15_000
+                    connectTimeoutMillis = 10_000
+                    socketTimeoutMillis = 15_000
+                }
+                expectSuccess = false
+            }
+        }
+
+        internal fun contextArg(settings: Map<String, String>): String = buildJsonObject {
+            putJsonObject("settings") {
+                settings.toSortedMap().forEach { (key, value) ->
+                    putJsonObject(key) { put("value", value) }
+                }
+            }
+        }.toString()
+
+        private fun keyOf(vararg parts: String) = parts.joinToString("|") { "${it.length}:$it" }
+        private fun digest(value: String): String {
+            val bytes = MessageDigest.getInstance("SHA-256").digest(value.toByteArray())
+            val digits = "0123456789abcdef"
+            return buildString(bytes.size * 2) {
+                for (byte in bytes) {
+                    val value = byte.toInt() and 0xff
+                    append(digits[value ushr 4])
+                    append(digits[value and 0x0f])
+                }
+            }
+        }
     }
 }

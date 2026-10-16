@@ -5,6 +5,8 @@
 
 package com.convx.music.ui.screens.ambient
 
+import com.convx.music.ui.component.sf
+import com.convx.music.ui.component.SymbolIcon
 import android.app.Activity
 import android.content.pm.ActivityInfo
 import android.media.AudioManager
@@ -20,8 +22,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.IconButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
@@ -46,12 +48,13 @@ import com.convx.music.LocalPlayerConnection
 import com.convx.music.R
 import com.convx.music.ui.player.InlineLyricsView
 import kotlin.math.abs
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @Composable
 fun AmbientModeScreen(navController: NavController) {
     val context = LocalContext.current
     val playerConnection = LocalPlayerConnection.current ?: return
-    val mediaMetadata by playerConnection.mediaMetadata.collectAsState()
+    val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
 
     DisposableEffect(Unit) {
         val activity = context as? Activity
@@ -181,11 +184,7 @@ fun AmbientModeScreen(navController: NavController) {
                 .safeDrawingPadding()
                 .padding(16.dp)
         ) {
-            Icon(
-                painter = painterResource(R.drawable.arrow_back),
-                contentDescription = "Back",
-                tint = Color.White
-            )
+            SymbolIcon(symbol = sf("arrow.left"), contentDescription = "Back", tint = Color.White)
         }
     }
 }

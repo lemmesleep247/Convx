@@ -11,23 +11,24 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import com.convx.music.constants.AppBarHeight
 
 /**
- * How far a hero-header list has scrolled past its art, 0..1 — feeds
- * [ChromeScrim]'s intensity. Shared by Artist/Album/Playlist screens so the
- * floating back/share button row stays legible over regular content, not
- * just the hero art it starts over.
+ * Hero-header scroll progress 0..1 feeding [ChromeScrim] intensity. Shared by
+ * Artist/Album/Playlist screens so back/share buttons stay legible over content.
+ * Returns a [State] so callers hand the holder through; the value is read only
+ * in the draw phase (F1: no per-frame composition read while scrolling).
  */
 @Composable
-fun rememberChromeScrimProgress(lazyListState: LazyListState, thresholdPx: Float = 300f): Float {
-    val progress by remember {
+fun rememberChromeScrimProgress(lazyListState: LazyListState, thresholdPx: Float = 300f): State<Float> {
+    return remember {
         derivedStateOf {
             val scrolledPx = if (lazyListState.firstVisibleItemIndex == 0) {
                 lazyListState.firstVisibleItemScrollOffset.toFloat()
@@ -37,29 +38,30 @@ fun rememberChromeScrimProgress(lazyListState: LazyListState, thresholdPx: Float
             (scrolledPx / thresholdPx).coerceIn(0f, 1f)
         }
     }
-    return progress
 }
 
 /**
- * Progressive dark scrim behind a hero screen's floating back/share chrome —
- * transparent at the very top (over the hero art), fading to a dark shade
- * once scrolled past it. A true fade (transparent at the bottom edge), not a
- * flat rectangle: the bottom stop must stay [Color.Transparent] or the box's
- * own bounds show up as a visible line.
+ * Progressive dark scrim behind hero back/share chrome, fading to dark once scrolled
+ * past the art. Bottom gradient stop must stay [Color.Transparent] or a visible line
+ * appears at the box's own bounds.
+ *
+ * Brush alphas are the full-intensity stops; [graphicsLayer] applies progress as a
+ * single layer alpha so the scroll value is never read in composition.
  */
 @Composable
-fun ChromeScrim(progress: Float, modifier: Modifier = Modifier) {
+fun ChromeScrim(progress: State<Float>, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .fillMaxWidth()
             .height(AppBarHeight * 2.5f)
             .background(
                 Brush.verticalGradient(
-                    0f to Color.Black.copy(alpha = 0.55f * progress),
-                    0.35f to Color.Black.copy(alpha = 0.4f * progress),
-                    0.7f to Color.Black.copy(alpha = 0.12f * progress),
+                    0f to Color.Black.copy(alpha = 0.55f),
+                    0.35f to Color.Black.copy(alpha = 0.4f),
+                    0.7f to Color.Black.copy(alpha = 0.12f),
                     1f to Color.Transparent,
                 )
             )
+            .graphicsLayer { alpha = progress.value }
     )
 }

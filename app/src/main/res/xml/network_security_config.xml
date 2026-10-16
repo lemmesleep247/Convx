@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- Allow cleartext traffic for Listen Together local servers -->
-    <!-- We're already using WSS for the prod server -->
-    <base-config cleartextTrafficPermitted="true">
+    <!-- Secure default: no cleartext. LAN Listen-Together uses wss/http on
+         private hosts via explicit domain-config below, not a global opt-out. -->
+    <base-config cleartextTrafficPermitted="false">
         <trust-anchors>
             <certificates src="system" />
         </trust-anchors>

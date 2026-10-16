@@ -5,7 +5,9 @@ import com.music.innertube.models.AlbumItem
 import com.music.innertube.models.Artist
 import com.music.innertube.models.ArtistItem
 import com.music.innertube.models.BrowseEndpoint
+import com.music.innertube.models.MusicCardShelfRenderer
 import com.music.innertube.models.MusicCarouselShelfRenderer
+import com.music.innertube.models.MusicShelfRenderer
 import com.music.innertube.models.MusicTwoRowItemRenderer
 import com.music.innertube.models.PlaylistItem
 import com.music.innertube.models.SectionListRenderer
@@ -19,6 +21,7 @@ data class HomePage(
     val chips: List<Chip>?,
     val sections: List<Section>,
     val continuation: String? = null,
+    val background: String? = null,
 ) {
     data class Chip(
         val title: String,
@@ -50,15 +53,56 @@ data class HomePage(
                     label = renderer.header.musicCarouselShelfBasicHeaderRenderer.strapline?.runs?.firstOrNull()?.text,
                     thumbnail = renderer.header.musicCarouselShelfBasicHeaderRenderer.thumbnail?.musicThumbnailRenderer?.getThumbnailUrl(),
                     endpoint = renderer.header.musicCarouselShelfBasicHeaderRenderer.moreContentButton?.buttonRenderer?.navigationEndpoint?.browseEndpoint,
-                    items = renderer.contents.mapNotNull {
-                        it.musicTwoRowItemRenderer
-                    }.mapNotNull {
-                        fromMusicTwoRowItemRenderer(it)
+                    // List-style shelves ("Quick picks") carry responsive list items, not two-row cards.
+                    items = renderer.contents.mapNotNull { content ->
+                        content.musicTwoRowItemRenderer?.let { fromMusicTwoRowItemRenderer(it) }
+                            ?: content.musicResponsiveListItemRenderer?.let { SearchPage.toYTItem(it) }
+                            ?: content.musicMultiRowListItemRenderer?.toSongItem()
                     }.ifEmpty {
                         return null
                     }
                 )
             }
+
+            // Shelf/card section parsing ported from the reference app (2026, © Rukamori, GPL-3.0).
+            fun fromMusicShelfRenderer(renderer: MusicShelfRenderer): Section? {
+                val title = renderer.title?.runs?.firstOrNull()?.text ?: return null
+                val items = renderer.contents.orEmpty()
+                    .mapNotNull { it.musicResponsiveListItemRenderer?.let(SearchPage::toYTItem) }
+                    .ifEmpty { return null }
+                return Section(
+                    title = title,
+                    label = null,
+                    thumbnail = null,
+                    endpoint = renderer.moreContentButton?.buttonRenderer?.navigationEndpoint?.browseEndpoint,
+                    items = items,
+                )
+            }
+
+            fun fromMusicCardShelfRenderer(renderer: MusicCardShelfRenderer): Section? {
+                val items = renderer.contents.orEmpty()
+                    .mapNotNull { it.musicResponsiveListItemRenderer?.let(SearchPage::toYTItem) as? SongItem }
+                    .ifEmpty { return null }
+                val title = renderer.header?.musicCardShelfHeaderBasicRenderer?.title?.runs
+                    ?.joinToString("") { it.text }?.takeIf(String::isNotBlank)
+                    ?: renderer.title.runs?.joinToString("") { it.text }?.takeIf(String::isNotBlank)
+                    ?: return null
+                return Section(
+                    title = title,
+                    label = renderer.subtitle.runs?.joinToString("") { it.text }?.takeIf(String::isNotBlank),
+                    thumbnail = renderer.thumbnail.musicThumbnailRenderer?.getThumbnailUrl(),
+                    endpoint = renderer.onTap.browseEndpoint,
+                    items = items,
+                )
+            }
+
+            fun fromSectionListContent(content: SectionListRenderer.Content): Section? =
+                content.musicCarouselShelfRenderer?.let(::fromMusicCarouselShelfRenderer)
+                    ?: content.musicShelfRenderer?.let(::fromMusicShelfRenderer)
+                    ?: content.musicCardShelfRenderer?.let(::fromMusicCardShelfRenderer)
+                    ?: content.itemSectionRenderer?.contents.orEmpty().firstNotNullOfOrNull { inner ->
+                        inner.musicShelfRenderer?.let(::fromMusicShelfRenderer)
+                    }
 
             private fun fromMusicTwoRowItemRenderer(renderer: MusicTwoRowItemRenderer): YTItem? {
                 return when {

@@ -13,10 +13,7 @@ import android.net.NetworkRequest
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.receiveAsFlow
 
-/**
- * Simple NetworkConnectivityObserver based on OuterTune's implementation
- * Provides network connectivity monitoring for auto-play functionality
- */
+/** Reports validated internet connectivity through a flow and an on-demand check. */
 class NetworkConnectivityObserver(context: Context) {
     private val connectivityManager =
         context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -42,38 +39,24 @@ class NetworkConnectivityObserver(context: Context) {
         
         try {
             connectivityManager.registerNetworkCallback(request, networkCallback)
-        } catch (e: Exception) {
-            // Fallback: assume connected if registration fails
-            _networkStatus.trySend(true)
+        } catch (_: Exception) {
+            // The direct status check below still seeds the flow if registration fails.
         }
-        
-        // Send initial state
-        val isInitiallyConnected = isCurrentlyConnected()
-        _networkStatus.trySend(isInitiallyConnected)
+
+        _networkStatus.trySend(isCurrentlyConnected())
     }
 
     fun unregister() {
         connectivityManager.unregisterNetworkCallback(networkCallback)
     }
     
-    /**
-     * Check current connectivity state synchronously
-     */
-    fun isCurrentlyConnected(): Boolean {
-        return try {
-            val activeNetwork = connectivityManager.activeNetwork
-            val networkCapabilities = connectivityManager.getNetworkCapabilities(activeNetwork)
-            
-            // Check if we have internet capability
-            val hasInternet = networkCapabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
-            
-            // For API 23+, also check if connection is validated
-            val isValidated =
-                networkCapabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
-
-            hasInternet && isValidated
-        } catch (e: Exception) {
-            false
-        }
+    /** Returns whether the active network has internet access and is validated. */
+    fun isCurrentlyConnected(): Boolean = try {
+        val activeNetwork = connectivityManager.activeNetwork
+        val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork) ?: return false
+        capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+    } catch (_: Exception) {
+        false
     }
 }

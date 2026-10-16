@@ -17,6 +17,8 @@ import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.shape.ZeroCornerSize
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.Stable
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.toRect
 import androidx.compose.ui.graphics.Outline
@@ -60,13 +62,8 @@ open class ContinuousRoundedRectangle(
         val bottomRight = (if (layoutDirection == Ltr) bottomEnd else bottomStart).fastCoerceIn(0f, maxRadius)
         val bottomLeft = (if (layoutDirection == Ltr) bottomStart else bottomEnd).fastCoerceIn(0f, maxRadius)
 
-        return continuity.createRoundedRectangleOutline(
-            size = size,
-            topLeft = topLeft,
-            topRight = topRight,
-            bottomRight = bottomRight,
-            bottomLeft = bottomLeft
-        )
+        // Use a native rounded-rectangle outline; generic paths require costly mask rasterization.
+        return roundedOutline(size, topLeft, topRight, bottomRight, bottomLeft)
     }
 
     override fun copy(
@@ -180,7 +177,10 @@ private data class ContinuousCapsuleImpl(
         bottomEnd: Float,
         bottomStart: Float,
         layoutDirection: LayoutDirection
-    ): Outline = continuity.createCapsuleOutline(size)
+    ): Outline {
+        val radius = size.minDimension * 0.5f
+        return roundedOutline(size, radius, radius, radius, radius)
+    }
 
     override fun toString(): String {
         return "ContinuousCapsule(continuity=$continuity)"
@@ -277,3 +277,19 @@ fun ContinuousRoundedRectangle(
         bottomStart = CornerSize(bottomStartPercent),
         continuity = continuity
     )
+
+private fun roundedOutline(
+    size: Size,
+    topLeft: Float,
+    topRight: Float,
+    bottomRight: Float,
+    bottomLeft: Float
+): Outline = Outline.Rounded(
+    RoundRect(
+        rect = size.toRect(),
+        topLeft = CornerRadius(topLeft),
+        topRight = CornerRadius(topRight),
+        bottomRight = CornerRadius(bottomRight),
+        bottomLeft = CornerRadius(bottomLeft)
+    )
+)

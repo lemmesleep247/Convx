@@ -5,229 +5,137 @@
 
 package com.convx.music.ui.screens.settings
 
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.material3.ExperimentalMaterial3Api
+import com.convx.music.ui.ios.compat.ModalBottomSheet
+import com.convx.music.ui.ios.compat.rememberIosModalSheetState
+import com.convx.music.ui.ios.foundation.IosTheme
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeSource
 import com.convx.music.ui.utils.appTopBarWindowInsets
 import android.app.Activity
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import android.content.Context
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import android.content.Intent
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import android.os.Build
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import android.content.Intent
+import android.provider.Settings
+import androidx.core.net.toUri
+import android.content.Context
 import androidx.core.content.edit
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.utils.bounceClick
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.Arrangement
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.Column
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.Row
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.Spacer
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.height
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.padding
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.size
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.windowInsetsPadding
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.rememberScrollState
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.verticalScroll
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.ExperimentalMaterial3Api
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.Icon
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.MaterialTheme
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.AppTheme
 import androidx.compose.material3.SnackbarHostState
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.ui.component.GlassSwitchCompat as Switch
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.ui.layout.layout
+import com.convx.music.ui.component.shapes.ContinuousCapsule
+import com.convx.music.ui.component.shapes.ContinuousRoundedRectangle
+import com.convx.music.ui.ios.foundation.IosMetrics
+import com.convx.music.ui.ios.compat.HorizontalDivider
+import com.convx.music.ui.ios.compat.Switch
 import androidx.compose.material3.SwitchDefaults
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.Text
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.TextButton
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.TopAppBar
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import com.convx.music.ui.ios.compat.Text
+import com.convx.music.ui.ios.compat.TextButton
+import com.convx.music.ui.ios.compat.TopAppBar
 import androidx.compose.material3.TopAppBarScrollBehavior
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.Composable
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.getValue
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.mutableFloatStateOf
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.mutableStateOf
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.remember
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.saveable.rememberSaveable
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.setValue
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.Alignment
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.Modifier
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.res.painterResource
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import com.composables.sfsymbols.SfSymbols
+import com.composables.sfsymbols.monochrome.SFGaugeWithNeedle
+import com.composables.sfsymbols.monochrome.SFIcloudAndArrowDownFill
+import com.composables.sfsymbols.monochrome.SFSliderHorizontal3
+import com.composables.sfsymbols.monochrome.SFStar
 import androidx.compose.ui.res.stringResource
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.unit.dp
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.navigation.NavController
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.LocalPlayerAwareWindowInsets
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.R
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.CanvasSource
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.CanvasSourceKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.CanvasThumbnailAnimationKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.constants.ChipSortTypeKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.CropAlbumArtKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.DefaultOpenTabKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.constants.DensityScale
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.constants.DensityScaleKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.DynamicThemeKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.constants.EnableSettingsPopupKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.EnableHighRefreshRateKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.constants.EnableLyricsThumbnailPlayPauseKey
 import com.convx.music.constants.OneTapFullscreenLyricsKey
-import com.convx.music.constants.FullscreenLyricsCollapseTopKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.constants.IosOverscrollKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.constants.GridItemSize
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.constants.GridItemsSizeKey
-import com.convx.music.constants.GridCardHeightOverrideKey
-import com.convx.music.constants.GridColumnsOverrideKey
-import com.convx.music.constants.GridSpacingKey
-import com.convx.music.ui.utils.GridCardHeightChoices
-import com.convx.music.ui.utils.HomeHeroCardHeightChoices
-import com.convx.music.ui.utils.HomeCardCornerRadiusChoices
-import com.convx.music.constants.SpeedDialColumnsOverrideKey
-import com.convx.music.constants.HomeHeroCardHeightOverrideKey
-import com.convx.music.constants.SpeedDialCardHeightOverrideKey
-import com.convx.music.constants.HomeCardCornerRadiusOverrideKey
-import com.convx.music.constants.HomeGridColumnsOverrideKey
 import com.convx.music.constants.HomeHeroCardEnabledKey
 import com.convx.music.constants.PureBlackHeroBackgroundKey
-import com.convx.music.constants.HideHomeFavoriteIconKey
-import com.convx.music.constants.ShowHomeFabKey
-import com.convx.music.ui.utils.GridColumnChoices
-import com.convx.music.ui.utils.GridSpacingChoices
-import androidx.compose.material3.Slider
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.constants.HidePlayerThumbnailKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.constants.LibraryFilter
-import com.convx.music.constants.LibraryIconsOnlyKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import com.convx.music.constants.LiquidGlassGlobalEnabledKey
+import com.convx.music.constants.AlbumCanvasEnabledKey
+import com.convx.music.constants.AppLanguageKey
+import com.convx.music.constants.LanguageCodeToName
+import com.convx.music.constants.SYSTEM_DEFAULT
+import com.convx.music.ui.ios.compat.Slider
 import com.convx.music.constants.ListenTogetherInTopBarKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.LyricsAnimationStyle
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.LyricsAnimationStyleKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.constants.LyricsStandardBlurKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.LyricsTextPositionKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.LyricsTextSizeKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.ShowCachedPlaylistKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.ShowDownloadedPlaylistKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.ShowLikedPlaylistKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.ShowTopPlaylistKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.ShowUploadedPlaylistKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.SlimNavBarKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.SwipeSensitivityKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.SwipeThumbnailKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.SwipeLyricsKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.SwipeToRemoveSongKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.SwipeToSongKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.constants.ThumbnailCornerRadiusKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.UseNewMiniPlayerDesignKey
-import com.convx.music.constants.MiniBarTabStyleKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.constants.UseAppleMusicPlayerKey
 import com.convx.music.constants.UseNewPlayerDesignKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.ui.component.ThumbnailCornerRadiusModal
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.ui.component.DefaultDialog
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.component.EnumDialog
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.component.IconButton
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.ui.component.Material3SettingsGroup
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.ui.component.Material3SettingsItem
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import com.convx.music.ui.component.IosSettingsGroup
+import com.convx.music.ui.component.IosSettingsItem
 import com.convx.music.ui.utils.backToMain
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.utils.rememberEnumPreference
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.utils.rememberPreference
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import kotlin.math.roundToInt
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.LyricsClickKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.constants.AppleMusicLyricsBlurKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.constants.LyricsGlowEffectKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.LyricsLineSpacingKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.LyricsScrollKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.constants.ShowAudioQualityBadgeKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.MiniPlayerWaveformKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.constants.ShowCommentButtonKey
 import com.convx.music.constants.AppFont
 import com.convx.music.constants.SelectedFontKey
 
@@ -240,47 +148,20 @@ fun AppearanceSettings(
     snackbarHostState: SnackbarHostState,
 ) {
     val (_, _) = rememberPreference(UseNewMiniPlayerDesignKey, defaultValue = true)
-    val (miniBarTabStyle, onMiniBarTabStyleChange) = rememberPreference(MiniBarTabStyleKey, defaultValue = false)
     val (_, _) = rememberPreference(DynamicThemeKey, defaultValue = true)
     val (useNewPlayerDesign, _) = rememberPreference(UseNewPlayerDesignKey, defaultValue = false)
-    // DIY stickers have no equivalent slot in the ported Apple Music Player V17
-    // layout, so its entry point is hidden rather than left dangling to a
-    // customization that would silently never render.
-    val (useAppleMusicPlayer, _) = rememberPreference(UseAppleMusicPlayerKey, defaultValue = false)
-    val (showAudioQualityBadge, onShowAudioQualityBadgeChange) = rememberPreference(
-        ShowAudioQualityBadgeKey,
-        defaultValue = true
-    )
     val (miniPlayerWaveform, onMiniPlayerWaveformChange) = rememberPreference(
         MiniPlayerWaveformKey,
-        defaultValue = true
+        defaultValue = false
     )
     val (selectedFontValue) = rememberPreference(
         SelectedFontKey,
-        defaultValue = AppFont.SYSTEM.value
-    )
-
-    val (libraryIconsOnly, onLibraryIconsOnlyChange) = rememberPreference(
-        LibraryIconsOnlyKey,
-        defaultValue = true
+        defaultValue = AppFont.PLUS_JAKARTA_SANS.value
     )
 
     val (enableHighRefreshRate, onEnableHighRefreshRateChange) = rememberPreference(
         EnableHighRefreshRateKey,
         defaultValue = true
-    )
-    val (iosOverscroll, onIosOverscrollChange) = rememberPreference(
-        IosOverscrollKey,
-        defaultValue = true
-    )
-    val (enableSettingsPopup, onEnableSettingsPopupChange) = rememberPreference(
-        EnableSettingsPopupKey,
-        defaultValue = false
-    )
-
-    val (hidePlayerThumbnail, onHidePlayerThumbnailChange) = rememberPreference(
-        HidePlayerThumbnailKey,
-        defaultValue = false
     )
     val (cropAlbumArt, onCropAlbumArtChange) = rememberPreference(
         CropAlbumArtKey,
@@ -301,17 +182,12 @@ fun AppearanceSettings(
     )
     val (lyricsAnimationStyle, onLyricsAnimationStyleChange) = rememberEnumPreference(
         LyricsAnimationStyleKey,
-        defaultValue = LyricsAnimationStyle.VIVIMUSIC_1
+        defaultValue = LyricsAnimationStyle.METRO_LYRICS
     )
     val (lyricsTextSize, onLyricsTextSizeChange) = rememberPreference(LyricsTextSizeKey, defaultValue = 30f)
     val (lyricsLineSpacing, onLyricsLineSpacingChange) = rememberPreference(LyricsLineSpacingKey, defaultValue = 1.3f)
-    val (lyricsGlowEffect, onLyricsGlowEffectChange) = rememberPreference(LyricsGlowEffectKey, defaultValue = true)
-    val (appleMusicLyricsBlur, onAppleMusicLyricsBlurChange) = rememberPreference(AppleMusicLyricsBlurKey, defaultValue = true)
-    val (lyricsStandardBlur, onLyricsStandardBlurChange) = rememberPreference(LyricsStandardBlurKey, defaultValue = false)
     val (swipeLyrics, onSwipeLyricsChange) = rememberPreference(SwipeLyricsKey, defaultValue = false)
-    val (enableLyricsThumbnailPlayPause, onEnableLyricsThumbnailPlayPauseChange) = rememberPreference(EnableLyricsThumbnailPlayPauseKey, defaultValue = false)
     val (oneTapFullscreenLyrics, onOneTapFullscreenLyricsChange) = rememberPreference(OneTapFullscreenLyricsKey, defaultValue = false)
-    val (fullscreenLyricsCollapseTop, onFullscreenLyricsCollapseTopChange) = rememberPreference(FullscreenLyricsCollapseTopKey, defaultValue = true)
 
     val (swipeThumbnail, onSwipeThumbnailChange) = rememberPreference(
         SwipeThumbnailKey,
@@ -329,43 +205,20 @@ fun AppearanceSettings(
         CanvasSourceKey,
         defaultValue = CanvasSource.AUTO
     )
-    val (gridItemSize, onGridItemSizeChange) = rememberEnumPreference(
-        GridItemsSizeKey,
-        defaultValue = GridItemSize.SMALL
-    )
-    val (gridColumnsOverride, onGridColumnsOverrideChange) = rememberPreference(GridColumnsOverrideKey, 0)
-    val (gridCardHeightOverride, onGridCardHeightOverrideChange) = rememberPreference(GridCardHeightOverrideKey, 0)
-    val (gridSpacing, onGridSpacingChange) = rememberPreference(GridSpacingKey, 16)
-    val (speedDialColumnsOverride, onSpeedDialColumnsOverrideChange) = rememberPreference(SpeedDialColumnsOverrideKey, 0)
     val (pureBlackHeroBackground, onPureBlackHeroBackgroundChange) = rememberPreference(PureBlackHeroBackgroundKey, false)
-    val (showHomeFab, onShowHomeFabChange) = rememberPreference(ShowHomeFabKey, defaultValue = true)
-    val (hideHomeFavoriteIcon, onHideHomeFavoriteIconChange) = rememberPreference(
-        HideHomeFavoriteIconKey,
+    val (liquidGlassEnabled, onLiquidGlassEnabledChange) = rememberPreference(
+        LiquidGlassGlobalEnabledKey,
+        defaultValue = true
+    )
+    // Keep album canvas controls with the other player display settings.
+    val (albumCanvasEnabled, onAlbumCanvasEnabledChange) = rememberPreference(
+        AlbumCanvasEnabledKey,
         defaultValue = false
     )
-    val (homeHeroCardHeightOverride, onHomeHeroCardHeightOverrideChange) = rememberPreference(HomeHeroCardHeightOverrideKey, 0)
-    val (speedDialCardHeightOverride, onSpeedDialCardHeightOverrideChange) = rememberPreference(SpeedDialCardHeightOverrideKey, 0)
-    val (homeCardCornerRadiusOverride, onHomeCardCornerRadiusOverrideChange) = rememberPreference(HomeCardCornerRadiusOverrideKey, 0)
+    // App language is a general setting, so keep it in the miscellaneous group.
+    val (appLanguage, onAppLanguageChange) = rememberPreference(key = AppLanguageKey, defaultValue = SYSTEM_DEFAULT)
+    var showAppLanguageDialog by rememberSaveable { mutableStateOf(false) }
     val (homeHeroCardEnabled, onHomeHeroCardEnabledChange) = rememberPreference(HomeHeroCardEnabledKey, true)
-    val (homeGridColumnsOverride, onHomeGridColumnsOverrideChange) = rememberPreference(HomeGridColumnsOverrideKey, 0)
-
-    // Density scale preferences
-    val context = activity as Context
-    val sharedPreferences = remember { context.getSharedPreferences("vivimusic_settings", Context.MODE_PRIVATE) }
-    val prefDensityScale = remember(sharedPreferences) {
-        sharedPreferences.getFloat("density_scale_factor", 1.0f)
-    }
-    val (densityScale, setDensityScale) = rememberPreference(DensityScaleKey, defaultValue = prefDensityScale)
-    var showRestartDialog by rememberSaveable { mutableStateOf(false) }
-    var showDensityScaleDialog by rememberSaveable { mutableStateOf(false) }
-
-    val onDensityScaleChange: (Float) -> Unit = { newScale ->
-        setDensityScale(newScale)
-        sharedPreferences.edit {
-            putFloat("density_scale_factor", newScale)
-        }
-        showRestartDialog = true
-    }
 
     val (listenTogetherInTopBar, onListenTogetherInTopBarChange) = rememberPreference(
         ListenTogetherInTopBarKey,
@@ -402,22 +255,12 @@ fun AppearanceSettings(
         ShowUploadedPlaylistKey,
         defaultValue = true
     )
-    val (showCommentButton, onShowCommentButtonChange) = rememberPreference(
-        ShowCommentButtonKey,
-        defaultValue = true
-    )
-
-    val (defaultChip, onDefaultChipChange) = rememberEnumPreference(
-        key = ChipSortTypeKey,
-        defaultValue = LibraryFilter.LIBRARY
-    )
-
     var showLyricsPositionDialog by rememberSaveable {
         mutableStateOf(false)
     }
 
     var showLyricsAnimationStyleDialog by rememberSaveable {
-        mutableStateOf(false)
+        mutableStateOf(SettingsDeepLink.consumeLyricsSheet())
     }
 
     var showLyricsTextSizeDialog by rememberSaveable {
@@ -448,31 +291,11 @@ fun AppearanceSettings(
         )
     }
 
-    if (showLyricsAnimationStyleDialog) {
-        EnumDialog(
-            onDismiss = { showLyricsAnimationStyleDialog = false },
-            onSelect = {
-                onLyricsAnimationStyleChange(it)
-                showLyricsAnimationStyleDialog = false
-            },
-            title = stringResource(R.string.lyrics_animation_style),
-            current = lyricsAnimationStyle,
-            values = LyricsAnimationStyle.entries,
-            valueText = {
-                when (it) {
-                    LyricsAnimationStyle.NONE -> stringResource(R.string.none)
-                    LyricsAnimationStyle.FADE -> stringResource(R.string.fade)
-                    LyricsAnimationStyle.GLOW -> stringResource(R.string.glow)
-                    LyricsAnimationStyle.SLIDE -> stringResource(R.string.slide)
-                    LyricsAnimationStyle.KARAOKE -> stringResource(R.string.karaoke)
-                    LyricsAnimationStyle.APPLE -> stringResource(R.string.apple_music_style)
-                    LyricsAnimationStyle.APPLE_V2 -> stringResource(R.string.apple_music_style_letter)
-                    LyricsAnimationStyle.VIVIMUSIC_1 -> stringResource(R.string.vivimusic_1)
-                    LyricsAnimationStyle.LYRICS_V2 -> stringResource(R.string.lyrics_v2_fluid)
-                    LyricsAnimationStyle.METRO_LYRICS -> stringResource(R.string.lyrics_animation_metro)
-                }
-            }
-        )
+    LaunchedEffect(showLyricsAnimationStyleDialog) {
+        if (showLyricsAnimationStyleDialog) {
+            showLyricsAnimationStyleDialog = false
+            SettingsSheets.open = SettingsAction.LyricsStyle
+        }
     }
 
     var showDefaultOpenTabDialog by rememberSaveable { mutableStateOf(false) }
@@ -496,103 +319,59 @@ fun AppearanceSettings(
         )
     }
 
-    var showDefaultChipDialog by rememberSaveable { mutableStateOf(false) }
-    if (showDefaultChipDialog) {
+    if (showAppLanguageDialog) {
         EnumDialog(
-            onDismiss = { showDefaultChipDialog = false },
+            onDismiss = { showAppLanguageDialog = false },
             onSelect = {
-                onDefaultChipChange(it)
-                showDefaultChipDialog = false
+                onAppLanguageChange(it)
+                showAppLanguageDialog = false
             },
-            title = stringResource(R.string.default_lib_chips),
-            current = defaultChip,
-            // ARTISTS omitted: Library no longer has an Artists chip, so offering it
-            // here would set a default that resolves to the mixed view anyway.
-            values = LibraryFilter.entries.filter { it != LibraryFilter.ARTISTS },
+            title = stringResource(R.string.app_language),
+            current = appLanguage,
+            values = (listOf(SYSTEM_DEFAULT) + LanguageCodeToName.keys.toList()),
             valueText = {
-                when (it) {
-                    LibraryFilter.SONGS -> stringResource(R.string.songs)
-                    LibraryFilter.ARTISTS -> stringResource(R.string.artists)
-                    LibraryFilter.ALBUMS -> stringResource(R.string.albums)
-                    LibraryFilter.PLAYLISTS -> stringResource(R.string.playlists)
-                    LibraryFilter.LIBRARY -> stringResource(R.string.filter_library)
-                }
+                LanguageCodeToName.getOrElse(it) { stringResource(R.string.system_default) }
             }
         )
     }
 
-    if (showRestartDialog) {
-        DefaultDialog(
-            onDismiss = { showRestartDialog = false },
-            buttons = {
-                TextButton(onClick = { showRestartDialog = false }) { Text(stringResource(android.R.string.cancel)) }
-                TextButton(onClick = {
-                    showRestartDialog = false
-                    val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
-                    intent?.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)
-                    context.startActivity(intent)
-                    Runtime.getRuntime().exit(0)
-                }) { Text(stringResource(R.string.restart)) }
-            }
-        ) {
-            Text(
-                text = stringResource(R.string.density_restart_message),
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(16.dp),
-            )
-        }
-    }
-
-    if (showDensityScaleDialog) {
-        EnumDialog(
-            onDismiss = { showDensityScaleDialog = false },
-            onSelect = {
-                onDensityScaleChange(it.value)
-                showDensityScaleDialog = false
-            },
-            title = stringResource(R.string.display_density),
-            current = DensityScale.fromValue(densityScale),
-            values = DensityScale.entries,
-            valueText = { it.label }
-        )
-    }
-
-    var showGridSizeDialog by rememberSaveable { mutableStateOf(false) }
-    if (showGridSizeDialog) {
-        EnumDialog(
-            onDismiss = { showGridSizeDialog = false },
-            onSelect = {
-                onGridItemSizeChange(it)
-                showGridSizeDialog = false
-            },
-            title = stringResource(R.string.grid_cell_size),
-            current = gridItemSize,
-            values = GridItemSize.entries,
-            valueText = {
-                when (it) {
-                    GridItemSize.BIG -> stringResource(R.string.big)
-                    GridItemSize.SMALL -> stringResource(R.string.small)
-                }
-            }
-        )
-    }
-
-    androidx.compose.foundation.lazy.LazyColumn(
-        Modifier
-            .windowInsetsPadding(LocalPlayerAwareWindowInsets.current)
-            .padding(horizontal = 16.dp),
+    SettingsLazyPage(
+        navController = navController,
+        title = stringResource(R.string.appearance),
+        pageColor = IosTheme.colors.systemGroupedBackground,
+        horizontalPadding = 16.dp,
     ) {
         item(key = "all_appearance_settings") {
             Column {
-        Material3SettingsGroup(
-            title = stringResource(R.string.theme_colors),
-            items = listOfNotNull(
-                Material3SettingsItem(
+        IosSettingsGroup(
+            title = "Theme & colors",
+            items = listOf(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.palette),
                     title = { Text(stringResource(R.string.theme_colors)) },
                     onClick = { navController.navigate("settings/appearance/theme") }
                 ),
-                Material3SettingsItem(
+                IosSettingsItem(
+                    icon = painterResource(R.drawable.palette),
+                    title = { Text(stringResource(R.string.presets)) },
+                    description = { Text(stringResource(R.string.presets_desc)) },
+                    onClick = { navController.navigate("settings/appearance/presets") }
+                ),
+                IosSettingsItem(
+                    icon = painterResource(R.drawable.edit),
+                    title = { Text(stringResource(R.string.diy)) },
+                    description = { Text(stringResource(R.string.diy_desc)) },
+                    onClick = { navController.navigate("settings/appearance/diy") }
+                )
+            )
+        )
+
+        Spacer(modifier = Modifier.height(27.dp))
+
+        IosSettingsGroup(
+            title = "App identity",
+            items = listOf(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.alphabet_cyrillic),
                     title = { Text(stringResource(R.string.app_font)) },
                     description = {
@@ -607,41 +386,36 @@ fun AppearanceSettings(
                     },
                     onClick = { navController.navigate("settings/appearance/font") }
                 ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.convx_logo),
                     title = { Text(stringResource(R.string.app_icon)) },
                     description = { Text(stringResource(R.string.app_icon_desc)) },
                     onClick = { navController.navigate("settings/appearance/appicon") }
-                ),
-                Material3SettingsItem(
-                    icon = painterResource(R.drawable.palette),
-                    title = { Text(stringResource(R.string.presets)) },
-                    description = { Text(stringResource(R.string.presets_desc)) },
-                    onClick = { navController.navigate("settings/appearance/presets") }
-                ),
-                Material3SettingsItem(
-                    icon = painterResource(R.drawable.tune),
-                    title = { Text(stringResource(R.string.player_icons)) },
-                    description = { Text(stringResource(R.string.player_icons_desc)) },
-                    onClick = { navController.navigate("settings/appearance/playericons") }
-                ),
-                if (!useAppleMusicPlayer) Material3SettingsItem(
-                    icon = painterResource(R.drawable.edit),
-                    title = { Text(stringResource(R.string.diy)) },
-                    description = { Text(stringResource(R.string.diy_desc)) },
-                    onClick = { navController.navigate("settings/appearance/diy") }
-                ) else null
+                )
             )
         )
 
         Spacer(modifier = Modifier.height(27.dp))
 
-        Material3SettingsGroup(
+        IosSettingsGroup(
             title = stringResource(R.string.liquid_glass),
             items = listOf(
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.tune),
                     title = { Text(stringResource(R.string.liquid_glass)) },
+                    description = { Text(stringResource(R.string.liquid_glass_simple_desc)) },
+                    trailingContent = {
+                        Switch(
+                            checked = liquidGlassEnabled,
+                            onCheckedChange = onLiquidGlassEnabledChange
+                        )
+                    },
+                    onClick = { onLiquidGlassEnabledChange(!liquidGlassEnabled) }
+                ),
+                IosSettingsItem(
+                    icon = rememberVectorPainter(SfSymbols.Monochrome.SFSliderHorizontal3),
+                    title = { Text(stringResource(R.string.advanced)) },
+                    description = { Text(stringResource(R.string.advanced_settings_desc)) },
                     onClick = { navController.navigate("settings/appearance/liquidglass") }
                 )
             )
@@ -649,99 +423,21 @@ fun AppearanceSettings(
 
         Spacer(modifier = Modifier.height(27.dp))
 
-        Material3SettingsGroup(
-            title = stringResource(R.string.appearance),
+        IosSettingsGroup(
+            title = "Display",
             items = buildList {
                 add(
-                    Material3SettingsItem(
-                        icon = painterResource(R.drawable.speed),
+                    IosSettingsItem(
+                        icon = rememberVectorPainter(SfSymbols.Monochrome.SFGaugeWithNeedle),
                         title = { Text(stringResource(R.string.enable_high_refresh_rate)) },
                         description = { Text(stringResource(R.string.enable_high_refresh_rate_desc)) },
                         trailingContent = {
                             Switch(
                                 checked = enableHighRefreshRate,
-                                onCheckedChange = onEnableHighRefreshRateChange,
-                                thumbContent = {
-                                    Icon(
-                                        painter = painterResource(
-                                            id = if (enableHighRefreshRate) R.drawable.check else R.drawable.close
-                                        ),
-                                        contentDescription = null,
-                                        modifier = Modifier.size(SwitchDefaults.IconSize)
-                                    )
-                                }
+                                onCheckedChange = onEnableHighRefreshRateChange
                             )
                         },
                         onClick = { onEnableHighRefreshRateChange(!enableHighRefreshRate) }
-                    )
-                )
-                add(
-                    Material3SettingsItem(
-                        icon = painterResource(R.drawable.tune),
-                        title = { Text(stringResource(R.string.ios_overscroll)) },
-                        description = { Text(stringResource(R.string.ios_overscroll_desc)) },
-                        trailingContent = {
-                            Switch(
-                                checked = iosOverscroll,
-                                onCheckedChange = onIosOverscrollChange,
-                                thumbContent = {
-                                    Icon(
-                                        painter = painterResource(
-                                            id = if (iosOverscroll) R.drawable.check else R.drawable.close
-                                        ),
-                                        contentDescription = null,
-                                        modifier = Modifier.size(SwitchDefaults.IconSize)
-                                    )
-                                }
-                            )
-                        },
-                        onClick = { onIosOverscrollChange(!iosOverscroll) }
-                    )
-                )
-                add(
-                    Material3SettingsItem(
-                        icon = painterResource(R.drawable.settings),
-                        title = { Text(stringResource(R.string.enable_settings_popup)) },
-                        description = { Text(stringResource(R.string.enable_settings_popup_desc)) },
-                        trailingContent = {
-                            Switch(
-                                checked = enableSettingsPopup,
-                                onCheckedChange = onEnableSettingsPopupChange,
-                                thumbContent = {
-                                    Icon(
-                                        painter = painterResource(
-                                            id = if (enableSettingsPopup) R.drawable.check else R.drawable.close
-                                        ),
-                                        contentDescription = null,
-                                        modifier = Modifier.size(SwitchDefaults.IconSize)
-                                    )
-                                }
-                            )
-                        },
-                        onClick = { onEnableSettingsPopupChange(!enableSettingsPopup) }
-                    )
-                )
-                add(
-                    Material3SettingsItem(
-                        icon = painterResource(R.drawable.grid_view),
-                        title = { Text(stringResource(R.string.library_icons_only)) },
-                        description = { Text(stringResource(R.string.library_icons_only_desc)) },
-                        trailingContent = {
-                            Switch(
-                                checked = libraryIconsOnly,
-                                onCheckedChange = onLibraryIconsOnlyChange,
-                                thumbContent = {
-                                    Icon(
-                                        painter = painterResource(
-                                            id = if (libraryIconsOnly) R.drawable.check else R.drawable.close
-                                        ),
-                                        contentDescription = null,
-                                        modifier = Modifier.size(SwitchDefaults.IconSize)
-                                    )
-                                }
-                            )
-                        },
-                        onClick = { onLibraryIconsOnlyChange(!libraryIconsOnly) }
                     )
                 )
             }
@@ -749,198 +445,84 @@ fun AppearanceSettings(
 
         Spacer(modifier = Modifier.height(27.dp))
 
-        val (thumbnailCornerRadius, onThumbnailCornerRadiusChange) = rememberPreference(
-            ThumbnailCornerRadiusKey,
-            defaultValue = 3f
-        )
-        
-        var showThumbnailCornerRadiusDialog by rememberSaveable { mutableStateOf(false) }
-
-        Material3SettingsGroup(
-            title = stringResource(R.string.player),
+        IosSettingsGroup(
+            title = "Player & canvas",
             items = listOfNotNull(
-                Material3SettingsItem(
+                IosSettingsItem(
+                    icon = painterResource(R.drawable.tune),
+                    title = { Text(stringResource(R.string.player_icons)) },
+                    description = { Text(stringResource(R.string.player_icons_desc)) },
+                    onClick = { navController.navigate("settings/appearance/playericons") }
+                ),
+                IosSettingsItem(
                     icon = painterResource(R.drawable.gradient),
                     title = { Text(stringResource(R.string.player_theme)) },
                     description = { Text(stringResource(R.string.player_theme_desc)) },
                     onClick = { navController.navigate("settings/appearance/playertheme") }
                 ),
-                Material3SettingsItem(
-                    icon = painterResource(R.drawable.hide_image),
-                    title = { Text(stringResource(R.string.hide_player_thumbnail)) },
-                    description = { Text(stringResource(R.string.hide_player_thumbnail_desc)) },
-                    trailingContent = {
-                        Switch(
-                            checked = hidePlayerThumbnail,
-                            onCheckedChange = onHidePlayerThumbnailChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (hidePlayerThumbnail) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
-                        )
-                    },
-                    onClick = { onHidePlayerThumbnailChange(!hidePlayerThumbnail) }
-                ),
-                Material3SettingsItem(
-                    icon = painterResource(R.drawable.image),
-                    title = { Text(stringResource(R.string.thumbnail_corner_radius)) },
-                    description = { Text(stringResource(R.string.thumbnail_corner_radius_desc)) },
-                    trailingContent = {
-                        Text(
-                            text = "${thumbnailCornerRadius.roundToInt()}dp",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    },
-                    onClick = { showThumbnailCornerRadiusDialog = true }
-                ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.crop),
                     title = { Text(stringResource(R.string.crop_album_art)) },
                     description = { Text(stringResource(R.string.crop_album_art_desc)) },
                     trailingContent = {
                         Switch(
                             checked = cropAlbumArt,
-                            onCheckedChange = onCropAlbumArtChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (cropAlbumArt) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
+                            onCheckedChange = onCropAlbumArtChange
                         )
                     },
                     onClick = { onCropAlbumArtChange(!cropAlbumArt) }
                 ),
-                Material3SettingsItem(
-                    icon = painterResource(R.drawable.tune),
-                    title = { Text(stringResource(R.string.show_audio_quality_badge)) },
-                    trailingContent = {
-                        Switch(
-                            checked = showAudioQualityBadge,
-                            onCheckedChange = onShowAudioQualityBadgeChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (showAudioQualityBadge) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
-                        )
-                    },
-                    onClick = { onShowAudioQualityBadgeChange(!showAudioQualityBadge) }
-                ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.tune),
                     title = { Text(stringResource(R.string.mini_player_waveform)) },
                     trailingContent = {
                         Switch(
                             checked = miniPlayerWaveform,
-                            onCheckedChange = onMiniPlayerWaveformChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (miniPlayerWaveform) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
+                            onCheckedChange = onMiniPlayerWaveformChange
                         )
                     },
                     onClick = { onMiniPlayerWaveformChange(!miniPlayerWaveform) }
                 ),
-                Material3SettingsItem(
-                    icon = painterResource(R.drawable.nav_bar),
-                    title = { Text(stringResource(R.string.mini_bar_tab_style)) },
-                    description = { Text(stringResource(R.string.mini_bar_tab_style_desc)) },
-                    trailingContent = {
-                        Switch(
-                            checked = miniBarTabStyle,
-                            onCheckedChange = onMiniBarTabStyleChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (miniBarTabStyle) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
-                        )
-                    },
-                    onClick = { onMiniBarTabStyleChange(!miniBarTabStyle) }
-                ),
-                    Material3SettingsItem(
+                    IosSettingsItem(
                         icon = painterResource(R.drawable.canvas_art),
-                        title = { Text(stringResource(R.string.vivimusic_canvas)) },
+                        title = { Text(stringResource(R.string.convx_canvas)) },
                     description = {
                         val summary = if (!canvasThumbnailAnimation) {
                             stringResource(R.string.disable)
                         } else {
                             when (canvasSource) {
                                 CanvasSource.AUTO -> stringResource(R.string.canvas_source_auto)
-                                CanvasSource.ECHO_MUSIC -> stringResource(R.string.canvas_source_echo_music)
                                 CanvasSource.APPLE_MUSIC -> stringResource(R.string.canvas_source_apple_music)
-                                CanvasSource.VIVIMUSIC -> stringResource(R.string.canvas_source_vivimusic)
+                                CanvasSource.CONVX -> stringResource(R.string.canvas_source_convx)
                                 CanvasSource.TIDAL -> stringResource(R.string.canvas_source_tidal)
+                                CanvasSource.SPOTIFY -> stringResource(R.string.canvas_source_spotify)
                             }
                         }
                         Text(summary)
                     },
                     onClick = { navController.navigate("settings/appearance/canvas") }
                 ),
-                Material3SettingsItem(
-                    icon = painterResource(R.drawable.chat_msg),
-                    title = { Text(stringResource(R.string.show_comment_button)) },
-                    description = { Text(stringResource(R.string.show_comment_button_description)) },
+                IosSettingsItem(
+                    icon = painterResource(R.drawable.slow_motion_video),
+                    title = { Text(stringResource(R.string.show_album_canvas)) },
+                    description = { Text(stringResource(R.string.show_album_canvas_desc)) },
                     trailingContent = {
                         Switch(
-                            checked = showCommentButton,
-                            onCheckedChange = onShowCommentButtonChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (showCommentButton) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
+                            checked = albumCanvasEnabled,
+                            onCheckedChange = onAlbumCanvasEnabledChange
                         )
                     },
-                    onClick = { onShowCommentButtonChange(!showCommentButton) }
+                    onClick = { onAlbumCanvasEnabledChange(!albumCanvasEnabled) }
                 )
             )
         )
 
-        if (showThumbnailCornerRadiusDialog) {
-            ThumbnailCornerRadiusModal(
-                initialRadius = thumbnailCornerRadius,
-                onDismiss = { showThumbnailCornerRadiusDialog = false },
-                onRadiusSelected = { radius ->
-                    onThumbnailCornerRadiusChange(radius)
-                    showThumbnailCornerRadiusDialog = false
-                }
-            )
-        }
-
         Spacer(modifier = Modifier.height(27.dp))
 
-        Material3SettingsGroup(
-            title = stringResource(R.string.lyrics),
+        IosSettingsGroup(
+            title = "Lyrics layout",
             items = listOfNotNull(
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.lyrics),
                     title = { Text(stringResource(R.string.lyrics_text_position)) },
                     description = {
@@ -954,7 +536,7 @@ fun AppearanceSettings(
                     },
                     onClick = { showLyricsPositionDialog = true }
                 ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.lyrics),
                     title = { Text(stringResource(R.string.lyrics_animation_style)) },
                     description = {
@@ -965,196 +547,62 @@ fun AppearanceSettings(
                                 LyricsAnimationStyle.GLOW -> stringResource(R.string.glow)
                                 LyricsAnimationStyle.SLIDE -> stringResource(R.string.slide)
                                 LyricsAnimationStyle.KARAOKE -> stringResource(R.string.karaoke)
-                                LyricsAnimationStyle.VIVIMUSIC_1 -> stringResource(R.string.vivimusic_1)
+                                LyricsAnimationStyle.BITCHORD -> stringResource(R.string.lyrics_animation_bitchord)
+                                LyricsAnimationStyle.CONVX_1 -> stringResource(R.string.convx_1)
                                 LyricsAnimationStyle.APPLE -> stringResource(R.string.apple_music_style)
                                 LyricsAnimationStyle.APPLE_V2 -> stringResource(R.string.apple_music_style_letter)
                                 LyricsAnimationStyle.LYRICS_V2 -> stringResource(R.string.lyrics_v2_fluid)
                                 LyricsAnimationStyle.METRO_LYRICS -> stringResource(R.string.lyrics_animation_metro)
+                                LyricsAnimationStyle.ARCHIVE_TUNE -> stringResource(R.string.lyrics_animation_karaoke_apple)
                             }
                         )
                     },
                     onClick = { showLyricsAnimationStyleDialog = true }
                 ),
-                Material3SettingsItem(
-                    icon = painterResource(R.drawable.lyrics),
-                    title = { Text(stringResource(R.string.lyrics_glow_effect)) },
-                    description = { Text(stringResource(R.string.lyrics_glow_effect_desc)) },
-                    trailingContent = {
-                        Switch(
-                            checked = lyricsGlowEffect,
-                            onCheckedChange = onLyricsGlowEffectChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (lyricsGlowEffect) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
-                        )
-                    },
-                    onClick = { onLyricsGlowEffectChange(!lyricsGlowEffect) }
-                ),
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && lyricsAnimationStyle == LyricsAnimationStyle.VIVIMUSIC_1) {
-                    Material3SettingsItem(
-                        icon = painterResource(R.drawable.lyrics),
-                        title = { Text(stringResource(R.string.apple_music_lyrics_blur)) },
-                        description = { Text(stringResource(R.string.apple_music_lyrics_blur_desc)) },
-                        trailingContent = {
-                            Switch(
-                                checked = appleMusicLyricsBlur,
-                                onCheckedChange = onAppleMusicLyricsBlurChange,
-                                thumbContent = {
-                                    Icon(
-                                        painter = painterResource(
-                                            id = if (appleMusicLyricsBlur) R.drawable.check else R.drawable.close
-                                        ),
-                                        contentDescription = null,
-                                        modifier = Modifier.size(SwitchDefaults.IconSize)
-                                    )
-                                }
-                            )
-                        },
-                        onClick = { onAppleMusicLyricsBlurChange(!appleMusicLyricsBlur) }
-                    )
-                } else null,
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    Material3SettingsItem(
-                        icon = painterResource(R.drawable.lyrics),
-                        title = { Text(stringResource(R.string.standard_lyrics_blur)) },
-                        description = { Text(stringResource(R.string.apple_music_lyrics_blur_desc)) },
-                        trailingContent = {
-                            Switch(
-                                checked = lyricsStandardBlur,
-                                onCheckedChange = onLyricsStandardBlurChange,
-                                thumbContent = {
-                                    Icon(
-                                        painter = painterResource(
-                                            id = if (lyricsStandardBlur) R.drawable.check else R.drawable.close
-                                        ),
-                                        contentDescription = null,
-                                        modifier = Modifier.size(SwitchDefaults.IconSize)
-                                    )
-                                }
-                            )
-                        },
-                        onClick = { onLyricsStandardBlurChange(!lyricsStandardBlur) }
-                    )
-                } else null,
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.lyrics),
                     title = { Text(stringResource(R.string.lyrics_auto_scroll)) },
                     trailingContent = {
                         Switch(
                             checked = lyricsScroll,
-                            onCheckedChange = onLyricsScrollChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (lyricsScroll) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
+                            onCheckedChange = onLyricsScrollChange
                         )
                     },
                     onClick = { onLyricsScrollChange(!lyricsScroll) }
                 ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.swipe),
                     title = { Text(stringResource(R.string.lyrics_swipe_to_change_song)) },
                     description = { Text(stringResource(R.string.lyrics_swipe_to_change_song_desc)) },
                     trailingContent = {
                         Switch(
                             checked = swipeLyrics,
-                            onCheckedChange = onSwipeLyricsChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (swipeLyrics) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
+                            onCheckedChange = onSwipeLyricsChange
                         )
                     },
                     onClick = { onSwipeLyricsChange(!swipeLyrics) }
                 ),
-                Material3SettingsItem(
-                    icon = painterResource(R.drawable.play),
-                    title = { Text(stringResource(R.string.lyrics_thumbnail_play_pause)) },
-                    description = { Text(stringResource(R.string.lyrics_thumbnail_play_pause_desc)) },
-                    trailingContent = {
-                        Switch(
-                            checked = enableLyricsThumbnailPlayPause,
-                            onCheckedChange = onEnableLyricsThumbnailPlayPauseChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (enableLyricsThumbnailPlayPause) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
-                        )
-                    },
-                    onClick = { onEnableLyricsThumbnailPlayPauseChange(!enableLyricsThumbnailPlayPause) }
-                ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.fullscreen),
                     title = { Text(stringResource(R.string.one_tap_fullscreen_lyrics)) },
                     description = { Text(stringResource(R.string.one_tap_fullscreen_lyrics_desc)) },
                     trailingContent = {
                         Switch(
                             checked = oneTapFullscreenLyrics,
-                            onCheckedChange = onOneTapFullscreenLyricsChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (oneTapFullscreenLyrics) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
+                            onCheckedChange = onOneTapFullscreenLyricsChange
                         )
                     },
                     onClick = { onOneTapFullscreenLyricsChange(!oneTapFullscreenLyrics) }
-                ),
-                Material3SettingsItem(
-                    icon = painterResource(R.drawable.expand_more),
-                    title = { Text(stringResource(R.string.fullscreen_lyrics_collapse_top)) },
-                    description = { Text(stringResource(R.string.fullscreen_lyrics_collapse_top_desc)) },
-                    trailingContent = {
-                        Switch(
-                            checked = fullscreenLyricsCollapseTop,
-                            onCheckedChange = onFullscreenLyricsCollapseTopChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (fullscreenLyricsCollapseTop) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
-                        )
-                    },
-                    onClick = { onFullscreenLyricsCollapseTopChange(!fullscreenLyricsCollapseTop) }
                 )
             )
         )
 
         Spacer(modifier = Modifier.height(27.dp))
 
-        Material3SettingsGroup(
-            title = stringResource(R.string.misc),
+        IosSettingsGroup(
+            title = "More",
             items = listOf(
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.nav_bar),
                     title = { Text(stringResource(R.string.default_open_tab)) },
                     description = {
@@ -1168,242 +616,74 @@ fun AppearanceSettings(
                     },
                     onClick = { showDefaultOpenTabDialog = true }
                 ),
-                Material3SettingsItem(
-                    icon = painterResource(R.drawable.tab),
-                    title = { Text(stringResource(R.string.default_lib_chips)) },
-                    description = {
-                        Text(
-                            when (defaultChip) {
-                                LibraryFilter.SONGS -> stringResource(R.string.songs)
-                                LibraryFilter.ARTISTS -> stringResource(R.string.artists)
-                                LibraryFilter.ALBUMS -> stringResource(R.string.albums)
-                                LibraryFilter.PLAYLISTS -> stringResource(R.string.playlists)
-                                LibraryFilter.LIBRARY -> stringResource(R.string.filter_library)
-                            }
-                        )
-                    },
-                    onClick = { showDefaultChipDialog = true }
-                ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.swipe),
                     title = { Text(stringResource(R.string.swipe_song_to_add)) },
                     trailingContent = {
                         Switch(
                             checked = swipeToSong,
-                            onCheckedChange = onSwipeToSongChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (swipeToSong) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
+                            onCheckedChange = onSwipeToSongChange
                         )
                     },
                     onClick = { onSwipeToSongChange(!swipeToSong) }
                 ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.swipe),
                     title = { Text(stringResource(R.string.swipe_song_to_remove)) },
                     trailingContent = {
                         Switch(
                             checked = swipeToRemoveSong,
-                            onCheckedChange = onSwipeToRemoveSongChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (swipeToRemoveSong) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
+                            onCheckedChange = onSwipeToRemoveSongChange
                         )
                     },
                     onClick = { onSwipeToRemoveSongChange(!swipeToRemoveSong) }
                 ),
-                Material3SettingsItem(
-                    icon = painterResource(R.drawable.grid_view),
-                    title = { Text(stringResource(R.string.grid_cell_size)) },
-                    description = {
-                        Text(
-                            when (gridItemSize) {
-                                GridItemSize.BIG -> stringResource(R.string.big)
-                                GridItemSize.SMALL -> stringResource(R.string.small)
-                            }
-                        )
-                    },
-                    onClick = { showGridSizeDialog = true }
-                ),
-                Material3SettingsItem(
-                    icon = painterResource(R.drawable.grid_view),
-                    title = { Text(stringResource(R.string.display_density)) },
-                    description = {
-                        Text(DensityScale.fromValue(densityScale).label)
-                    },
-                    onClick = { showDensityScaleDialog = true }
-                )
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    IosSettingsItem(
+                        icon = painterResource(R.drawable.language),
+                        title = { Text(stringResource(R.string.app_language)) },
+                        onClick = {
+                            activity.startActivity(
+                                Intent(
+                                    Settings.ACTION_APP_LOCALE_SETTINGS,
+                                    "package:${activity.packageName}".toUri()
+                                )
+                            )
+                        }
+                    )
+                } else {
+                    IosSettingsItem(
+                        icon = painterResource(R.drawable.language),
+                        title = { Text(stringResource(R.string.app_language)) },
+                        description = {
+                            Text(
+                                LanguageCodeToName.getOrElse(appLanguage) { stringResource(R.string.system_default) }
+                            )
+                        },
+                        onClick = { showAppLanguageDialog = true }
+                    )
+                }
             )
         )
 
         Spacer(modifier = Modifier.height(27.dp))
 
-        Material3SettingsGroup(
+        IosSettingsGroup(
             title = stringResource(R.string.grid_and_cards),
             items = listOf(
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.grid_view),
                     title = { Text(stringResource(R.string.pure_black_hero_background)) },
                     description = { Text(stringResource(R.string.pure_black_hero_background_desc)) },
                     trailingContent = {
                         Switch(
                             checked = pureBlackHeroBackground,
-                            onCheckedChange = onPureBlackHeroBackgroundChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (pureBlackHeroBackground) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
+                            onCheckedChange = onPureBlackHeroBackgroundChange
                         )
                     },
                     onClick = { onPureBlackHeroBackgroundChange(!pureBlackHeroBackground) }
                 ),
-                Material3SettingsItem(
-                    icon = painterResource(R.drawable.mic),
-                    title = { Text(stringResource(R.string.show_home_fab)) },
-                    description = { Text(stringResource(R.string.show_home_fab_desc)) },
-                    trailingContent = {
-                        Switch(
-                            checked = showHomeFab,
-                            onCheckedChange = onShowHomeFabChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (showHomeFab) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
-                        )
-                    },
-                    onClick = { onShowHomeFabChange(!showHomeFab) }
-                ),
-                Material3SettingsItem(
-                    icon = painterResource(R.drawable.favorite_border),
-                    title = { Text(stringResource(R.string.hide_home_favorite_icon)) },
-                    description = { Text(stringResource(R.string.hide_home_favorite_icon_desc)) },
-                    trailingContent = {
-                        Switch(
-                            checked = hideHomeFavoriteIcon,
-                            onCheckedChange = onHideHomeFavoriteIconChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (hideHomeFavoriteIcon) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
-                        )
-                    },
-                    onClick = { onHideHomeFavoriteIconChange(!hideHomeFavoriteIcon) }
-                ),
-                Material3SettingsItem(
-                    icon = painterResource(R.drawable.grid_view),
-                    title = { Text(stringResource(R.string.grid_columns)) },
-                    description = {
-                        Column {
-                            Text(
-                                text = if (gridColumnsOverride == 0) {
-                                    stringResource(R.string.auto)
-                                } else {
-                                    gridColumnsOverride.toString()
-                                }
-                            )
-                            Slider(
-                                value = GridColumnChoices.indexOf(gridColumnsOverride).coerceAtLeast(0).toFloat(),
-                                onValueChange = {
-                                    onGridColumnsOverrideChange(GridColumnChoices[it.roundToInt()])
-                                },
-                                steps = GridColumnChoices.size - 2,
-                                valueRange = 0f..(GridColumnChoices.size - 1).toFloat(),
-                            )
-                        }
-                    },
-                ),
-                Material3SettingsItem(
-                    icon = painterResource(R.drawable.grid_view),
-                    title = { Text(stringResource(R.string.grid_card_height)) },
-                    description = {
-                        Column {
-                            Text(
-                                text = if (gridCardHeightOverride == 0) {
-                                    stringResource(R.string.auto)
-                                } else {
-                                    "${gridCardHeightOverride}dp"
-                                }
-                            )
-                            Slider(
-                                value = GridCardHeightChoices.indexOf(gridCardHeightOverride).coerceAtLeast(0).toFloat(),
-                                onValueChange = {
-                                    onGridCardHeightOverrideChange(GridCardHeightChoices[it.roundToInt()])
-                                },
-                                steps = GridCardHeightChoices.size - 2,
-                                valueRange = 0f..(GridCardHeightChoices.size - 1).toFloat(),
-                            )
-                        }
-                    },
-                ),
-                Material3SettingsItem(
-                    icon = painterResource(R.drawable.grid_view),
-                    title = { Text(stringResource(R.string.grid_spacing)) },
-                    description = {
-                        Column {
-                            Text(text = "${gridSpacing}dp")
-                            Slider(
-                                value = GridSpacingChoices.indexOf(gridSpacing).coerceAtLeast(0).toFloat(),
-                                onValueChange = {
-                                    onGridSpacingChange(GridSpacingChoices[it.roundToInt()])
-                                },
-                                steps = GridSpacingChoices.size - 2,
-                                valueRange = 0f..(GridSpacingChoices.size - 1).toFloat(),
-                            )
-                        }
-                    },
-                ),
-                Material3SettingsItem(
-                    icon = painterResource(R.drawable.grid_view),
-                    title = { Text(stringResource(R.string.speed_dial_columns)) },
-                    description = {
-                        val speedDialChoices = remember { listOf(0, 3, 4, 5, 6) }
-                        Column {
-                            Text(
-                                text = if (speedDialColumnsOverride == 0) {
-                                    stringResource(R.string.auto)
-                                } else {
-                                    speedDialColumnsOverride.toString()
-                                }
-                            )
-                            Slider(
-                                value = speedDialChoices.indexOf(speedDialColumnsOverride).coerceAtLeast(0).toFloat(),
-                                onValueChange = {
-                                    onSpeedDialColumnsOverrideChange(speedDialChoices[it.roundToInt()])
-                                },
-                                steps = speedDialChoices.size - 2,
-                                valueRange = 0f..(speedDialChoices.size - 1).toFloat(),
-                            )
-                        }
-                    },
-                ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.grid_view),
                     title = { Text(stringResource(R.string.home_hero_card)) },
                     description = { Text(stringResource(R.string.home_hero_card_desc)) },
@@ -1415,229 +695,90 @@ fun AppearanceSettings(
                     },
                     onClick = { onHomeHeroCardEnabledChange(!homeHeroCardEnabled) },
                 ),
-                Material3SettingsItem(
-                    icon = painterResource(R.drawable.grid_view),
-                    title = { Text(stringResource(R.string.home_grid_columns)) },
-                    description = {
-                        val homeGridChoices = remember { listOf(0, 2, 3, 4) }
-                        Column {
-                            Text(
-                                text = if (homeGridColumnsOverride == 0) {
-                                    stringResource(R.string.auto)
-                                } else {
-                                    homeGridColumnsOverride.toString()
-                                }
-                            )
-                            Slider(
-                                value = homeGridChoices.indexOf(homeGridColumnsOverride).coerceAtLeast(0).toFloat(),
-                                onValueChange = {
-                                    onHomeGridColumnsOverrideChange(homeGridChoices[it.roundToInt()])
-                                },
-                                steps = homeGridChoices.size - 2,
-                                valueRange = 0f..(homeGridChoices.size - 1).toFloat(),
-                            )
-                        }
-                    },
-                ),
-                Material3SettingsItem(
-                    icon = painterResource(R.drawable.grid_view),
-                    title = { Text(stringResource(R.string.home_hero_card_height)) },
-                    description = {
-                        Column {
-                            Text(
-                                text = if (homeHeroCardHeightOverride == 0) {
-                                    stringResource(R.string.auto)
-                                } else {
-                                    "${homeHeroCardHeightOverride}dp"
-                                }
-                            )
-                            Slider(
-                                value = HomeHeroCardHeightChoices.indexOf(homeHeroCardHeightOverride).coerceAtLeast(0).toFloat(),
-                                onValueChange = {
-                                    onHomeHeroCardHeightOverrideChange(HomeHeroCardHeightChoices[it.roundToInt()])
-                                },
-                                steps = HomeHeroCardHeightChoices.size - 2,
-                                valueRange = 0f..(HomeHeroCardHeightChoices.size - 1).toFloat(),
-                            )
-                        }
-                    },
-                ),
-                Material3SettingsItem(
-                    icon = painterResource(R.drawable.grid_view),
-                    title = { Text(stringResource(R.string.speed_dial_card_height)) },
-                    description = {
-                        Column {
-                            Text(
-                                text = if (speedDialCardHeightOverride == 0) {
-                                    stringResource(R.string.auto)
-                                } else {
-                                    "${speedDialCardHeightOverride}dp"
-                                }
-                            )
-                            Slider(
-                                value = GridCardHeightChoices.indexOf(speedDialCardHeightOverride).coerceAtLeast(0).toFloat(),
-                                onValueChange = {
-                                    onSpeedDialCardHeightOverrideChange(GridCardHeightChoices[it.roundToInt()])
-                                },
-                                steps = GridCardHeightChoices.size - 2,
-                                valueRange = 0f..(GridCardHeightChoices.size - 1).toFloat(),
-                            )
-                        }
-                    },
-                ),
-                Material3SettingsItem(
-                    icon = painterResource(R.drawable.grid_view),
-                    title = { Text(stringResource(R.string.home_card_corner_radius)) },
-                    description = {
-                        Column {
-                            Text(
-                                text = if (homeCardCornerRadiusOverride == 0) {
-                                    stringResource(R.string.auto)
-                                } else {
-                                    "${homeCardCornerRadiusOverride}dp"
-                                }
-                            )
-                            Slider(
-                                value = HomeCardCornerRadiusChoices.indexOf(homeCardCornerRadiusOverride).coerceAtLeast(0).toFloat(),
-                                onValueChange = {
-                                    onHomeCardCornerRadiusOverrideChange(HomeCardCornerRadiusChoices[it.roundToInt()])
-                                },
-                                steps = HomeCardCornerRadiusChoices.size - 2,
-                                valueRange = 0f..(HomeCardCornerRadiusChoices.size - 1).toFloat(),
-                            )
-                        }
-                    },
-                ),
             )
         )
 
         Spacer(modifier = Modifier.height(27.dp))
 
-        Material3SettingsGroup(
+        IosSettingsGroup(
             title = stringResource(R.string.auto_playlists),
             items = listOf(
-                Material3SettingsItem(
-                    icon = painterResource(R.drawable.favorite),
+                IosSettingsItem(
+                    icon = rememberVectorPainter(SfSymbols.Monochrome.SFStar),
                     title = { Text(stringResource(R.string.show_liked_playlist)) },
                     trailingContent = {
                         Switch(
                             checked = showLikedPlaylist,
-                            onCheckedChange = onShowLikedPlaylistChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (showLikedPlaylist) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
+                            onCheckedChange = onShowLikedPlaylistChange
                         )
                     },
                     onClick = { onShowLikedPlaylistChange(!showLikedPlaylist) }
                 ),
-                Material3SettingsItem(
-                    icon = painterResource(R.drawable.offline),
+                IosSettingsItem(
+                    icon = rememberVectorPainter(SfSymbols.Monochrome.SFIcloudAndArrowDownFill),
                     title = { Text(stringResource(R.string.show_downloaded_playlist)) },
                     trailingContent = {
                         Switch(
                             checked = showDownloadedPlaylist,
-                            onCheckedChange = onShowDownloadedPlaylistChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (showDownloadedPlaylist) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
+                            onCheckedChange = onShowDownloadedPlaylistChange
                         )
                     },
                     onClick = { onShowDownloadedPlaylistChange(!showDownloadedPlaylist) }
                 ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.trending_up),
                     title = { Text(stringResource(R.string.show_top_playlist)) },
                     trailingContent = {
                         Switch(
                             checked = showTopPlaylist,
-                            onCheckedChange = onShowTopPlaylistChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (showTopPlaylist) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
+                            onCheckedChange = onShowTopPlaylistChange
                         )
                     },
                     onClick = { onShowTopPlaylistChange(!showTopPlaylist) }
                 ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.cached),
                     title = { Text(stringResource(R.string.show_cached_playlist)) },
                     trailingContent = {
                         Switch(
                             checked = showCachedPlaylist,
-                            onCheckedChange = onShowCachedPlaylistChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (showCachedPlaylist) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
+                            onCheckedChange = onShowCachedPlaylistChange
                         )
                     },
                     onClick = { onShowCachedPlaylistChange(!showCachedPlaylist) }
                 ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.backup),
                     title = { Text(stringResource(R.string.show_uploaded_playlist)) },
                     trailingContent = {
                         Switch(
                             checked = showUploadedPlaylist,
-                            onCheckedChange = onShowUploadedPlaylistChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (showUploadedPlaylist) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
+                            onCheckedChange = onShowUploadedPlaylistChange
                         )
                     },
                     onClick = { onShowUploadedPlaylistChange(!showUploadedPlaylist) }
                 )
             )
         )
+
+        Spacer(modifier = Modifier.height(27.dp))
+
+        IosSettingsGroup(
+            title = stringResource(R.string.advanced),
+            items = listOf(
+                IosSettingsItem(
+                    icon = painterResource(R.drawable.tune),
+                    title = { Text(stringResource(R.string.advanced)) },
+                    description = { Text(stringResource(R.string.advanced_settings_desc)) },
+                    onClick = { navController.navigate("settings/appearance/advanced") }
+                )
+            )
+        )
         Spacer(modifier = Modifier.height(16.dp))
             }
         }
+    
     }
-
-    TopAppBar(
-            windowInsets = appTopBarWindowInsets(),
-        title = { Text(stringResource(R.string.appearance)) },
-        navigationIcon = {
-            IconButton(
-                onClick = { navController.navigateUp() },
-                onLongClick = { navController.backToMain() },
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.arrow_back),
-                    contentDescription = null,
-                )
-            }
-        }
-    )
 }
 
 enum class DarkMode {
@@ -1661,4 +802,294 @@ enum class LyricsPosition {
 enum class PlayerTextAlignment {
     SIDED,
     CENTER,
+}
+
+@Composable
+fun ColumnScope.LyricsAnimationSheetContent() {
+    val (selected, onSelect) = rememberEnumPreference(LyricsAnimationStyleKey, defaultValue = LyricsAnimationStyle.METRO_LYRICS)
+    val (position, onPositionChange) = rememberEnumPreference(LyricsTextPositionKey, defaultValue = LyricsPosition.LEFT)
+    val (autoScroll, onAutoScrollChange) = rememberPreference(LyricsScrollKey, defaultValue = true)
+    val (swipeToChange, onSwipeToChangeChange) = rememberPreference(SwipeLyricsKey, defaultValue = false)
+    val animation = androidx.compose.animation.core.rememberInfiniteTransition(label = "lyrics sample")
+    val progress by animation.animateFloat(
+        initialValue = 0.18f,
+        targetValue = 0.82f,
+        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+            animation = androidx.compose.animation.core.tween(1900),
+            repeatMode = androidx.compose.animation.core.RepeatMode.Reverse,
+        ),
+        label = "sample lyric progress",
+    )
+    val selectedColor by androidx.compose.animation.animateColorAsState(
+        targetValue = IosTheme.tint,
+        animationSpec = androidx.compose.animation.core.tween(220),
+        label = "lyrics style accent",
+    )
+
+    val align = when (position) {
+        LyricsPosition.LEFT -> androidx.compose.ui.text.style.TextAlign.Start
+        LyricsPosition.CENTER -> androidx.compose.ui.text.style.TextAlign.Center
+        LyricsPosition.RIGHT -> androidx.compose.ui.text.style.TextAlign.End
+    }
+    val fill = selected == LyricsAnimationStyle.KARAOKE || selected == LyricsAnimationStyle.ARCHIVE_TUNE ||
+        selected == LyricsAnimationStyle.APPLE || selected == LyricsAnimationStyle.APPLE_V2 ||
+        selected == LyricsAnimationStyle.BITCHORD
+
+    run {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .navigationBarsPadding()
+                .padding(bottom = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = "Tap a style to preview and apply it",
+                    style = IosTheme.typography.footnote,
+                    color = IosTheme.colors.secondaryLabel,
+                )
+            }
+
+            // The playing song's own lyrics, through the player's own lyrics view: what is
+            // seen here is exactly what the player shows in the chosen style.
+            val lyricsConnection = com.convx.music.LocalPlayerConnection.current
+            val lyricsTrack by remember(lyricsConnection) {
+                lyricsConnection?.mediaMetadata ?: kotlinx.coroutines.flow.MutableStateFlow(null)
+            }.collectAsStateWithLifecycle()
+            val lyricsPlaying by remember(lyricsConnection) {
+                lyricsConnection?.isPlaying ?: kotlinx.coroutines.flow.MutableStateFlow(false)
+            }.collectAsStateWithLifecycle()
+            // Paused or not, the preview keeps singing: a clock carries on from where the song
+            // stopped and loops at its end, so every style can be watched moving.
+            var pausedClock by remember { androidx.compose.runtime.mutableLongStateOf(0L) }
+            LaunchedEffect(lyricsPlaying, lyricsTrack?.id) {
+                if (lyricsPlaying || lyricsConnection == null) return@LaunchedEffect
+                val from = lyricsConnection.player.currentPosition.coerceAtLeast(0L)
+                val length = ((lyricsTrack?.duration ?: 0) * 1000L).coerceAtLeast(30_000L)
+                val startedAt = System.currentTimeMillis()
+                while (true) {
+                    androidx.compose.runtime.withFrameMillis { }
+                    pausedClock = (from + System.currentTimeMillis() - startedAt) % length
+                }
+            }
+            val previewClock: () -> Long = {
+                if (lyricsPlaying) lyricsConnection?.player?.currentPosition ?: 0L else pausedClock
+            }
+            if (lyricsConnection != null && lyricsTrack != null) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(360.dp)
+                        .clip(ContinuousRoundedRectangle(24.dp)),
+                ) {
+                    com.convx.music.ui.player.NowPlayingBackground(
+                        artworkUrl = lyricsTrack?.thumbnailUrl,
+                        hero = false,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    com.convx.music.ui.player.InlineLyricsView(
+                        mediaMetadata = lyricsTrack,
+                        showLyrics = true,
+                        positionProvider = previewClock,
+                    )
+                    Text(
+                        lyricsTrack?.title.orEmpty(),
+                        color = Color.White.copy(alpha = 0.6f),
+                        style = IosTheme.typography.caption,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        modifier = Modifier.align(Alignment.TopStart).padding(14.dp),
+                    )
+                }
+            } else {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(168.dp)
+                        .clip(ContinuousRoundedRectangle(24.dp))
+                        .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(selectedColor.copy(alpha = 0.38f).compositeOver(Color(0xFF111217)), Color(0xFF111217)))),
+                ) {
+                    Column(
+                        Modifier.fillMaxSize().padding(horizontal = 22.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterVertically),
+                    ) {
+                        Text(
+                            "Where the light meets the sea",
+                            color = Color.White.copy(alpha = 0.38f),
+                            style = IosTheme.typography.subheadline,
+                            textAlign = align,
+                            maxLines = 1,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Text(
+                            "We find our way back home",
+                            style = IosTheme.typography.title3.let {
+                                when {
+                                    fill -> it.copy(
+                                        brush = androidx.compose.ui.graphics.Brush.horizontalGradient(
+                                            0f to selectedColor,
+                                            progress to selectedColor,
+                                            (progress + 0.001f).coerceAtMost(1f) to Color.White.copy(alpha = 0.4f),
+                                            1f to Color.White.copy(alpha = 0.4f),
+                                        ),
+                                    )
+                                    selected == LyricsAnimationStyle.GLOW -> it.copy(
+                                        color = selectedColor,
+                                        shadow = androidx.compose.ui.graphics.Shadow(selectedColor, blurRadius = 8f + progress * 22f),
+                                    )
+                                    else -> it.copy(color = selectedColor)
+                                }
+                            },
+                            fontWeight = FontWeight.Bold,
+                            textAlign = align,
+                            maxLines = 1,
+                            modifier = Modifier.fillMaxWidth().graphicsLayer {
+                                when (selected) {
+                                    LyricsAnimationStyle.NONE -> Unit
+                                    LyricsAnimationStyle.FADE -> alpha = 0.45f + progress * 0.55f
+                                    LyricsAnimationStyle.SLIDE -> {
+                                        translationX = (1f - progress) * 28.dp.toPx() * if (position == LyricsPosition.RIGHT) -1f else 1f
+                                        alpha = 0.5f + progress * 0.5f
+                                    }
+                                    else -> {
+                                        scaleX = 0.94f + progress * 0.06f
+                                        scaleY = scaleX
+                                        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(
+                                            when (position) {
+                                                LyricsPosition.LEFT -> 0f
+                                                LyricsPosition.CENTER -> 0.5f
+                                                LyricsPosition.RIGHT -> 1f
+                                            },
+                                            0.5f,
+                                        )
+                                    }
+                                }
+                            },
+                        )
+                        Text(
+                            "Under the open sky",
+                            color = Color.White.copy(alpha = 0.38f),
+                            style = IosTheme.typography.subheadline,
+                            textAlign = align,
+                            maxLines = 1,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    Text(
+                        "SAMPLE",
+                        color = Color.White.copy(alpha = 0.45f),
+                        style = IosTheme.typography.caption,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.align(Alignment.TopEnd).padding(14.dp),
+                    )
+                }
+            }
+
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                // Bleed to the sheet edge while the first chip still lines up with the 20dp gutter.
+                modifier = Modifier.layout { measurable, constraints ->
+                    val bleed = 32.dp.roundToPx()
+                    val placeable = measurable.measure(constraints.copy(maxWidth = constraints.maxWidth + bleed))
+                    layout(constraints.maxWidth, placeable.height) { placeable.place(-bleed / 2, 0) }
+                },
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+            ) {
+                items(LyricsAnimationStyle.entries) { style ->
+                    val active = style == selected
+                    Text(
+                        text = when (style) {
+                            LyricsAnimationStyle.NONE -> stringResource(R.string.none)
+                            LyricsAnimationStyle.FADE -> stringResource(R.string.fade)
+                            LyricsAnimationStyle.GLOW -> stringResource(R.string.glow)
+                            LyricsAnimationStyle.SLIDE -> stringResource(R.string.slide)
+                            LyricsAnimationStyle.KARAOKE -> stringResource(R.string.karaoke)
+                            LyricsAnimationStyle.APPLE -> stringResource(R.string.apple_music_style)
+                            LyricsAnimationStyle.APPLE_V2 -> stringResource(R.string.apple_music_style_letter)
+                            LyricsAnimationStyle.BITCHORD -> stringResource(R.string.lyrics_animation_bitchord)
+                            LyricsAnimationStyle.CONVX_1 -> stringResource(R.string.convx_1)
+                            LyricsAnimationStyle.LYRICS_V2 -> stringResource(R.string.lyrics_v2_fluid)
+                            LyricsAnimationStyle.METRO_LYRICS -> stringResource(R.string.lyrics_animation_metro)
+                            LyricsAnimationStyle.ARCHIVE_TUNE -> stringResource(R.string.lyrics_animation_karaoke_apple)
+                        },
+                        color = if (active) Color.White else IosTheme.colors.label,
+                        style = IosTheme.typography.subheadline,
+                        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+                        maxLines = 1,
+                        modifier = Modifier
+                            .clip(ContinuousCapsule())
+                            .background(if (active) selectedColor else IosTheme.colors.secondarySystemFill)
+                            .clickable { onSelect(style) }
+                            .defaultMinSize(minHeight = 40.dp)
+                            .wrapContentHeight(Alignment.CenterVertically)
+                            .padding(horizontal = 16.dp),
+                    )
+                }
+            }
+
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(ContinuousRoundedRectangle(IosMetrics.GroupedCornerRadius))
+                    .background(IosTheme.colors.secondarySystemGroupedBackground),
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().defaultMinSize(minHeight = 56.dp).padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        stringResource(R.string.lyrics_text_position),
+                        style = IosTheme.typography.body,
+                        color = IosTheme.colors.label,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Row(
+                        Modifier
+                            .clip(ContinuousCapsule())
+                            .background(IosTheme.colors.secondarySystemFill)
+                            .padding(3.dp),
+                    ) {
+                        LyricsPosition.entries.forEach { p ->
+                            val active = p == position
+                            Text(
+                                text = when (p) {
+                                    LyricsPosition.LEFT -> stringResource(R.string.left)
+                                    LyricsPosition.CENTER -> stringResource(R.string.center)
+                                    LyricsPosition.RIGHT -> stringResource(R.string.right)
+                                },
+                                color = if (active) Color.White else IosTheme.colors.label,
+                                style = IosTheme.typography.footnote,
+                                fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+                                maxLines = 1,
+                                modifier = Modifier
+                                    .clip(ContinuousCapsule())
+                                    .background(if (active) selectedColor else Color.Transparent)
+                                    .clickable { onPositionChange(p) }
+                                    .defaultMinSize(minHeight = 34.dp)
+                                    .wrapContentHeight(Alignment.CenterVertically)
+                                    .padding(horizontal = 12.dp),
+                            )
+                        }
+                    }
+                }
+                HorizontalDivider(Modifier.padding(start = 16.dp), color = IosTheme.colors.separator, thickness = IosMetrics.SeparatorThickness)
+                LyricsSheetSwitch(stringResource(R.string.lyrics_auto_scroll), autoScroll, onAutoScrollChange)
+                HorizontalDivider(Modifier.padding(start = 16.dp), color = IosTheme.colors.separator, thickness = IosMetrics.SeparatorThickness)
+                LyricsSheetSwitch(stringResource(R.string.lyrics_swipe_to_change_song), swipeToChange, onSwipeToChangeChange)
+            }
+        }
+    }
+}
+
+@Composable
+private fun LyricsSheetSwitch(title: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable { onChange(!checked) }.defaultMinSize(minHeight = 56.dp).padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(title, style = IosTheme.typography.body, color = IosTheme.colors.label, modifier = Modifier.weight(1f))
+        Switch(checked = checked, onCheckedChange = onChange)
+    }
 }

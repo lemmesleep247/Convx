@@ -5,205 +5,113 @@
 
 package com.convx.music.ui.screens.settings.integrations
 
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import com.convx.music.ui.component.sf
+import com.convx.music.ui.component.SymbolIcon
 import com.convx.music.ui.utils.appTopBarWindowInsets
 import android.content.Intent
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.animation.AnimatedVisibility
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.animation.animateContentSize
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.border
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.Arrangement
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.Box
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.Column
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.Row
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.Spacer
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.height
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.only
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.padding
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.size
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.width
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.windowInsetsPadding
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.rememberScrollState
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.shape.CircleShape
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.shape.RoundedCornerShape
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.verticalScroll
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.Card
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import com.convx.music.ui.ios.compat.Card
 import androidx.compose.material3.CardDefaults
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.material3.ExperimentalMaterial3Api
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.Icon
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.LinearProgressIndicator
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.LinearWavyProgressIndicator
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.LinearProgressIndicator
+import com.convx.music.ui.ios.compat.LinearWavyProgressIndicator
 import androidx.compose.material3.SnackbarHostState
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.MaterialTheme
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.OutlinedButton
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.Surface
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.ui.component.GlassSwitchCompat as Switch
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.Text
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.TextButton
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.TopAppBar
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.OutlinedButton
+import com.convx.music.ui.ios.compat.Surface
+import com.convx.music.ui.ios.compat.Switch
+import com.convx.music.ui.ios.compat.Text
+import com.convx.music.ui.ios.compat.TextButton
+import com.convx.music.ui.ios.compat.TopAppBar
 import androidx.compose.material3.TopAppBarScrollBehavior
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.Composable
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.LaunchedEffect
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.collectAsState
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.getValue
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.mutableLongStateOf
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.mutableStateOf
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.remember
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.rememberCoroutineScope
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.saveable.rememberSaveable
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.setValue
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.Alignment
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.Modifier
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.draw.alpha
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.draw.clip
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.platform.LocalContext
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.res.painterResource
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.res.stringResource
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.text.font.FontWeight
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.text.style.TextAlign
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.text.style.TextOverflow
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.text.input.TextFieldValue
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.unit.dp
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.unit.sp
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.core.net.toUri
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.media3.common.Player.STATE_READY
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.navigation.NavController
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import coil3.compose.AsyncImage
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.LocalPlayerAwareWindowInsets
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.LocalPlayerConnection
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.R
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.DiscordActivityNameKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.DiscordActivityTypeKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.DiscordAdvancedModeKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.DiscordAvatarKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.DiscordButton1TextKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.DiscordButton1VisibleKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.DiscordButton2TextKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.DiscordButton2VisibleKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.DiscordInfoDismissedKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.DiscordNameKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.DiscordStatusKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.DiscordTokenKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.DiscordUseDetailsKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.DiscordUsernameKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.EnableDiscordRPCKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.db.entities.Song
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.component.EnumDialog
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.component.IconButton
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.component.InfoLabel
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.ui.component.Material3SettingsGroup
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.ui.component.Material3SettingsItem
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import com.convx.music.ui.component.IosSettingsGroup
+import com.convx.music.ui.component.IosSettingsItem
 import com.convx.music.ui.component.TextFieldDialog
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.utils.backToMain
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.utils.DiscordRPC
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.utils.SuperProperties
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import com.convx.music.utils.dataStore
 import com.convx.music.utils.makeTimeString
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.utils.rememberPreference
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.my.kizzy.rpc.KizzyRPC
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import kotlinx.coroutines.Dispatchers
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import kotlinx.coroutines.delay
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import kotlinx.coroutines.launch
+import com.convx.music.ui.screens.settings.SettingsPage
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 private enum class DiscordStatus { ONLINE, IDLE, DND }
 private enum class DiscordActivityType { LISTENING, PLAYING, WATCHING, COMPETING }
@@ -217,7 +125,7 @@ fun DiscordSettings(
 ) {
     val playerConnection = LocalPlayerConnection.current ?: return
     val song by playerConnection.currentSong.collectAsState(null)
-    val playbackState by playerConnection.playbackState.collectAsState()
+    val playbackState by playerConnection.playbackState.collectAsStateWithLifecycle()
 
     var position by rememberSaveable(playbackState) {
         mutableLongStateOf(playerConnection.player.currentPosition)
@@ -228,6 +136,11 @@ fun DiscordSettings(
 
     // Preferences
     var discordToken by rememberPreference(DiscordTokenKey, "")
+    val loadedToken by remember(context) {
+        context.dataStore.data
+            .map { it[DiscordTokenKey] ?: "" }
+            .distinctUntilChanged()
+    }.collectAsStateWithLifecycle(initialValue = null)
     var discordUsername by rememberPreference(DiscordUsernameKey, "")
     var discordName by rememberPreference(DiscordNameKey, "")
     var discordAvatar by rememberPreference(DiscordAvatarKey, "")
@@ -254,7 +167,6 @@ fun DiscordSettings(
     var showButton2TextDialog by rememberSaveable { mutableStateOf(false) }
     var showActivityNameDialog by rememberSaveable { mutableStateOf(false) }
 
-    // Map string prefs to enums for dialogs
     val currentStatus = when (discordStatus) {
         "idle" -> DiscordStatus.IDLE
         "dnd" -> DiscordStatus.DND
@@ -267,9 +179,8 @@ fun DiscordSettings(
         else -> DiscordActivityType.LISTENING
     }
 
-    // Fetch user info when token changes
-    LaunchedEffect(discordToken) {
-        val token = discordToken
+    LaunchedEffect(loadedToken) {
+        val token = loadedToken ?: return@LaunchedEffect
         if (token.isEmpty()) {
             discordUsername = ""
             discordName = ""
@@ -293,7 +204,6 @@ fun DiscordSettings(
         }
     }
 
-    // Update playback position
     LaunchedEffect(playbackState) {
         if (playbackState == STATE_READY) {
             while (isActive) {
@@ -342,9 +252,9 @@ fun DiscordSettings(
                 }
                 if (error != null) {
                     Text(
-                        text = error!!,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall,
+                        text = error.orEmpty(),
+                        color = AppTheme.colorScheme.error,
+                        style = AppTheme.typography.bodySmall,
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
                 }
@@ -448,27 +358,17 @@ fun DiscordSettings(
         )
     }
 
-    Column(
-        modifier = Modifier
-            .windowInsetsPadding(
-                LocalPlayerAwareWindowInsets.current.only(
-                    WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom
-                )
-            )
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp)
+    SettingsPage(
+        navController = navController,
+        title = stringResource(R.string.discord_integration),
+        pageColor = AppTheme.colorScheme.background,
+        horizontalPadding = 16.dp,
     ) {
-        Spacer(
-            Modifier.windowInsetsPadding(
-                LocalPlayerAwareWindowInsets.current.only(WindowInsetsSides.Top)
-            )
-        )
-
         // Warning Card
         AnimatedVisibility(visible = !infoDismissed) {
             Card(
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    containerColor = AppTheme.colorScheme.surfaceContainerHighest,
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -478,18 +378,13 @@ fun DiscordSettings(
                     modifier = Modifier.padding(16.dp),
                     verticalAlignment = Alignment.Top,
                 ) {
-                    Icon(
-                        painter = painterResource(R.drawable.warning),
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.size(24.dp),
-                    )
+                    SymbolIcon(symbol = sf("exclamationmark.triangle.fill"), contentDescription = null, size = 24.dp, tint = AppTheme.colorScheme.onSurface)
                     Spacer(Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = stringResource(R.string.discord_information_warning),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
+                            style = AppTheme.typography.bodyMedium,
+                            color = AppTheme.colorScheme.onSurface,
                         )
                         Spacer(Modifier.height(8.dp))
                         TextButton(
@@ -507,7 +402,7 @@ fun DiscordSettings(
         Card(
             shape = RoundedCornerShape(28.dp),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                containerColor = AppTheme.colorScheme.surfaceContainerHigh,
             ),
             modifier = Modifier
                 .fillMaxWidth()
@@ -542,9 +437,9 @@ fun DiscordSettings(
                     }
                     if (isLoggedIn) {
                         val statusColor = when (discordStatus) {
-                            "idle" -> MaterialTheme.colorScheme.tertiary
-                            "dnd" -> MaterialTheme.colorScheme.error
-                            else -> MaterialTheme.colorScheme.primary
+                            "idle" -> AppTheme.colorScheme.tertiary
+                            "dnd" -> AppTheme.colorScheme.error
+                            else -> AppTheme.colorScheme.primary
                         }
                         Surface(
                             color = statusColor,
@@ -554,7 +449,7 @@ fun DiscordSettings(
                                 .align(Alignment.BottomEnd)
                                 .border(
                                     2.dp,
-                                    MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    AppTheme.colorScheme.surfaceContainerHigh,
                                     CircleShape
                                 ),
                             content = {},
@@ -568,22 +463,22 @@ fun DiscordSettings(
                     Text(
                         text = if (isLoggedIn) discordName
                                else stringResource(R.string.not_logged_in),
-                        style = MaterialTheme.typography.titleMedium,
+                        style = AppTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.alpha(if (isLoggedIn) 1f else 0.5f),
                     )
                     if (discordUsername.isNotEmpty()) {
                         Text(
                             text = "@$discordUsername",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = AppTheme.typography.bodyMedium,
+                            color = AppTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     if (!isLoggedIn) {
                         Text(
                             text = stringResource(R.string.discord_connect_description),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = AppTheme.typography.bodySmall,
+                            color = AppTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
@@ -630,10 +525,10 @@ fun DiscordSettings(
         }
 
         // Options section (card-based)
-        Material3SettingsGroup(
+        IosSettingsGroup(
             title = stringResource(R.string.options),
             items = listOf(
-                Material3SettingsItem(
+                IosSettingsItem(
                     title = { Text(stringResource(R.string.enable_discord_rpc)) },
                     trailingContent = {
                         Switch(
@@ -645,7 +540,7 @@ fun DiscordSettings(
                     enabled = isLoggedIn,
                     onClick = { if (isLoggedIn) onDiscordRPCChange(!discordRPC) },
                 ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     title = { Text(stringResource(R.string.discord_use_details)) },
                     description = {
                         Text(stringResource(R.string.discord_use_details_description))
@@ -662,7 +557,7 @@ fun DiscordSettings(
                         if (isLoggedIn && discordRPC) onUseDetailsChange(!useDetails)
                     },
                 ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     title = { Text(stringResource(R.string.discord_advanced_mode)) },
                     description = {
                         Text(stringResource(R.string.discord_advanced_mode_description))
@@ -688,10 +583,10 @@ fun DiscordSettings(
         AnimatedVisibility(visible = isLoggedIn && discordRPC && advancedMode) {
             Column(modifier = Modifier.animateContentSize()) {
                 // Presence settings
-                Material3SettingsGroup(
+                IosSettingsGroup(
                     title = stringResource(R.string.discord_presence),
                     items = listOf(
-                        Material3SettingsItem(
+                        IosSettingsItem(
                             title = { Text(stringResource(R.string.discord_status)) },
                             description = {
                                 Text(
@@ -707,7 +602,7 @@ fun DiscordSettings(
                             },
                             onClick = { showStatusDialog = true },
                         ),
-                        Material3SettingsItem(
+                        IosSettingsItem(
                             title = { Text(stringResource(R.string.discord_activity_type)) },
                             description = {
                                 Text(
@@ -725,7 +620,7 @@ fun DiscordSettings(
                             },
                             onClick = { showActivityTypeDialog = true },
                         ),
-                        Material3SettingsItem(
+                        IosSettingsItem(
                             title = { Text(stringResource(R.string.discord_activity_name)) },
                             description = {
                                 Text(
@@ -741,11 +636,10 @@ fun DiscordSettings(
 
                 Spacer(Modifier.height(8.dp))
 
-                // Button customization
-                Material3SettingsGroup(
+                IosSettingsGroup(
                     title = stringResource(R.string.discord_buttons),
                     items = listOf(
-                        Material3SettingsItem(
+                        IosSettingsItem(
                             title = { Text(stringResource(R.string.discord_button_1)) },
                             description = {
                                 Text(button1Text.ifEmpty { "Listen on YouTube Music" })
@@ -758,7 +652,7 @@ fun DiscordSettings(
                             },
                             onClick = { showButton1TextDialog = true },
                         ),
-                        Material3SettingsItem(
+                        IosSettingsItem(
                             title = { Text(stringResource(R.string.discord_button_2)) },
                             description = {
                                 Text(button2Text.ifEmpty { "Visit Convx" })
@@ -777,7 +671,7 @@ fun DiscordSettings(
                 // Variable hint
                 Card(
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        containerColor = AppTheme.colorScheme.secondaryContainer,
                     ),
                     modifier = Modifier
                         .fillMaxWidth()
@@ -787,17 +681,12 @@ fun DiscordSettings(
                         modifier = Modifier.padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(
-                            painter = painterResource(R.drawable.info),
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                            modifier = Modifier.size(20.dp),
-                        )
+                        SymbolIcon(symbol = sf("info.circle"), contentDescription = null, size = 20.dp, tint = AppTheme.colorScheme.onSecondaryContainer)
                         Spacer(Modifier.width(8.dp))
                         Text(
                             text = stringResource(R.string.discord_button_text_variables),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            style = AppTheme.typography.bodySmall,
+                            color = AppTheme.colorScheme.onSecondaryContainer,
                         )
                     }
                 }
@@ -811,8 +700,8 @@ fun DiscordSettings(
 
         Text(
             text = stringResource(R.string.discord_rpc_preview),
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.primary,
+            style = AppTheme.typography.labelLarge,
+            color = AppTheme.colorScheme.primary,
             modifier = Modifier.padding(bottom = 8.dp, top = 8.dp),
         )
 
@@ -829,23 +718,8 @@ fun DiscordSettings(
 
         // Bottom padding for mini player
         Spacer(Modifier.height(24.dp))
+    
     }
-
-    TopAppBar(
-            windowInsets = appTopBarWindowInsets(),
-        title = { Text(stringResource(R.string.discord_integration)) },
-        navigationIcon = {
-            IconButton(
-                onClick = navController::navigateUp,
-                onLongClick = navController::backToMain,
-            ) {
-                Icon(
-                    painterResource(R.drawable.arrow_back),
-                    contentDescription = null,
-                )
-            }
-        }
-    )
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
@@ -863,15 +737,15 @@ fun RichPresence(
     val context = LocalContext.current
 
     val activityLabel = when (activityType) {
-        "playing" -> stringResource(R.string.discord_playing_vivimusic)
-        "watching" -> stringResource(R.string.discord_watching_vivimusic)
-        "competing" -> stringResource(R.string.discord_competing_vivimusic)
-        else -> stringResource(R.string.listening_to_vivimusic)
+        "playing" -> stringResource(R.string.discord_playing_convx)
+        "watching" -> stringResource(R.string.discord_watching_convx)
+        "competing" -> stringResource(R.string.discord_competing_convx)
+        else -> stringResource(R.string.listening_to_convx)
     }
 
     Surface(
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        shape = MaterialTheme.shapes.medium,
+        color = AppTheme.colorScheme.surfaceContainer,
+        shape = AppTheme.shapes.medium,
         shadowElevation = 6.dp,
         modifier = Modifier.fillMaxWidth(),
     ) {
@@ -881,7 +755,7 @@ fun RichPresence(
         ) {
             Text(
                 text = if (activityName.isNotEmpty()) activityName else activityLabel,
-                style = MaterialTheme.typography.labelLarge,
+                style = AppTheme.typography.labelLarge,
                 textAlign = TextAlign.Start,
                 fontWeight = FontWeight.ExtraBold,
                 modifier = Modifier.fillMaxWidth(),
@@ -902,7 +776,7 @@ fun RichPresence(
                                 if (song == null) {
                                     border(
                                         2.dp,
-                                        MaterialTheme.colorScheme.onSurface,
+                                        AppTheme.colorScheme.onSurface,
                                         RoundedCornerShape(3.dp)
                                     )
                                 } else {
@@ -916,7 +790,7 @@ fun RichPresence(
                             modifier = Modifier
                                 .border(
                                     2.dp,
-                                    MaterialTheme.colorScheme.surfaceContainer,
+                                    AppTheme.colorScheme.surfaceContainer,
                                     CircleShape
                                 )
                                 .padding(2.dp)
@@ -940,7 +814,7 @@ fun RichPresence(
                 ) {
                     Text(
                         text = song?.song?.title ?: "Song Title",
-                        color = MaterialTheme.colorScheme.onSurface,
+                        color = AppTheme.colorScheme.onSurface,
                         fontSize = 20.sp,
                         fontWeight = FontWeight.ExtraBold,
                         maxLines = 1,
@@ -949,7 +823,7 @@ fun RichPresence(
 
                     Text(
                         text = song?.artists?.joinToString { it.name } ?: "Artist",
-                        color = MaterialTheme.colorScheme.secondary,
+                        color = AppTheme.colorScheme.secondary,
                         fontSize = 16.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -958,7 +832,7 @@ fun RichPresence(
                     song?.album?.title?.let {
                         Text(
                             text = it,
-                            color = MaterialTheme.colorScheme.secondary,
+                            color = AppTheme.colorScheme.secondary,
                             fontSize = 16.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -1011,7 +885,7 @@ fun RichPresence(
                     onClick = {
                         val intent = Intent(
                             Intent.ACTION_VIEW,
-                            "https://github.com/vivimusicGroup/vivimusic".toUri()
+                            "https://github.com/cosmictaserdev-creator/Convx".toUri()
                         )
                         context.startActivity(intent)
                     },

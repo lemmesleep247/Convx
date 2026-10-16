@@ -55,7 +55,9 @@ data class SongEntity(
     @ColumnInfo(name = "isUploaded", defaultValue = false.toString())
     val isUploaded: Boolean = false,
     @ColumnInfo(name = "isVideo", defaultValue = false.toString())
-    val isVideo: Boolean = false
+    val isVideo: Boolean = false,
+    @ColumnInfo(name = "isPodcastEpisode", defaultValue = "0")
+    val isPodcastEpisode: Boolean = false
 ) {
     fun localToggleLike() = copy(
         liked = !liked,
@@ -79,7 +81,6 @@ data class SongEntity(
     ).also {
         if (syncToYouTube) {
             CoroutineScope(Dispatchers.IO).launch {
-                // Use the new reliable method that fetches fresh tokens
                 val addToLibrary = inLibrary == null
                 YouTube.toggleSongLibrary(id, addToLibrary)
             }

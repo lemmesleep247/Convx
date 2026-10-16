@@ -16,32 +16,23 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import timber.log.Timber
-import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Manages bot detection mitigation by tracking playback failures and
- * rotating guest identities (visitorData) when necessary.
- *
- * Key improvements:
- * - Locale preservation: snapshot region/language before rotation and restore it
- *   to ensure new visitorData is issued for the user's correct country.
- * - Immediate rotation: removed thresholds/cooldowns for faster playback recovery.
- * - Surgical rotation: only clears visitorData, not the entire session.
+ * Refreshes guest session metadata conservatively, preserving the existing identity
+ * when a refresh fails. Authenticated sessions are handled by the account login flow.
  */
 object BotDetectionMitigator {
     private const val TAG = "BotDetectionMitigator"
 
-    private val failureCount = AtomicInteger(0)
-
-    // Guards rotateGuestSession(): several concurrent playback/download failures
-    // can each call it at once (e.g. DownloadUtil launches one coroutine per
-    // queued song). Without this, each caller independently nulls out then
-    // re-fetches visitorData in parallel — a slower fetch can clobber a faster
-    // one's freshly-issued token, and requests in between see a null window.
+    // Serialize token refreshes so concurrent failures cannot overwrite newer visitor data.
     private val rotationMutex = Mutex()
+    private const val REFRESH_COOLDOWN_MS = 5 * 60 * 1000L
+    private const val NANOS_PER_MILLISECOND = 1_000_000L
+    private const val REFRESH_COOLDOWN_NANOS = REFRESH_COOLDOWN_MS * NANOS_PER_MILLISECOND
+    private var lastRefreshNanos: Long? = null
 
     // Error reasons that indicate geographic restriction – NOT a bot signal.
-    // IMPORTANT: Keep these specific to avoid false positives.
+    // Keep these specific to avoid false positives.
     private val GEO_ERROR_SIGNATURES = listOf(
         "not available in your country",
         "not available in your region",
@@ -61,7 +52,6 @@ object BotDetectionMitigator {
         "confirm you're not a bot",
         "automated queries",
         "Error 2000",
-        "403",
         "This content isn't available on this device",
     )
 
@@ -71,73 +61,50 @@ object BotDetectionMitigator {
      */
     fun notifyPlaybackFailure(isLoggedIn: Boolean, errorMessage: String? = null): Boolean {
         if (isLoggedIn) return false
-        if (isGeoError(errorMessage)) return false
+        if (isGeoError(errorMessage) || !isBotDetectionError(errorMessage)) return false
 
-        failureCount.incrementAndGet()
         return true
-    }
-
-    /**
-     * Call this when a track starts playing successfully.
-     */
-    fun notifyPlaybackSuccess() {
-        failureCount.set(0)
     }
 
     /**
      * Rotates the guest session by obtaining a fresh visitorData token while preserving locale.
      */
     suspend fun rotateGuestSession() = rotationMutex.withLock {
-        Timber.tag(TAG).i("Rotating guest session to bypass bot detection...")
+        if (!YouTube.cookie.isNullOrBlank()) return@withLock
+        val now = System.nanoTime()
+        val lastRefreshAtNanos = lastRefreshNanos
+        if (lastRefreshAtNanos != null && now - lastRefreshAtNanos < REFRESH_COOLDOWN_NANOS) return@withLock
+        lastRefreshNanos = now
+        Timber.tag(TAG).i("Refreshing guest session metadata")
         PlaybackLogManager.log(
             PlaybackLogLevel.BOT,
-            "Rotating guest session",
-            "Bypassing bot detection by refreshing visitorData (locale preserved)"
+            "Refreshing guest session",
+            "Preserving current visitorData until replacement succeeds"
         )
 
         withContext(Dispatchers.IO) {
             // Snapshot locale so the new token is issued for the user's actual region.
             val currentLocale = YouTube.locale
 
-            // Clear only visitorData - minimal session change
-            YouTube.visitorData = null
-            
             YouTube.refreshVisitorData().onSuccess { newData ->
                 Timber.tag(TAG).i("New visitorData obtained successfully for region ${currentLocale.gl}.")
                 
-                // Persist to DataStore
-                CipherDeobfuscator.appContext?.dataStore?.edit { settings ->
+                // Keep the replacement token across process restarts.
+                CipherDeobfuscator.appContext.dataStore.edit { settings ->
                     settings[VisitorDataKey] = newData
                 }
             }.onFailure { e ->
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 Timber.tag(TAG).e(e, "Failed to refresh visitorData during rotation")
-                // Restore locale context if refresh failed
-                YouTube.locale = currentLocale
             }
         }
         
-        failureCount.set(0)
     }
 
-    /**
-     * Returns true if message matches known geographic restriction patterns.
-     */
-    fun isGeoError(message: String?): Boolean {
-        if (message == null) return false
-        val lower = message.lowercase()
-        return GEO_ERROR_SIGNATURES.any { lower.contains(it.lowercase()) }
-    }
+    fun isGeoError(message: String?): Boolean =
+        message != null && GEO_ERROR_SIGNATURES.any { message.contains(it, ignoreCase = true) }
 
-    /**
-     * Returns true if message matches known bot-detection signatures.
-     */
     fun isBotDetectionError(message: String?): Boolean {
-        if (message == null) return false
-        val lower = message.lowercase()
-        return BOT_ERROR_SIGNATURES.any { lower.contains(it.lowercase()) }
-    }
-
-    fun reset() {
-        failureCount.set(0)
+        return message != null && BOT_ERROR_SIGNATURES.any { message.contains(it, ignoreCase = true) }
     }
 }

@@ -5,6 +5,9 @@
 
 package com.convx.music.ui.menu
 
+import com.convx.music.ui.component.sf
+import com.convx.music.ui.component.SymbolIcon
+import com.convx.music.ui.component.menuBottomInset
 import android.annotation.SuppressLint
 import android.content.res.Configuration
 import androidx.compose.foundation.layout.PaddingValues
@@ -17,11 +20,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.convx.music.ui.ios.compat.CircularProgressIndicator
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.Text
+import com.convx.music.ui.ios.compat.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -53,19 +56,19 @@ import com.convx.music.models.MediaMetadata
 import com.convx.music.models.toMediaMetadata
 import com.convx.music.playback.queues.ListQueue
 import com.convx.music.ui.component.DefaultDialog
-import com.convx.music.ui.component.Material3MenuGroup
-import com.convx.music.ui.component.Material3MenuItemData
+import com.convx.music.ui.component.IosMenuGroup
+import com.convx.music.ui.component.IosMenuItemData
 import com.convx.music.ui.component.NewAction
 import com.convx.music.ui.component.NewActionGrid
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withContext
 import java.time.LocalDateTime
 import com.convx.music.playback.DownloadTarget
+import com.convx.music.playback.combinedDownloadState
 import com.convx.music.playback.cancelDownloads
 import com.convx.music.playback.downloadSongs
 import com.convx.music.playback.removeDownloads
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @SuppressLint("MutableCollectionMutableState")
 @Composable
@@ -76,11 +79,11 @@ fun SelectionSongMenu(
     songPosition: List<PlaylistSongMap>? = emptyList(),
 ) {
     val context = LocalContext.current
-    val database = LocalDatabase.current
-    val downloadUtil = LocalDownloadUtil.current
+    val database = LocalDatabase.current.get()
+    val downloadUtil = LocalDownloadUtil.current.get()
     val coroutineScope = rememberCoroutineScope()
     val playerConnection = LocalPlayerConnection.current ?: return
-    val syncUtils = LocalSyncUtils.current
+    val syncUtils = LocalSyncUtils.current.get()
     val listenTogetherManager = com.convx.music.LocalListenTogetherManager.current
     val isGuest = listenTogetherManager?.isInRoom == true && listenTogetherManager.isHost == false
 
@@ -100,24 +103,9 @@ fun SelectionSongMenu(
         )
     }
 
-    // Collected rather than folded into a LaunchedEffect so the current state of each
-    // download is also available at click time — the download and cancel actions filter
-    // on it, see DownloadActions.
-    val downloads by downloadUtil.downloads.collectAsState()
+    val downloads by downloadUtil.downloads.collectAsStateWithLifecycle()
     val downloadState = remember(songSelection, downloads) {
-        when {
-            songSelection.isEmpty() -> Download.STATE_STOPPED
-            songSelection.all { downloads[it.id]?.state == Download.STATE_COMPLETED } ->
-                Download.STATE_COMPLETED
-
-            songSelection.all {
-                downloads[it.id]?.state == Download.STATE_QUEUED ||
-                    downloads[it.id]?.state == Download.STATE_DOWNLOADING ||
-                    downloads[it.id]?.state == Download.STATE_COMPLETED
-            } -> Download.STATE_DOWNLOADING
-
-            else -> Download.STATE_STOPPED
-        }
+        combinedDownloadState(songSelection, downloads) { it.id }
     }
 
     var showChoosePlaylistDialog by rememberSaveable {
@@ -155,7 +143,7 @@ fun SelectionSongMenu(
             content = {
                 Text(
                     text = stringResource(R.string.remove_download_playlist_confirm, "selection"),
-                    style = MaterialTheme.typography.bodyLarge,
+                    style = AppTheme.typography.bodyLarge,
                     modifier = Modifier.padding(horizontal = 18.dp),
                 )
             },
@@ -188,7 +176,7 @@ fun SelectionSongMenu(
             start = 0.dp,
             top = 0.dp,
             end = 0.dp,
-            bottom = 8.dp + WindowInsets.systemBars.asPaddingValues().calculateBottomPadding(),
+            bottom = 8.dp + menuBottomInset(),
         ),
     ) {
         item {
@@ -196,12 +184,7 @@ fun SelectionSongMenu(
                 actions = listOfNotNull(
                     if (!isGuest) NewAction(
                         icon = {
-                            Icon(
-                                painter = painterResource(R.drawable.play),
-                                contentDescription = null,
-                                modifier = Modifier.size(28.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            SymbolIcon(symbol = sf("play.fill"), contentDescription = null, size = 28.dp, tint = AppTheme.colorScheme.onSurfaceVariant)
                         },
                         text = stringResource(R.string.play),
                         onClick = {
@@ -217,12 +200,7 @@ fun SelectionSongMenu(
                     ) else null,
                     if (!isGuest) NewAction(
                         icon = {
-                            Icon(
-                                painter = painterResource(R.drawable.shuffle),
-                                contentDescription = null,
-                                modifier = Modifier.size(28.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            SymbolIcon(symbol = sf("shuffle"), contentDescription = null, size = 28.dp, tint = AppTheme.colorScheme.onSurfaceVariant)
                         },
                         text = stringResource(R.string.shuffle),
                         onClick = {
@@ -238,12 +216,7 @@ fun SelectionSongMenu(
                     ) else null,
                     NewAction(
                         icon = {
-                            Icon(
-                                painter = painterResource(R.drawable.playlist_add),
-                                contentDescription = null,
-                                modifier = Modifier.size(28.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            SymbolIcon(symbol = sf("text.badge.plus"), contentDescription = null, size = 28.dp, tint = AppTheme.colorScheme.onSurfaceVariant)
                         },
                         text = stringResource(R.string.add_to_playlist),
                         onClick = {
@@ -255,18 +228,15 @@ fun SelectionSongMenu(
             )
         }
         item {
-            Material3MenuGroup(
+            IosMenuGroup(
                 items = buildList {
                     if (!isGuest) {
                         add(
-                            Material3MenuItemData(
+                            IosMenuItemData(
                                 title = { Text(text = stringResource(R.string.play_next)) },
                                 description = { Text(text = stringResource(R.string.play_next_desc)) },
                                 icon = {
-                                    Icon(
-                                        painter = painterResource(R.drawable.playlist_play),
-                                        contentDescription = null,
-                                    )
+                                    SymbolIcon(symbol = sf("text.line.first.and.arrowtriangle.forward"), contentDescription = null)
                                 },
                                 onClick = {
                                     onDismiss()
@@ -276,14 +246,11 @@ fun SelectionSongMenu(
                             )
                         )
                         add(
-                            Material3MenuItemData(
+                            IosMenuItemData(
                                 title = { Text(text = stringResource(R.string.shuffle)) },
                                 description = { Text(text = stringResource(R.string.add_to_queue_desc)) },
                                 icon = {
-                                    Icon(
-                                        painter = painterResource(R.drawable.shuffle),
-                                        contentDescription = null,
-                                    )
+                                    SymbolIcon(symbol = sf("shuffle"), contentDescription = null)
                                 },
                                 onClick = {
                                     onDismiss()
@@ -298,14 +265,11 @@ fun SelectionSongMenu(
                             )
                         )
                         add(
-                            Material3MenuItemData(
+                            IosMenuItemData(
                                 title = { Text(text = stringResource(R.string.add_to_queue)) },
                                 description = { Text(text = stringResource(R.string.add_to_queue_desc)) },
                                 icon = {
-                                    Icon(
-                                        painter = painterResource(R.drawable.queue_music),
-                                        contentDescription = null,
-                                    )
+                                    SymbolIcon(symbol = sf("music.note.list"), contentDescription = null)
                                 },
                                 onClick = {
                                     onDismiss()
@@ -316,14 +280,11 @@ fun SelectionSongMenu(
                         )
                     }
                     add(
-                        Material3MenuItemData(
+                        IosMenuItemData(
                             title = { Text(text = stringResource(R.string.add_to_playlist)) },
                             description = { Text(text = stringResource(R.string.add_to_playlist_desc)) },
                             icon = {
-                                Icon(
-                                    painter = painterResource(R.drawable.playlist_add),
-                                    contentDescription = null,
-                                )
+                                SymbolIcon(symbol = sf("text.badge.plus"), contentDescription = null)
                             },
                             onClick = {
                                 showChoosePlaylistDialog = true
@@ -331,7 +292,7 @@ fun SelectionSongMenu(
                         )
                     )
                     add(
-                        Material3MenuItemData(
+                        IosMenuItemData(
                             title = {
                                 Text(
                                     text = stringResource(
@@ -340,12 +301,9 @@ fun SelectionSongMenu(
                                 )
                             },
                             icon = {
-                                Icon(
-                                    painter = painterResource(
-                                        if (allInLibrary) R.drawable.library_add_check else R.drawable.library_add
-                                    ),
-                                    contentDescription = null,
-                                )
+                                SymbolIcon(symbol = 
+                                        if (allInLibrary) sf("text.badge.checkmark") else sf("text.badge.plus")
+                                    , contentDescription = null)
                             },
                             onClick = {
                                 if (allInLibrary) {
@@ -355,7 +313,6 @@ fun SelectionSongMenu(
                                         }
                                     }
                                     coroutineScope.launch {
-                                        // Use the new reliable method that fetches fresh tokens
                                         songSelection.forEach { song ->
                                             YouTube.toggleSongLibrary(song.id, false)
                                         }
@@ -368,7 +325,6 @@ fun SelectionSongMenu(
                                         }
                                     }
                                     coroutineScope.launch {
-                                        // Use the new reliable method that fetches fresh tokens
                                         songSelection.filter { it.song.inLibrary == null }
                                             .forEach { song ->
                                                 YouTube.toggleSongLibrary(song.id, true)
@@ -385,22 +341,19 @@ fun SelectionSongMenu(
         item { Spacer(modifier = Modifier.height(12.dp)) }
 
         item {
-            Material3MenuGroup(
+            IosMenuGroup(
                 items = buildList {
                     add(
                         when (downloadState) {
                             Download.STATE_COMPLETED -> {
-                                Material3MenuItemData(
+                                IosMenuItemData(
                                     title = {
                                         Text(
                                             text = stringResource(R.string.remove_download)
                                         )
                                     },
                                     icon = {
-                                        Icon(
-                                            painter = painterResource(R.drawable.offline),
-                                            contentDescription = null
-                                        )
+                                        SymbolIcon(symbol = sf("arrow.down.circle"), contentDescription = null)
                                     },
                                     onClick = {
                                         showRemoveDownloadDialog = true
@@ -408,7 +361,7 @@ fun SelectionSongMenu(
                                 )
                             }
                             Download.STATE_QUEUED, Download.STATE_DOWNLOADING -> {
-                                Material3MenuItemData(
+                                IosMenuItemData(
                                     title = { Text(text = stringResource(R.string.downloading)) },
                                     icon = {
                                         CircularProgressIndicator(
@@ -417,9 +370,6 @@ fun SelectionSongMenu(
                                         )
                                     },
                                     onClick = {
-                                        // Cancel, not remove: this used to open the
-                                        // remove-download dialog, which deleted every
-                                        // selected song including the finished ones.
                                         cancelDownloads(
                                             context,
                                             songSelection.map { it.id },
@@ -429,13 +379,10 @@ fun SelectionSongMenu(
                                 )
                             }
                             else -> {
-                                Material3MenuItemData(
+                                IosMenuItemData(
                                     title = { Text(text = stringResource(R.string.action_download)) },
                                     icon = {
-                                        Icon(
-                                            painter = painterResource(R.drawable.download),
-                                            contentDescription = null,
-                                        )
+                                        SymbolIcon(symbol = sf("arrow.down.circle"), contentDescription = null)
                                     },
                                     onClick = {
                                         downloadSongs(
@@ -449,7 +396,7 @@ fun SelectionSongMenu(
                         }
                     )
                     add(
-                        Material3MenuItemData(
+                        IosMenuItemData(
                             title = {
                                 Text(
                                     text = stringResource(
@@ -458,12 +405,9 @@ fun SelectionSongMenu(
                                 )
                             },
                             icon = {
-                                Icon(
-                                    painter = painterResource(
-                                        if (allLiked) R.drawable.favorite else R.drawable.favorite_border
-                                    ),
-                                    contentDescription = null,
-                                )
+                                SymbolIcon(symbol = 
+                                        if (allLiked) sf("heart.fill") else sf("heart")
+                                    , contentDescription = null)
                             },
                             onClick = {
                                 val allLiked = songSelection.all { it.song.liked }
@@ -482,13 +426,10 @@ fun SelectionSongMenu(
                     )
                     if (songPosition?.isNotEmpty() == true) {
                         add(
-                            Material3MenuItemData(
+                            IosMenuItemData(
                                 title = { Text(text = stringResource(R.string.delete)) },
                                 icon = {
-                                    Icon(
-                                        painter = painterResource(R.drawable.delete),
-                                        contentDescription = null,
-                                    )
+                                    SymbolIcon(symbol = sf("trash"), contentDescription = null)
                                 },
                                 onClick = {
                                     onDismiss()
@@ -520,8 +461,8 @@ fun SelectionMediaMetadataMenu(
     clearAction: () -> Unit,
 ) {
     val context = LocalContext.current
-    val database = LocalDatabase.current
-    val downloadUtil = LocalDownloadUtil.current
+    val database = LocalDatabase.current.get()
+    val downloadUtil = LocalDownloadUtil.current.get()
     val coroutineScope = rememberCoroutineScope()
     val playerConnection = LocalPlayerConnection.current ?: return
     val listenTogetherManager = com.convx.music.LocalListenTogetherManager.current
@@ -543,35 +484,16 @@ fun SelectionMediaMetadataMenu(
         isVisible = showChoosePlaylistDialog,
         onGetSong = {
             songSelection.map {
-                runBlocking {
-                    withContext(Dispatchers.IO) {
-                        database.insert(it)
-                    }
-                }
+                database.insert(it)
                 it.id
             }
         },
         onDismiss = { showChoosePlaylistDialog = false }
     )
 
-    // Collected rather than folded into a LaunchedEffect so the current state of each
-    // download is also available at click time — the download and cancel actions filter
-    // on it, see DownloadActions.
-    val downloads by downloadUtil.downloads.collectAsState()
+    val downloads by downloadUtil.downloads.collectAsStateWithLifecycle()
     val downloadState = remember(songSelection, downloads) {
-        when {
-            songSelection.isEmpty() -> Download.STATE_STOPPED
-            songSelection.all { downloads[it.id]?.state == Download.STATE_COMPLETED } ->
-                Download.STATE_COMPLETED
-
-            songSelection.all {
-                downloads[it.id]?.state == Download.STATE_QUEUED ||
-                    downloads[it.id]?.state == Download.STATE_DOWNLOADING ||
-                    downloads[it.id]?.state == Download.STATE_COMPLETED
-            } -> Download.STATE_DOWNLOADING
-
-            else -> Download.STATE_STOPPED
-        }
+        combinedDownloadState(songSelection, downloads) { it.id }
     }
 
     var showRemoveDownloadDialog by remember {
@@ -584,7 +506,7 @@ fun SelectionMediaMetadataMenu(
             content = {
                 Text(
                     text = stringResource(R.string.remove_download_playlist_confirm, "selection"),
-                    style = MaterialTheme.typography.bodyLarge,
+                    style = AppTheme.typography.bodyLarge,
                     modifier = Modifier.padding(horizontal = 18.dp),
                 )
             },
@@ -614,21 +536,18 @@ fun SelectionMediaMetadataMenu(
             start = 0.dp,
             top = 0.dp,
             end = 0.dp,
-            bottom = 8.dp + WindowInsets.systemBars.asPaddingValues().calculateBottomPadding(),
+            bottom = 8.dp + menuBottomInset(),
         ),
     ) {
         item {
-            Material3MenuGroup(
+            IosMenuGroup(
                 items = buildList {
                     if (currentItems.isNotEmpty() && !isGuest) {
                         add(
-                            Material3MenuItemData(
+                            IosMenuItemData(
                                 title = { Text(text = stringResource(R.string.delete)) },
                                 icon = {
-                                    Icon(
-                                        painter = painterResource(R.drawable.delete),
-                                        contentDescription = null,
-                                    )
+                                    SymbolIcon(symbol = sf("trash"), contentDescription = null)
                                 },
                                 onClick = {
                                     onDismiss()
@@ -648,13 +567,10 @@ fun SelectionMediaMetadataMenu(
                     }
                     if (!isGuest) {
                         add(
-                            Material3MenuItemData(
+                            IosMenuItemData(
                                 title = { Text(text = stringResource(R.string.play)) },
                                 icon = {
-                                    Icon(
-                                        painter = painterResource(R.drawable.play),
-                                        contentDescription = null,
-                                    )
+                                    SymbolIcon(symbol = sf("play.fill"), contentDescription = null)
                                 },
                                 onClick = {
                                     onDismiss()
@@ -669,13 +585,10 @@ fun SelectionMediaMetadataMenu(
                             )
                         )
                         add(
-                            Material3MenuItemData(
+                            IosMenuItemData(
                                 title = { Text(text = stringResource(R.string.shuffle)) },
                                 icon = {
-                                    Icon(
-                                        painter = painterResource(R.drawable.shuffle),
-                                        contentDescription = null,
-                                    )
+                                    SymbolIcon(symbol = sf("shuffle"), contentDescription = null)
                                 },
                                 onClick = {
                                     onDismiss()
@@ -691,13 +604,10 @@ fun SelectionMediaMetadataMenu(
                         )
                         if (!isGuest) {
                             add(
-                                Material3MenuItemData(
+                                IosMenuItemData(
                                     title = { Text(text = stringResource(R.string.add_to_queue)) },
                                     icon = {
-                                        Icon(
-                                            painter = painterResource(R.drawable.queue_music),
-                                            contentDescription = null,
-                                        )
+                                        SymbolIcon(symbol = sf("music.note.list"), contentDescription = null)
                                     },
                                     onClick = {
                                         onDismiss()
@@ -709,13 +619,10 @@ fun SelectionMediaMetadataMenu(
                         }
                     }
                     add(
-                        Material3MenuItemData(
+                        IosMenuItemData(
                             title = { Text(text = stringResource(R.string.add_to_playlist)) },
                             icon = {
-                                Icon(
-                                    painter = painterResource(R.drawable.playlist_add),
-                                    contentDescription = null,
-                                )
+                                SymbolIcon(symbol = sf("text.badge.plus"), contentDescription = null)
                             },
                             onClick = {
                                 showChoosePlaylistDialog = true
@@ -729,22 +636,19 @@ fun SelectionMediaMetadataMenu(
         item { Spacer(modifier = Modifier.height(12.dp)) }
 
         item {
-            Material3MenuGroup(
+            IosMenuGroup(
                 items = buildList {
                     add(
-                        Material3MenuItemData(
+                        IosMenuItemData(
                             title = {
                                 Text(
                                     text = stringResource(R.string.like_all)
                                 )
                             },
                             icon = {
-                                Icon(
-                                    painter = painterResource(
-                                        if (allLiked) R.drawable.favorite else R.drawable.favorite_border
-                                    ),
-                                    contentDescription = null,
-                                )
+                                SymbolIcon(symbol = 
+                                        if (allLiked) sf("heart.fill") else sf("heart")
+                                    , contentDescription = null)
                             },
                             onClick = {
                                 database.query {
@@ -764,30 +668,23 @@ fun SelectionMediaMetadataMenu(
                     add(
                         when (downloadState) {
                             Download.STATE_COMPLETED -> {
-                                Material3MenuItemData(
+                                IosMenuItemData(
                                     title = {
                                         Text(
                                             text = stringResource(R.string.remove_download),
-                                            color = MaterialTheme.colorScheme.surface
+                                            color = AppTheme.colorScheme.surface
                                         )
                                     },
                                     icon = {
-                                        Icon(
-                                            painter = painterResource(R.drawable.offline),
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.surface
-                                        )
+                                        SymbolIcon(symbol = sf("arrow.down.circle"), contentDescription = null, tint = AppTheme.colorScheme.surface)
                                     },
                                     onClick = {
                                         showRemoveDownloadDialog = true
                                     },
-                                    cardColors = CardDefaults.cardColors(
-                                        containerColor = MaterialTheme.colorScheme.onSurface
-                                    )
                                 )
                             }
                             Download.STATE_QUEUED, Download.STATE_DOWNLOADING -> {
-                                Material3MenuItemData(
+                                IosMenuItemData(
                                     title = { Text(text = stringResource(R.string.downloading)) },
                                     icon = {
                                         CircularProgressIndicator(
@@ -796,9 +693,6 @@ fun SelectionMediaMetadataMenu(
                                         )
                                     },
                                     onClick = {
-                                        // Cancel, not remove: this used to open the
-                                        // remove-download dialog, which deleted every
-                                        // selected song including the finished ones.
                                         cancelDownloads(
                                             context,
                                             songSelection.map { it.id },
@@ -808,13 +702,10 @@ fun SelectionMediaMetadataMenu(
                                 )
                             }
                             else -> {
-                                Material3MenuItemData(
+                                IosMenuItemData(
                                     title = { Text(text = stringResource(R.string.action_download)) },
                                     icon = {
-                                        Icon(
-                                            painter = painterResource(R.drawable.download),
-                                            contentDescription = null,
-                                        )
+                                        SymbolIcon(symbol = sf("arrow.down.circle"), contentDescription = null)
                                     },
                                     onClick = {
                                         downloadSongs(

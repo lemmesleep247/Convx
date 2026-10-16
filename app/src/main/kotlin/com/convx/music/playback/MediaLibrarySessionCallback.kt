@@ -29,6 +29,7 @@ import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.SettableFuture
+import com.music.innertube.SearchFilter
 import com.music.innertube.YouTube
 import com.music.innertube.models.PlaylistItem
 import com.music.innertube.models.SongItem
@@ -52,12 +53,12 @@ import com.convx.music.utils.reportException
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.guava.future
-import kotlinx.coroutines.plus
 import javax.inject.Inject
 
 @androidx.annotation.OptIn(UnstableApi::class)
@@ -68,11 +69,18 @@ constructor(
     val database: MusicDatabase,
     val downloadUtil: DownloadUtil,
 ) : MediaLibrarySession.Callback {
-    private val scope = CoroutineScope(Dispatchers.Main) + Job()
+    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     lateinit var service: MusicService
     var toggleLike: () -> Unit = {}
     var toggleStartRadio: () -> Unit = {}
     var toggleLibrary: () -> Unit = {}
+
+    fun release() {
+        scope.cancel()
+        toggleLike = {}
+        toggleStartRadio = {}
+        toggleLibrary = {}
+    }
 
     override fun onConnect(
         session: MediaSession,
@@ -139,142 +147,122 @@ constructor(
         params: MediaLibraryService.LibraryParams?,
     ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> =
         scope.future(Dispatchers.IO) {
-            val children =
-                when (parentId) {
-                    MusicService.ROOT -> rootChildren()
-
-                    MusicService.SONG -> database.songsByCreateDateAsc().first()
-                        .map { it.toMediaItem(parentId) }
-
-                    MusicService.ARTIST ->
-                        database.artistsByCreateDateAsc().first().map { artist ->
-                            browsableMediaItem(
-                                "${MusicService.ARTIST}/${artist.id}",
-                                artist.artist.name,
-                                context.resources.getQuantityString(
-                                    R.plurals.n_song,
-                                    artist.songCount,
-                                    artist.songCount
-                                ),
-                                artist.artist.thumbnailUrl?.toUri(),
-                                MediaMetadata.MEDIA_TYPE_ARTIST,
-                                singleItemStyle = MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_CATEGORY_LIST_ITEM,
-                            )
-                        }
-
-                    MusicService.ALBUM ->
-                        database.albumsByCreateDateAsc().first().map { album ->
-                            browsableMediaItem(
-                                "${MusicService.ALBUM}/${album.id}",
-                                album.album.title,
-                                album.artists.joinToString {
-                                    it.name
-                                },
-                                album.album.thumbnailUrl?.toUri(),
-                                MediaMetadata.MEDIA_TYPE_ALBUM,
-                                singleItemStyle = MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_GRID_ITEM,
-                            )
-                        }
-
-                    MusicService.PLAYLIST -> {
-                        val likedSongCount = database.likedSongsCount().first()
-                        val downloadedSongCount = downloadUtil.downloads.value.size
-                        val youtubePlaylists = try {
-                            YouTube.home().getOrNull()?.sections
-                                ?.flatMap { it.items }
-                                ?.filterIsInstance<PlaylistItem>()
-                                ?.take(10)
-                                ?: emptyList()
-                        } catch (e: Exception) {
-                            reportException(e)
-                            emptyList()
-                        }
-
-                        listOf(
-                            likedSongsMediaItem(likedSongCount),
-                            downloadedSongsMediaItem(downloadedSongCount),
-                        ) +
-                            database.playlistsByCreateDateAsc().first().map { playlist ->
-                                playlist.toBrowsableMediaItem()
-                            } +
-                            youtubePlaylists.map { ytPlaylist ->
-                                ytPlaylist.toBrowsableMediaItem()
-                            }
-                    }
-
-                    else ->
-                        when {
-                            parentId.startsWith("${MusicService.ARTIST}/") ->
-                                database.artistSongsByCreateDateAsc(parentId.removePrefix("${MusicService.ARTIST}/"))
-                                    .first().map {
-                                        it.toMediaItem(parentId)
-                                    }
-
-                            parentId.startsWith("${MusicService.ALBUM}/") ->
-                                database.albumSongs(parentId.removePrefix("${MusicService.ALBUM}/"))
-                                    .first().map {
-                                        it.toMediaItem(parentId)
-                                    }
-
-                            parentId.startsWith("${MusicService.PLAYLIST}/") -> {
-                                val playlistId = parentId.removePrefix("${MusicService.PLAYLIST}/")
-                                val songs = when (playlistId) {
-                                    PlaylistEntity.LIKED_PLAYLIST_ID -> database.likedSongs(
-                                        SongSortType.CREATE_DATE,
-                                        true
-                                    )
-
-                                    PlaylistEntity.DOWNLOADED_PLAYLIST_ID -> {
-                                        val downloads = downloadUtil.downloads.value
-                                        database
-                                            .allSongs()
-                                            .flowOn(Dispatchers.IO)
-                                            .map { songs ->
-                                                songs.filter {
-                                                    downloads[it.id]?.state == Download.STATE_COMPLETED
-                                                }
-                                            }.map { songs ->
-                                                songs
-                                                    .map { it to downloads[it.id] }
-                                                    .sortedBy { it.second?.updateTimeMs ?: 0L }
-                                                    .map { it.first }
-                                            }
-                                    }
-
-                                    else ->
-                                        database.playlistSongs(playlistId).map { list ->
-                                            list.map { it.song }
-                                        }
-                                }.first()
-
-                                listOf(shuffleMediaItem(parentId)) + songs.map { it.toMediaItem(parentId) }
-                            }
-
-                            parentId.startsWith("${MusicService.YOUTUBE_PLAYLIST}/") -> {
-                                val playlistId = parentId.removePrefix("${MusicService.YOUTUBE_PLAYLIST}/")
-                                try {
-                                    val songs = YouTube.playlist(playlistId).getOrNull()?.songs
-                                        ?.take(100)
-                                        ?.filterExplicit(context.dataStore.get(HideExplicitKey, false))
-                                        ?.filterVideoSongs(context.dataStore.get(HideVideoSongsKey, false) || context.dataStore.get(DataSaverEnabledKey, false))
-                                        ?: emptyList()
-
-                                    listOf(shuffleMediaItem(parentId)) + songs.map { it.toMediaItem(parentId) }
-                                } catch (e: Exception) {
-                                    reportException(e)
-                                    emptyList()
-                                }
-                            }
-
-                            else -> emptyList()
-                        }
-                }
+            val children = loadChildren(parentId)
 
             LibraryResult.ofItemList(
                 children.paginate(page, pageSize),
                 params.withContentStyleHints(),
             )
         }
+
+    private suspend fun loadChildren(parentId: String): List<MediaItem> =
+        when (parentId) {
+            MusicService.ROOT -> rootChildren()
+            MusicService.SONG -> database.songsByCreateDateAsc().first().map { it.toMediaItem(parentId) }
+            MusicService.ARTIST -> artistChildren()
+            MusicService.ALBUM -> albumChildren()
+            MusicService.PLAYLIST -> playlistRootChildren()
+            else -> nestedChildren(parentId)
+        }
+
+    private suspend fun artistChildren() = database.artistsByCreateDateAsc().first().map { artist ->
+        browsableMediaItem(
+            id = "${MusicService.ARTIST}/${artist.id}",
+            title = artist.artist.name,
+            subtitle = context.resources.getQuantityString(R.plurals.n_song, artist.songCount, artist.songCount),
+            iconUri = artist.artist.thumbnailUrl?.toUri(),
+            mediaType = MediaMetadata.MEDIA_TYPE_ARTIST,
+            singleItemStyle = MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_CATEGORY_LIST_ITEM,
+        )
+    }
+
+    private suspend fun albumChildren() = database.albumsByCreateDateAsc().first().map { album ->
+        browsableMediaItem(
+            id = "${MusicService.ALBUM}/${album.id}",
+            title = album.album.title,
+            subtitle = album.artists.joinToString { it.name },
+            iconUri = album.album.thumbnailUrl?.toUri(),
+            mediaType = MediaMetadata.MEDIA_TYPE_ALBUM,
+            singleItemStyle = MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_GRID_ITEM,
+        )
+    }
+
+    private suspend fun playlistRootChildren(): List<MediaItem> {
+        val likedSongCount = database.likedSongsCount().first()
+        val downloadedSongCount = downloadUtil.downloads.value.size
+        val youtubePlaylists = try {
+            YouTube.home().getOrNull()?.sections
+                ?.flatMap { it.items }
+                ?.filterIsInstance<PlaylistItem>()
+                ?.take(10)
+                ?: emptyList()
+        } catch (e: Exception) {
+            reportException(e)
+            emptyList()
+        }
+
+        return listOf(
+            likedSongsMediaItem(likedSongCount),
+            downloadedSongsMediaItem(downloadedSongCount),
+        ) + database.playlistsByCreateDateAsc().first().map { it.toBrowsableMediaItem() } +
+            youtubePlaylists.map { it.toBrowsableMediaItem() }
+    }
+
+    private suspend fun nestedChildren(parentId: String): List<MediaItem> = when {
+        parentId.startsWith("${MusicService.ARTIST}/") ->
+            database.artistSongsByCreateDateAsc(parentId.removePrefix("${MusicService.ARTIST}/"))
+                .first().map { it.toMediaItem(parentId) }
+
+        parentId.startsWith("${MusicService.ALBUM}/") ->
+            database.albumSongs(parentId.removePrefix("${MusicService.ALBUM}/"))
+                .first().map { it.toMediaItem(parentId) }
+
+        parentId.startsWith("${MusicService.PLAYLIST}/") -> playlistChildren(parentId)
+        parentId.startsWith("${MusicService.YOUTUBE_PLAYLIST}/") -> youtubePlaylistChildren(parentId)
+        else -> emptyList()
+    }
+
+    private suspend fun playlistChildren(parentId: String): List<MediaItem> {
+        val playlistId = parentId.removePrefix("${MusicService.PLAYLIST}/")
+        val songs = when (playlistId) {
+            PlaylistEntity.LIKED_PLAYLIST_ID -> database.likedSongs(SongSortType.CREATE_DATE, true)
+            PlaylistEntity.DOWNLOADED_PLAYLIST_ID -> downloadedSongs()
+            else -> database.playlistSongs(playlistId).map { entries -> entries.map { it.song } }
+        }.first()
+
+        return listOf(shuffleMediaItem(parentId)) + songs.map { it.toMediaItem(parentId) }
+    }
+
+    private suspend fun youtubePlaylistChildren(parentId: String): List<MediaItem> {
+        val playlistId = parentId.removePrefix("${MusicService.YOUTUBE_PLAYLIST}/")
+        return try {
+            val songs = YouTube.playlist(playlistId).getOrNull()?.songs
+                ?.take(100)
+                ?.filterExplicit(context.dataStore.get(HideExplicitKey, false))
+                ?.filterVideoSongs(
+                    context.dataStore.get(HideVideoSongsKey, false) ||
+                        context.dataStore.get(DataSaverEnabledKey, false),
+                )
+                .orEmpty()
+
+            listOf(shuffleMediaItem(parentId)) + songs.map { it.toMediaItem(parentId) }
+        } catch (e: Exception) {
+            reportException(e)
+            emptyList()
+        }
+    }
+
+    private fun downloadedSongs() = run {
+        val downloads = downloadUtil.downloads.value
+        database.allSongs()
+            .flowOn(Dispatchers.IO)
+            .map { songs -> songs.filter { downloads[it.id]?.state == Download.STATE_COMPLETED } }
+            .map { songs ->
+                songs.map { it to downloads[it.id] }
+                    .sortedBy { it.second?.updateTimeMs ?: 0L }
+                    .map { it.first }
+            }
+    }
 
     override fun onGetItem(
         session: MediaLibrarySession,
@@ -311,74 +299,54 @@ constructor(
             }
 
             try {
-                val searchResults = mutableListOf<MediaItem>()
-
-                val localSongs = database.allSongs().first().filter { song ->
-                    song.song.title.contains(query, ignoreCase = true) ||
-                    song.artists.any { it.name.contains(query, ignoreCase = true) } ||
-                    song.album?.title?.contains(query, ignoreCase = true) == true
-                }
-                
-                val artistSongs = database.searchArtists(query).first().flatMap { artist ->
-                    database.artistSongsByCreateDateAsc(artist.id).first()
-                }
-                
-                val albumSongs = database.searchAlbums(query).first().flatMap { album ->
-                    database.albumSongs(album.id).first()
-                }
-                
-                val playlistSongs = database.searchPlaylists(query).first().flatMap { playlist ->
-                    database.playlistSongs(playlist.id).first().map { it.song }
-                }
-
-                val allLocalSongs = (localSongs + artistSongs + albumSongs + playlistSongs)
-                    .distinctBy { it.id }
-                
-                allLocalSongs.forEach { song ->
-                    searchResults.add(song.toMediaItem(
+                val localSongs = findLocalSearchSongs(query)
+                val searchResults = localSongs.map { song ->
+                    song.toMediaItem(
                         path = "${MusicService.SEARCH}/$query",
                         isPlayable = true,
-                        isBrowsable = false
-                    ))
-                }
+                        isBrowsable = false,
+                    )
+                }.toMutableList()
 
-                try {
-                    val onlineResults = YouTube.search(query, YouTube.SearchFilter.FILTER_SONG)
-                        .getOrNull()
-                        ?.items
-                        ?.filterIsInstance<SongItem>()
-                        ?.filterExplicit(context.dataStore.get(HideExplicitKey, false))
-                        ?.filterVideoSongs(context.dataStore.get(HideVideoSongsKey, false) || context.dataStore.get(DataSaverEnabledKey, false))
-                        ?.filter { onlineSong ->
-                            !allLocalSongs.any { localSong ->
-                                localSong.id == onlineSong.id ||
-                                (localSong.song.title.equals(onlineSong.title, ignoreCase = true) &&
-                                 localSong.artists.any { artist ->
-                                     onlineSong.artists.any {
-                                         it.name.equals(artist.name, ignoreCase = true)
-                                     }
-                                 })
-                            }
-                        } ?: emptyList()
+                appendOnlineSearchResults(query, localSongs, searchResults)
 
-                    onlineResults.forEach { songItem ->
-                        try {
-                            database.query { insert(songItem.toMediaMetadata()) }
-                        } catch (e: Exception) {
-                        }
-                        
-                        searchResults.add(songItem.toMediaItem("${MusicService.SEARCH}/$query"))
-                    }
-                } catch (e: Exception) {
-                    reportException(e)
-                }
-                
                 LibraryResult.ofItemList(searchResults.paginate(page, pageSize), params.withContentStyleHints())
-                
             } catch (e: Exception) {
                 reportException(e)
                 LibraryResult.ofItemList(emptyList(), params.withContentStyleHints())
             }
+        }
+    }
+
+    private suspend fun appendOnlineSearchResults(
+        query: String,
+        localSongs: List<Song>,
+        searchResults: MutableList<MediaItem>,
+    ) {
+        try {
+            val localSongIds = localSongs.mapTo(mutableSetOf()) { it.id }
+            val onlineSongs = YouTube.search(query, SearchFilter.FILTER_SONG)
+                .getOrNull()
+                ?.items
+                ?.filterIsInstance<SongItem>()
+                ?.filterExplicit(context.dataStore.get(HideExplicitKey, false))
+                ?.filterVideoSongs(
+                    context.dataStore.get(HideVideoSongsKey, false) ||
+                        context.dataStore.get(DataSaverEnabledKey, false),
+                )
+                ?.filterNot { song -> isAlreadyInLocalLibrary(song, localSongs, localSongIds) }
+                .orEmpty()
+
+            onlineSongs.forEach { song ->
+                try {
+                    database.query { insert(song.toMediaMetadata()) }
+                } catch (e: Exception) {
+                    reportException(e)
+                }
+                searchResults.add(song.toMediaItem("${MusicService.SEARCH}/$query"))
+            }
+        } catch (e: Exception) {
+            reportException(e)
         }
     }
 
@@ -389,7 +357,7 @@ constructor(
         startIndex: Int,
         startPositionMs: Long,
     ): ListenableFuture<MediaItemsWithStartPosition> =
-        scope.future {
+        scope.future(Dispatchers.IO) {
             val defaultResult = MediaItemsWithStartPosition(emptyList(), startIndex, startPositionMs)
             val path = mediaItems.firstOrNull()?.mediaId?.split("/")
                 ?: return@future defaultResult
@@ -398,33 +366,21 @@ constructor(
                 MusicService.SONG -> {
                     val songId = path.getOrNull(1) ?: return@future defaultResult
                     val allSongs = database.songsByCreateDateAsc().first()
-                    MediaItemsWithStartPosition(
-                        allSongs.map { it.toMediaItem() },
-                        allSongs.indexOfFirst { it.id == songId }.takeIf { it != -1 } ?: 0,
-                        startPositionMs
-                    )
+                    queueStartingAt(allSongs, songId, startPositionMs)
                 }
 
                 MusicService.ARTIST -> {
                     val songId = path.getOrNull(2) ?: return@future defaultResult
                     val artistId = path.getOrNull(1) ?: return@future defaultResult
                     val songs = database.artistSongsByCreateDateAsc(artistId).first()
-                    MediaItemsWithStartPosition(
-                        songs.map { it.toMediaItem() },
-                        songs.indexOfFirst { it.id == songId }.takeIf { it != -1 } ?: 0,
-                        startPositionMs
-                    )
+                    queueStartingAt(songs, songId, startPositionMs)
                 }
 
                 MusicService.ALBUM -> {
                     val songId = path.getOrNull(2) ?: return@future defaultResult
                     val albumId = path.getOrNull(1) ?: return@future defaultResult
                     val albumWithSongs = database.albumWithSongs(albumId).first() ?: return@future defaultResult
-                    MediaItemsWithStartPosition(
-                        albumWithSongs.songs.map { it.toMediaItem() },
-                        albumWithSongs.songs.indexOfFirst { it.id == songId }.takeIf { it != -1 } ?: 0,
-                        startPositionMs
-                    )
+                    queueStartingAt(albumWithSongs.songs, songId, startPositionMs)
                 }
 
                 MusicService.PLAYLIST -> {
@@ -432,28 +388,12 @@ constructor(
                     val playlistId = path.getOrNull(1) ?: return@future defaultResult
                     val songs = when (playlistId) {
                         PlaylistEntity.LIKED_PLAYLIST_ID -> database.likedSongs(SongSortType.CREATE_DATE, descending = true)
-                        PlaylistEntity.DOWNLOADED_PLAYLIST_ID -> {
-                            val downloads = downloadUtil.downloads.value
-                            database
-                                .allSongs()
-                                .flowOn(Dispatchers.IO)
-                                .map { songs ->
-                                    songs.filter {
-                                        downloads[it.id]?.state == Download.STATE_COMPLETED
-                                    }
-                                }.map { songs ->
-                                    songs
-                                        .map { it to downloads[it.id] }
-                                        .sortedBy { it.second?.updateTimeMs ?: 0L }
-                                        .map { it.first }
-                                }
-                        }
+                        PlaylistEntity.DOWNLOADED_PLAYLIST_ID -> downloadedSongs()
                         else -> database.playlistSongs(playlistId).map { list ->
                             list.map { it.song }
                         }
                     }.first()
 
-                    // Check if this is a shuffle action
                     if (songId == MusicService.SHUFFLE_ACTION) {
                         MediaItemsWithStartPosition(
                             songs.shuffled().map { it.toMediaItem() },
@@ -461,11 +401,7 @@ constructor(
                             C.TIME_UNSET
                         )
                     } else {
-                        MediaItemsWithStartPosition(
-                            songs.map { it.toMediaItem() },
-                            songs.indexOfFirst { it.id == songId }.takeIf { it != -1 } ?: 0,
-                            startPositionMs
-                        )
+                        queueStartingAt(songs, songId, startPositionMs)
                     }
                 }
 
@@ -482,7 +418,6 @@ constructor(
                         return@future defaultResult
                     }
 
-                    // Check if this is a shuffle action
                     if (songId == MusicService.SHUFFLE_ACTION) {
                         MediaItemsWithStartPosition(
                             songs.shuffled(),
@@ -498,87 +433,116 @@ constructor(
                     }
                 }
 
-                MusicService.SEARCH -> {
-                    val songId = path.lastOrNull() ?: return@future defaultResult
-                    val searchQuery = mediaItems.firstOrNull()?.mediaId
-                        ?.removePrefix("${MusicService.SEARCH}/")
-                        ?.removeSuffix("/$songId")
-                        ?.takeIf { it.isNotBlank() }
-                        ?: return@future defaultResult
-                    
-                    val searchResults = mutableListOf<Song>()
-
-                    val localSongs = database.allSongs().first().filter { song ->
-                        song.song.title.contains(searchQuery, ignoreCase = true) ||
-                        song.artists.any { it.name.contains(searchQuery, ignoreCase = true) } ||
-                        song.album?.title?.contains(searchQuery, ignoreCase = true) == true
-                    }
-                    
-                    val artistSongs = database.searchArtists(searchQuery).first().flatMap { artist ->
-                        database.artistSongsByCreateDateAsc(artist.id).first()
-                    }
-                    
-                    val albumSongs = database.searchAlbums(searchQuery).first().flatMap { album ->
-                        database.albumSongs(album.id).first()
-                    }
-                    
-                    val playlistSongs = database.searchPlaylists(searchQuery).first().flatMap { playlist ->
-                        database.playlistSongs(playlist.id).first().map { it.song }
-                    }
-
-                    val allLocalSongs = (localSongs + artistSongs + albumSongs + playlistSongs)
-                        .distinctBy { it.id }
-                    
-                    searchResults.addAll(allLocalSongs)
-                    
-                    try {
-                        val onlineResults = YouTube.search(searchQuery, YouTube.SearchFilter.FILTER_SONG)
-                            .getOrNull()
-                            ?.items
-                            ?.filterIsInstance<SongItem>()
-                            ?.filterExplicit(context.dataStore.get(HideExplicitKey, false))
-                            ?.filterVideoSongs(context.dataStore.get(HideVideoSongsKey, false) || context.dataStore.get(DataSaverEnabledKey, false))
-                            ?.filter { onlineSong ->
-                                !allLocalSongs.any { localSong ->
-                                    localSong.id == onlineSong.id ||
-                                    (localSong.song.title.equals(onlineSong.title, ignoreCase = true) &&
-                                     localSong.artists.any { artist ->
-                                         onlineSong.artists.any {
-                                             it.name.equals(artist.name, ignoreCase = true)
-                                         }
-                                     })
-                                }
-                            } ?: emptyList()
-
-                        onlineResults.forEach { songItem ->
-                            try {
-                                database.query { insert(songItem.toMediaMetadata()) }
-                                database.song(songItem.id).first()?.let { newSong ->
-                                    searchResults.add(newSong)
-                                }
-                            } catch (e: Exception) {
-                            }
-                        }
-                    } catch (e: Exception) {
-                        reportException(e)
-                    }
-                    
-                    if (searchResults.isEmpty()) {
-                        return@future defaultResult
-                    }
-                    
-                    val targetIndex = searchResults.indexOfFirst { it.id == songId }
-                    
-                    MediaItemsWithStartPosition(
-                        searchResults.map { it.toMediaItem() },
-                        if (targetIndex >= 0) targetIndex else 0,
-                        C.TIME_UNSET
-                    )
-                }
+                MusicService.SEARCH -> resolveSearchItems(path, mediaItems, defaultResult)
 
                 else -> defaultResult
             }
         }
+
+    private fun queueStartingAt(
+        songs: List<Song>,
+        songId: String,
+        startPositionMs: Long,
+    ) = MediaItemsWithStartPosition(
+        songs.map { it.toMediaItem() },
+        songs.indexOfFirst { it.id == songId }.coerceAtLeast(0),
+        startPositionMs,
+    )
+
+    private suspend fun resolveSearchItems(
+        path: List<String>,
+        mediaItems: List<MediaItem>,
+        defaultResult: MediaItemsWithStartPosition,
+    ): MediaItemsWithStartPosition {
+        val songId = path.lastOrNull() ?: return defaultResult
+        val searchQuery = mediaItems.firstOrNull()?.mediaId
+            ?.removePrefix("${MusicService.SEARCH}/")
+            ?.removeSuffix("/$songId")
+            ?.takeIf { it.isNotBlank() }
+            ?: return defaultResult
+
+        val localSongs = findLocalSearchSongs(searchQuery)
+        val onlineSongs = findOnlineSearchSongs(searchQuery, localSongs)
+        val searchResults = localSongs + onlineSongs
+
+        if (searchResults.isEmpty()) {
+            return defaultResult
+        }
+
+        val targetIndex = searchResults.indexOfFirst { it.id == songId }
+
+        return MediaItemsWithStartPosition(
+            searchResults.map { it.toMediaItem() },
+            if (targetIndex >= 0) targetIndex else 0,
+            C.TIME_UNSET
+        )
+    }
+
+    private suspend fun findLocalSearchSongs(query: String): List<Song> {
+        val matchingSongs = database.allSongs().first().filter { song ->
+            song.song.title.contains(query, ignoreCase = true) ||
+                song.artists.any { it.name.contains(query, ignoreCase = true) } ||
+                song.album?.title?.contains(query, ignoreCase = true) == true
+        }
+        val artistSongs = database.searchArtists(query).first().flatMap { artist ->
+            database.artistSongsByCreateDateAsc(artist.id).first()
+        }
+        val albumSongs = database.searchAlbums(query).first().flatMap { album ->
+            database.albumSongs(album.id).first()
+        }
+        val playlistSongs = database.searchPlaylists(query).first().flatMap { playlist ->
+            database.playlistSongs(playlist.id).first().map { it.song }
+        }
+
+        return (matchingSongs + artistSongs + albumSongs + playlistSongs).distinctBy { it.id }
+    }
+
+    private suspend fun findOnlineSearchSongs(query: String, localSongs: List<Song>): List<Song> {
+        val matchingSongs = mutableListOf<Song>()
+        val localSongIds = localSongs.mapTo(mutableSetOf()) { it.id }
+        try {
+            val onlineResults = YouTube.search(query, SearchFilter.FILTER_SONG)
+                .getOrNull()
+                ?.items
+                ?.filterIsInstance<SongItem>()
+                ?.filterExplicit(context.dataStore.get(HideExplicitKey, false))
+                ?.filterVideoSongs(
+                    context.dataStore.get(HideVideoSongsKey, false) ||
+                        context.dataStore.get(DataSaverEnabledKey, false),
+                )
+                ?.filterNot { onlineSong -> isAlreadyInLocalLibrary(onlineSong, localSongs, localSongIds) }
+                .orEmpty()
+
+            onlineResults.forEach { songItem ->
+                try {
+                    database.query { insert(songItem.toMediaMetadata()) }
+                    database.song(songItem.id).first()?.let(matchingSongs::add)
+                } catch (e: Exception) {
+                    reportException(e)
+                }
+            }
+        } catch (e: Exception) {
+            reportException(e)
+        }
+        return matchingSongs
+    }
+
+    private fun isAlreadyInLocalLibrary(
+        onlineSong: SongItem,
+        localSongs: List<Song>,
+        localSongIds: Set<String>,
+    ): Boolean {
+        if (onlineSong.id in localSongIds) return true
+
+        return localSongs.any { localSong ->
+            localSong.song.title.equals(onlineSong.title, ignoreCase = true) &&
+                localSong.artists.any { localArtist ->
+                    onlineSong.artists.any { onlineArtist ->
+                        onlineArtist.name.equals(localArtist.name, ignoreCase = true)
+                    }
+                }
+        }
+    }
 
     private fun drawableUri(
         @DrawableRes id: Int,
@@ -644,95 +608,89 @@ constructor(
 
         return when (type) {
             MusicService.ROOT -> rootMediaItem()
-
-            MusicService.SONG -> {
-                if (path.size == 1) {
-                    rootChildren().first { it.mediaId == MusicService.SONG }
-                } else {
-                    database.song(path[1]).first()?.toMediaItem(MusicService.SONG)
-                }
+            MusicService.SONG -> if (path.size == 1) {
+                rootChildren().first { it.mediaId == MusicService.SONG }
+            } else {
+                songMediaItem(path[1], MusicService.SONG)
             }
-
-            MusicService.ARTIST -> {
-                val artistId = path.getOrNull(1) ?: return null
-                if (path.size == 2) {
-                    database.artist(artistId).first()?.let { artist ->
-                        browsableMediaItem(
-                            "${MusicService.ARTIST}/${artist.id}",
-                            artist.artist.name,
-                            context.resources.getQuantityString(
-                                R.plurals.n_song,
-                                artist.songCount,
-                                artist.songCount
-                            ),
-                            artist.artist.thumbnailUrl?.toUri(),
-                            MediaMetadata.MEDIA_TYPE_ARTIST,
-                            singleItemStyle = MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_CATEGORY_LIST_ITEM,
-                        )
-                    }
-                } else {
-                    val songId = path.lastOrNull() ?: return null
-                    database.song(songId).first()?.toMediaItem("${MusicService.ARTIST}/$artistId")
-                }
-            }
-
-            MusicService.ALBUM -> {
-                val albumId = path.getOrNull(1) ?: return null
-                if (path.size == 2) {
-                    database.album(albumId).first()?.let { album ->
-                        browsableMediaItem(
-                            "${MusicService.ALBUM}/${album.id}",
-                            album.album.title,
-                            album.artists.joinToString { it.name },
-                            album.album.thumbnailUrl?.toUri(),
-                            MediaMetadata.MEDIA_TYPE_ALBUM,
-                            singleItemStyle = MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_GRID_ITEM,
-                        )
-                    }
-                } else {
-                    val songId = path.lastOrNull() ?: return null
-                    database.song(songId).first()?.toMediaItem("${MusicService.ALBUM}/$albumId")
-                }
-            }
-
-            MusicService.PLAYLIST -> {
-                val playlistId = path.getOrNull(1) ?: return null
-                if (path.size == 2) {
-                    playlistMediaItem(playlistId)
-                } else {
-                    val songId = path.lastOrNull() ?: return null
-                    if (songId == MusicService.SHUFFLE_ACTION) {
-                        shuffleMediaItem("${MusicService.PLAYLIST}/$playlistId")
-                    } else {
-                        database.song(songId).first()?.toMediaItem("${MusicService.PLAYLIST}/$playlistId")
-                    }
-                }
-            }
-
-            MusicService.YOUTUBE_PLAYLIST -> {
-                val playlistId = path.getOrNull(1) ?: return null
-                if (path.size == 2) {
-                    youtubePlaylistMediaItem(playlistId)
-                } else {
-                    val songId = path.lastOrNull() ?: return null
-                    if (songId == MusicService.SHUFFLE_ACTION) {
-                        shuffleMediaItem("${MusicService.YOUTUBE_PLAYLIST}/$playlistId")
-                    } else {
-                        database.song(songId).first()?.toMediaItem("${MusicService.YOUTUBE_PLAYLIST}/$playlistId")
-                            ?: youtubePlaylistSongMediaItem(playlistId, songId)
-                    }
-                }
-            }
+            MusicService.ARTIST -> artistMediaItem(path)
+            MusicService.ALBUM -> albumMediaItem(path)
+            MusicService.PLAYLIST -> playlistChildMediaItem(path)
+            MusicService.YOUTUBE_PLAYLIST -> youtubePlaylistChildMediaItem(path)
 
             MusicService.SEARCH -> {
                 val songId = path.lastOrNull() ?: return null
-                database.song(songId).first()?.toMediaItem(
-                    mediaId.removeSuffix("/$songId")
-                )
+                songMediaItem(songId, mediaId.removeSuffix("/$songId"))
             }
 
-            else -> database.song(mediaId).first()?.toMediaItem()
+            else -> songMediaItem(mediaId)
         }
+    }
+
+    private suspend fun artistMediaItem(path: List<String>): MediaItem? {
+        val artistId = path.getOrNull(1) ?: return null
+        if (path.size != 2) {
+            val songId = path.lastOrNull() ?: return null
+            return songMediaItem(songId, "${MusicService.ARTIST}/$artistId")
+        }
+
+        val artist = database.artist(artistId).first() ?: return null
+        return browsableMediaItem(
+            "${MusicService.ARTIST}/${artist.id}",
+            artist.artist.name,
+            context.resources.getQuantityString(R.plurals.n_song, artist.songCount, artist.songCount),
+            artist.artist.thumbnailUrl?.toUri(),
+            MediaMetadata.MEDIA_TYPE_ARTIST,
+            singleItemStyle = MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_CATEGORY_LIST_ITEM,
+        )
+    }
+
+    private suspend fun albumMediaItem(path: List<String>): MediaItem? {
+        val albumId = path.getOrNull(1) ?: return null
+        if (path.size != 2) {
+            val songId = path.lastOrNull() ?: return null
+            return songMediaItem(songId, "${MusicService.ALBUM}/$albumId")
+        }
+
+        val album = database.album(albumId).first() ?: return null
+        return browsableMediaItem(
+            "${MusicService.ALBUM}/${album.id}",
+            album.album.title,
+            album.artists.joinToString { it.name },
+            album.album.thumbnailUrl?.toUri(),
+            MediaMetadata.MEDIA_TYPE_ALBUM,
+            singleItemStyle = MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_GRID_ITEM,
+        )
+    }
+
+    private suspend fun playlistChildMediaItem(path: List<String>): MediaItem? {
+        val playlistId = path.getOrNull(1) ?: return null
+        if (path.size == 2) return playlistMediaItem(playlistId)
+
+        val songId = path.lastOrNull() ?: return null
+        val playlistPath = "${MusicService.PLAYLIST}/$playlistId"
+        return if (songId == MusicService.SHUFFLE_ACTION) {
+            shuffleMediaItem(playlistPath)
+        } else {
+            songMediaItem(songId, playlistPath)
+        }
+    }
+
+    private suspend fun youtubePlaylistChildMediaItem(path: List<String>): MediaItem? {
+        val playlistId = path.getOrNull(1) ?: return null
+        if (path.size == 2) return youtubePlaylistMediaItem(playlistId)
+
+        val songId = path.lastOrNull() ?: return null
+        val playlistPath = "${MusicService.YOUTUBE_PLAYLIST}/$playlistId"
+        if (songId == MusicService.SHUFFLE_ACTION) return shuffleMediaItem(playlistPath)
+
+        return songMediaItem(songId, playlistPath)
+            ?: youtubePlaylistSongMediaItem(playlistId, songId)
+    }
+
+    private suspend fun songMediaItem(songId: String, path: String? = null): MediaItem? {
+        val song = database.song(songId).first() ?: return null
+        return if (path == null) song.toMediaItem() else song.toMediaItem(path)
     }
 
     private suspend fun playlistMediaItem(playlistId: String): MediaItem? =

@@ -35,7 +35,7 @@ fun fuzzyScore(query: String, target: String): Int? {
     return score
 }
 
-/** ponytail: assert-based self-check, run manually — no test framework wired for this module. */
+/** Manual sanity checks for fuzzyScore. */
 private fun demo() {
     check(fuzzyScore("abc", "xyz") == null)
     check(fuzzyScore("", "anything") == 0)

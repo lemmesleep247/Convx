@@ -47,16 +47,9 @@ class SleepTimer(
         }
     }
 
-    /**
-     * Notify the sleep timer that a song transition has occurred outside of normal
-     * player callbacks (e.g. during crossfade player swap). If "end of song" mode
-     * is active, this will pause the player and deactivate the timer.
-     */
+    /** Also called when crossfade swaps the session player. */
     fun notifySongTransition() {
-        if (pauseWhenSongEnd) {
-            pauseWhenSongEnd = false
-            player.pause()
-        }
+        pauseAtSongEnd()
     }
 
     fun clear() {
@@ -70,18 +63,18 @@ class SleepTimer(
         mediaItem: MediaItem?,
         reason: Int,
     ) {
-        if (pauseWhenSongEnd) {
-            pauseWhenSongEnd = false
-            player.pause()
-        }
+        pauseAtSongEnd()
     }
 
     override fun onPlaybackStateChanged(
         @Player.State playbackState: Int,
     ) {
-        if (playbackState == Player.STATE_ENDED && pauseWhenSongEnd) {
-            pauseWhenSongEnd = false
-            player.pause()
-        }
+        if (playbackState == Player.STATE_ENDED) pauseAtSongEnd()
+    }
+
+    private fun pauseAtSongEnd() {
+        if (!pauseWhenSongEnd) return
+        pauseWhenSongEnd = false
+        player.pause()
     }
 }

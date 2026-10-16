@@ -19,16 +19,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.compose.material3.MaterialTheme
-import coil3.compose.AsyncImage
-import coil3.request.ImageRequest
-import coil3.request.crossfade
+import com.convx.music.ui.ios.compat.AppTheme
 import com.convx.music.constants.AppBackgroundColorKey
 import com.convx.music.constants.HomeBackgroundAnimateKey
 import com.convx.music.constants.HomeBackgroundBlurKey
@@ -42,19 +38,16 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import java.io.File
 
-/** Absolute ceiling on the background's stored/decoded resolution, regardless
- *  of the quality preference or how large the device's own screen is — keeps
- *  an exotic tablet/foldable from decoding an unreasonably large bitmap. */
+/** Maximum edge size for stored and decoded background images. */
 private const val BackgroundAbsoluteMaxEdge = 2560
 
-/**
- * The size a background image is stored at (HomeBackgroundSettings.kt's
- * copyBackgroundMedia) and decoded at (this file, below): the device's own
- * screen resolution — so "full quality" actually means full quality on every
- * device, not a fixed 1080x1920 that under-serves a QHD+ screen — scaled by
- * [quality] (0.3..1) and clamped to [BackgroundAbsoluteMaxEdge]. Shared by
- * both the store-time and display-time requests so they always agree.
- */
+/** Source edge size for a full-quality cached blur. */
+private const val BackgroundBakeMaxEdge = 768
+
+/** Blur radius at which the small blurred bake is indistinguishable from a full-size one. */
+private const val FullBlurDp = 24f
+
+/** Calculates background image dimensions from screen size and [quality], capped at [BackgroundAbsoluteMaxEdge]. */
 @Composable
 fun rememberHomeBackgroundTargetSize(quality: Float): Pair<Int, Int> {
     val configuration = LocalConfiguration.current
@@ -72,18 +65,7 @@ fun rememberHomeBackgroundTargetSize(quality: Float): Pair<Int, Int> {
 /** Process-wide: the intro blur ramp plays only the first time this session. */
 private var blurAnimatedThisSession = false
 
-/**
- * True when the user has set a background of their own — an image, or a flat colour.
- *
- * Screens that draw their own backdrop (blurred album art, theme wash) must check
- * this and suppress those layers — otherwise they render underneath the custom
- * background along with their scrims, and the user's choice comes out looking nothing
- * like it does on a screen that has no backdrop of its own.
- *
- * A picked colour counts here, not just an image: it used to test the image path
- * alone, so a colour-only setup fell through to the auto-generated hero blur on the
- * search-results page and never showed the colour at all.
- */
+/** True when a custom image or background color is set. */
 @Composable
 fun hasCustomHomeBackground(): Boolean {
     val (enabled) = rememberPreference(HomeBackgroundEnabledKey, false)
@@ -92,19 +74,7 @@ fun hasCustomHomeBackground(): Boolean {
     return (enabled && path.isNotEmpty()) || colorInt != 0
 }
 
-/**
- * The colour a screen should paint under everything, resolving the two preferences that
- * both claim to set "the background" in one place:
- *
- * 1. an explicit background colour ([AppBackgroundColorKey]) if the user picked one,
- * 2. otherwise the theme colour when dynamic theming is off (what
- *    [com.convx.music.ui.component.rememberAppBackgroundTint] has always done),
- * 3. otherwise [fallback] — each screen's own default surface.
- *
- * Home, Library and both search screens previously each resolved this differently and
- * disagreed on the default: `colorScheme.background` on Home, `colorScheme.primary` on
- * Library, `AppleTokens.BgElevated` on Search.
- */
+/** Resolves the explicit background color, theme tint, or screen [fallback], in that order. */
 @Composable
 fun rememberAppBackgroundColor(fallback: Color): Color {
     val (colorInt) = rememberPreference(AppBackgroundColorKey, 0)
@@ -112,22 +82,12 @@ fun rememberAppBackgroundColor(fallback: Color): Color {
 }
 
 /**
- * The user's custom home background image (blurred + dimmed), shared by the Home and
- * Library screens. Draws nothing when disabled or unset. Must be placed as a layer
- * behind the screen content inside a [BoxScope] (uses [matchParentSize]).
+ * Draws the custom image or video backdrop behind Home and Library content.
+ * Image blur is baked and cached to avoid full-screen blur work every frame; the bake is low-res only for strong blur.
+ * Place inside a [BoxScope] so the backdrop can fill its parent.
  *
- * Blur is always the live RenderEffect (Modifier.blur), including once the intro
- * ramp settles. A prior version swapped in a bitmap pre-blurred by successive
- * downscale/upscale at that point to save the per-frame GPU cost — cheaper, but
- * the resample approximation showed visible seams/blocking versus a real blur.
- *
- * A version before that tried baking it into the decoded bitmap via a Coil
- * Transformation and rendered unblurred on-device regardless of
- * algorithm/cache-key/hardware-bitmap fixes.
- *
- * @param withGradient adds the bottom primary-color wash on top of the image.
- * @param contentLoaded when animate is on, the blur eases in once this flips true
- *   (i.e. when the screen's content items appear), not when the image itself loads.
+ * @param withGradient adds a primary-color wash at the bottom.
+ * @param contentLoaded starts the image reveal after screen content appears.
  */
 @Composable
 fun BoxScope.HomeImageBackground(
@@ -136,14 +96,12 @@ fun BoxScope.HomeImageBackground(
 ) {
     val (enabled) = rememberPreference(HomeBackgroundEnabledKey, false)
     val (path) = rememberPreference(HomeBackgroundPathKey, "")
-    val (blur) = rememberPreference(HomeBackgroundBlurKey, 20f)
+    val (blur) = rememberPreference(HomeBackgroundBlurKey, 48f)
     val (dim) = rememberPreference(HomeBackgroundDimKey, 0.4f)
     val (animate) = rememberPreference(HomeBackgroundAnimateKey, false)
     val (isVideo) = rememberPreference(HomeBackgroundIsVideoKey, false)
     if (!enabled || path.isEmpty()) {
-        // No custom image set — paint the user's chosen plain background
-        // color if they set one (0 = unset, draws nothing, exactly like
-        // before this preference existed).
+        // Keep the user's solid background color visible when no image is set.
         val (backgroundColorInt) = rememberPreference(AppBackgroundColorKey, 0)
         if (backgroundColorInt != 0) {
             Box(modifier = Modifier.matchParentSize().background(Color(backgroundColorInt)))
@@ -152,15 +110,12 @@ fun BoxScope.HomeImageBackground(
     }
 
     if (isVideo) {
-        // No blur-in animation for video — the loop is already motion, ramping
-        // blur on top of it double-animates for no benefit.
+        // The video already moves, so do not animate its blur as well.
         HomeVideoBackground(path = path, blur = blur, dim = dim, withGradient = withGradient)
         return
     }
 
-    // The intro blur ramp plays once per app session, not on every navigation to a screen
-    // with this background. `appeared` starts already-true when it has run before, so the
-    // animateFloatAsState inits straight at the blur target (static, no re-animation).
+    // Play the intro reveal once per app session.
     val shouldAnimate = animate && !blurAnimatedThisSession
     var appeared by remember { mutableStateOf(!shouldAnimate) }
     LaunchedEffect(shouldAnimate) {
@@ -169,45 +124,37 @@ fun BoxScope.HomeImageBackground(
             blurAnimatedThisSession = true
         }
     }
-    val animatedBlur by animateFloatAsState(
-        targetValue = if (appeared && contentLoaded) blur else 0f,
+    // The blur radius is fixed in the cached bitmap, so the intro animates its opacity.
+    val introAlpha by animateFloatAsState(
+        targetValue = if (appeared && contentLoaded) 1f else 0f,
         // Long, gentle ease-out (easeOutExpo-like) for a fluid, unhurried settle.
         animationSpec = tween(
             durationMillis = 2200,
             easing = CubicBezierEasing(0.16f, 1f, 0.3f, 1f),
         ),
-        label = "homeBgBlur",
+        label = "homeBgIntro",
     )
-    val effectiveBlur = if (animate) animatedBlur else blur
-    val context = LocalContext.current
 
-    // Was a flat 1080x1920 request regardless of what the image was actually
-    // stored at — so even after raising the stored resolution to the
-    // device's own screen size (HomeBackgroundSettings.kt), this decode step
-    // downsampled it right back down on every render, on any screen bigger
-    // than 1080x1920. Match the same quality-scaled target used at store time.
+    // BlurredBackdropImage bakes and caches the blur off the UI thread.
     val (quality) = rememberPreference(HomeBackgroundQualityKey, 1f)
     val (targetWidth, targetHeight) = rememberHomeBackgroundTargetSize(quality)
-    val imageRequest = remember(path, targetWidth, targetHeight) {
-        ImageRequest.Builder(context)
-            .data(File(path))
-            .size(targetWidth, targetHeight)
-            .crossfade(false)
-            .build()
+    // A weak blur hides nothing, so the bake grows from the small blurred size toward the full screen size as blur drops.
+    val bakeSize = remember(quality, blur, targetWidth, targetHeight) {
+        val blurredEdge = BackgroundBakeMaxEdge * quality.coerceIn(0.3f, 1f)
+        val sharpEdge = maxOf(targetWidth, targetHeight).toFloat()
+        val softness = (blur / FullBlurDp).coerceIn(0f, 1f)
+        (sharpEdge + (blurredEdge - sharpEdge) * softness).toInt().coerceAtLeast(1)
     }
+    val backdropFile = remember(path) { File(path) }
 
-    // Always the live RenderEffect blur — a prior version swapped in a bitmap
-    // pre-blurred via successive downscale/upscale once "settled" (cheaper per
-    // frame while scrolling), but that resample approximation showed visible
-    // seams/blocking versus a real blur. Simplicity + correctness over the
-    // per-frame GPU cost for a background that doesn't otherwise animate.
-    AsyncImage(
-        model = imageRequest,
-        contentDescription = null,
+    BlurredBackdropImage(
+        model = backdropFile,
+        screenBlurRadiusDp = blur,
+        decodeSize = bakeSize,
         contentScale = ContentScale.Crop,
         modifier = Modifier
             .matchParentSize()
-            .blur(effectiveBlur.dp),
+            .then(if (animate) Modifier.graphicsLayer { alpha = introAlpha } else Modifier),
     )
     Box(
         modifier = Modifier
@@ -215,7 +162,7 @@ fun BoxScope.HomeImageBackground(
             .background(Color.Black.copy(alpha = dim)),
     )
     if (withGradient) {
-        val primary = MaterialTheme.colorScheme.primary
+        val primary = AppTheme.colorScheme.primary
         Box(
             modifier = Modifier
                 .matchParentSize()

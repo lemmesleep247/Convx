@@ -14,10 +14,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import com.convx.music.ui.ios.compat.Button
+import com.convx.music.ui.ios.compat.CircularProgressIndicator
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.Text
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -60,19 +60,28 @@ fun ScanMusicScreen(
     val isScanning by viewModel.isScanning.collectAsStateWithLifecycle()
     val scanResult by viewModel.scanResult.collectAsStateWithLifecycle()
     val songs by viewModel.songs.collectAsStateWithLifecycle()
+    val permission = com.convx.music.ui.component.rememberLocalAudioPermission { }
+    LaunchedEffect(permission.granted) {
+        if (permission.granted) viewModel.scanDevice(context, force = false)
+    }
 
     var folders by remember { mutableStateOf<List<LocalFolderIndex.Folder>>(emptyList()) }
     // Reloaded when a scan finishes, not on a timer: folders only change when files do.
-    LaunchedEffect(isScanning, songs.size) {
-        if (!isScanning) {
+    LaunchedEffect(isScanning, songs.size, permission.granted) {
+        if (permission.granted && !isScanning) {
             folders = runCatching { LocalFolderIndex.load(context) }.getOrDefault(emptyList())
-        }
+        } else if (!permission.granted) folders = emptyList()
     }
 
-    LazyColumn(
-        contentPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues(),
-        modifier = Modifier.fillMaxWidth(),
+    SettingsLazyPage(
+        navController = navController,
+        title = stringResource(R.string.scan_device),
+        pageColor = AppTheme.colorScheme.background,
     ) {
+        if (!permission.granted) {
+            item(key = "audio_access") { com.convx.music.ui.component.LocalMusicPermissionPrompt(permission) }
+            return@SettingsLazyPage
+        }
         item(key = "status") {
             Column(
                 modifier = Modifier
@@ -93,12 +102,11 @@ fun ScanMusicScreen(
                         } else {
                             pluralStringResource(R.plurals.n_song, songs.size, songs.size)
                         },
-                        style = MaterialTheme.typography.titleMedium,
+                        style = AppTheme.typography.titleMedium,
                     )
                 }
 
-                // Persisted on the view model, so it survives leaving and returning to
-                // this screen -- the one thing the old silent scan never gave anyone.
+                // Keep scan results available when returning to this screen.
                 scanResult?.let { result ->
                     Text(
                         text = stringResource(
@@ -107,8 +115,8 @@ fun ScanMusicScreen(
                             result.newSongs,
                             result.skippedExisting,
                         ),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = AppTheme.typography.bodyMedium,
+                        color = AppTheme.colorScheme.onSurfaceVariant,
                     )
                 }
 
@@ -123,6 +131,12 @@ fun ScanMusicScreen(
                     onClick = { navController.navigate("settings/player/local_folders") },
                 ) {
                     Text(stringResource(R.string.excluded_folders))
+                }
+
+                Button(
+                    onClick = { navController.navigate("settings/network_storage") },
+                ) {
+                    Text(stringResource(R.string.network_storage))
                 }
             }
         }
@@ -139,18 +153,18 @@ fun ScanMusicScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(text = folder.name, style = MaterialTheme.typography.bodyLarge)
+                        Text(text = folder.name, style = AppTheme.typography.bodyLarge)
                         Text(
                             text = folder.path,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = AppTheme.typography.bodySmall,
+                            color = AppTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     Spacer(Modifier.height(1.dp))
                     Text(
                         text = folder.songIds.size.toString(),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.secondary,
+                        style = AppTheme.typography.bodyMedium,
+                        color = AppTheme.colorScheme.secondary,
                     )
                 }
             }

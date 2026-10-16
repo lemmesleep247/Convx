@@ -54,7 +54,7 @@ fun AmbientGlowBackground(
         withContext(Dispatchers.IO) {
             val request = ImageRequest.Builder(context)
                 .data(url)
-                .size(100, 100)
+                .size(200, 200)
                 .allowHardware(false)
                 .build()
 

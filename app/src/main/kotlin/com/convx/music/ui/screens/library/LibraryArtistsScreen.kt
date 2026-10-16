@@ -5,10 +5,11 @@
 
 package com.convx.music.ui.screens.library
 
+import com.convx.music.ui.component.sf
+import com.convx.music.ui.component.SymbolIcon
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.asPaddingValues
@@ -24,15 +25,19 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.FilterChip
+import com.convx.music.ui.ios.compat.FilterChip
 import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.material3.ToggleButton
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.Text
+import com.convx.music.ui.ios.compat.SegmentedButton
+import com.convx.music.ui.ios.compat.SingleChoiceSegmentedButtonRow
+import com.composables.sfsymbols.SfSymbols
+import com.composables.sfsymbols.monochrome.SFListBullet
+import com.composables.sfsymbols.monochrome.SFSquareGrid2x2
+import com.composables.sfsymbols.monochrome.SFXmark
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -46,9 +51,6 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.role
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavController
@@ -58,7 +60,6 @@ import com.convx.music.R
 import com.convx.music.ui.utils.rememberGridColumns
 import com.convx.music.constants.ArtistFilter
 import com.convx.music.constants.ArtistFilterKey
-import com.convx.music.constants.LocalOnlyModeKey
 import com.convx.music.constants.ArtistSortDescendingKey
 import com.convx.music.constants.ArtistSortType
 import com.convx.music.constants.ArtistSortTypeKey
@@ -74,6 +75,9 @@ import com.convx.music.constants.YtmSyncKey
 import com.convx.music.ui.component.buildAlphabetSectionIndex
 import com.convx.music.ui.component.ListScrollRail
 import com.convx.music.ui.component.LargeScreenTitle
+import com.convx.music.ui.component.TopFadeBlur
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeSource
 import com.convx.music.ui.component.ChipsRow
 import com.convx.music.ui.component.EmptyPlaceholder
 import com.convx.music.ui.component.LibraryArtistGridItem
@@ -89,6 +93,7 @@ import com.convx.music.ui.theme.AppleTokens
 import com.convx.music.ui.utils.heroPullZoom
 import com.convx.music.ui.utils.listOverscroll
 import com.convx.music.ui.utils.rememberHeroZoom
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -103,7 +108,7 @@ fun LibraryArtistsScreen(
     var viewType by rememberEnumPreference(ArtistViewTypeKey, LibraryViewType.GRID)
 
     var storedFilter by rememberEnumPreference(ArtistFilterKey, ArtistFilter.LIKED)
-    val (localOnly) = rememberPreference(LocalOnlyModeKey, false)
+    val localOnly = com.convx.music.LocalLocalOnlyMode.current
     // Mirrors what the view model actually queries while local-only mode is on.
     val filter = if (localOnly) ArtistFilter.LOCAL else storedFilter
     val (sortType, onSortTypeChange) = rememberEnumPreference(
@@ -121,11 +126,11 @@ fun LibraryArtistsScreen(
             FilterChip(
                 label = { Text(stringResource(R.string.artists)) },
                 selected = true,
-                colors = FilterChipDefaults.filterChipColors(containerColor = MaterialTheme.colorScheme.surface),
+                colors = FilterChipDefaults.filterChipColors(containerColor = AppTheme.colorScheme.surface),
                 onClick = onDeselect,
                 shape = RoundedCornerShape(16.dp),
                 leadingIcon = {
-                    Icon(painter = painterResource(R.drawable.close), contentDescription = "")
+                    SymbolIcon(bounceOnEnter = true, symbol = sf("SFXmark"), contentDescription = "")
                 },
             )
             if (!localOnly) {
@@ -154,17 +159,18 @@ fun LibraryArtistsScreen(
         }
     }
 
-    val artists by viewModel.allArtists.collectAsState()
+    val artists by viewModel.allArtists.collectAsStateWithLifecycle()
 
     val lazyListState = rememberLazyListState()
     val lazyGridState = rememberLazyGridState()
-    // Pull-to-refresh only: no hero artwork on this screen, so heroZoom.scale
-    // goes unread and the modifier contributes just the rubber-band stretch.
+    // Pull-to-refresh only: heroZoom.scale goes unread, contributes just the rubber-band stretch.
     val heroZoom = rememberHeroZoom()
+    // Top blur so the list dissolves under the status bar.
+    val hazeState = remember { HazeState() }
 
     val backStackEntry by navController.currentBackStackEntryAsState()
     val scrollToTop =
-        backStackEntry?.savedStateHandle?.getStateFlow("scrollToTop", false)?.collectAsState()
+        backStackEntry?.savedStateHandle?.getStateFlow("scrollToTop", false)?.collectAsStateWithLifecycle()
 
     LaunchedEffect(scrollToTop?.value) {
         if (scrollToTop?.value == true) {
@@ -204,43 +210,30 @@ fun LibraryArtistsScreen(
                     artists.size,
                     artists.size
                 ),
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.secondary,
+                style = AppTheme.typography.titleSmall,
+                color = AppTheme.colorScheme.secondary,
             )
 
-            FlowRow(
+            SingleChoiceSegmentedButtonRow(
                 modifier = Modifier.padding(start = 12.dp, end = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                LibraryViewType.entries.forEachIndexed { index, type ->
-                    ToggleButton(
-                        checked = viewType == type,
-                        onCheckedChange = { viewType = type },
-                        shapes = when (index) {
-                            0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
-                            LibraryViewType.entries.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
-                            else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                LibraryViewType.entries.forEach { type ->
+                    SegmentedButton(
+                        selected = viewType == type,
+                        onClick = { viewType = type },
+                        icon = {
+                            SymbolIcon(bounceOnEnter = true, symbol = when (type) {
+                                    LibraryViewType.LIST -> sf("SFListBullet")
+                                    LibraryViewType.GRID -> sf("SFSquareGrid2x2")
+                                }, contentDescription = null)
                         },
-                        modifier = Modifier.semantics { role = Role.RadioButton },
-                    ) {
-                        Icon(
-                            painter = painterResource(
-                                when (type) {
-                                    LibraryViewType.LIST -> R.drawable.list
-                                    LibraryViewType.GRID -> R.drawable.grid_view
-                                }
-                            ),
-                            contentDescription = null,
-                        )
-                    }
+                    )
                 }
             }
         }
     }
 
-    // Hoisted: both view types de-duped the same list separately, and the scroll rail
-    // needs the resulting count too.
+    // Hoisted: both view types and the scroll rail share this deduped list.
     val visibleArtists = remember(artists) { artists.distinctBy { it.id } }
 
     Box(
@@ -251,7 +244,7 @@ fun LibraryArtistsScreen(
                 LazyColumn(
                     state = lazyListState,
                     overscrollEffect = heroZoom.listOverscroll(),
-                    modifier = Modifier.heroPullZoom(heroZoom),
+                    modifier = Modifier.heroPullZoom(heroZoom).hazeSource(hazeState),
                     contentPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues(),
                 ) {
                     item(
@@ -307,7 +300,7 @@ fun LibraryArtistsScreen(
                 LazyVerticalGrid(
                     state = lazyGridState,
                     overscrollEffect = heroZoom.listOverscroll(),
-                    modifier = Modifier.heroPullZoom(heroZoom),
+                    modifier = Modifier.heroPullZoom(heroZoom).hazeSource(hazeState),
                     columns = rememberGridColumns(),
                     contentPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues(),
                 ) {
@@ -363,6 +356,12 @@ fun LibraryArtistsScreen(
                     }
                 }
         }
+
+        TopFadeBlur(
+            hazeState = hazeState,
+            pageColor = AppTheme.colorScheme.background,
+            modifier = Modifier.align(Alignment.TopCenter),
+        )
 
         ListScrollRail(
             lazyListState = lazyListState,

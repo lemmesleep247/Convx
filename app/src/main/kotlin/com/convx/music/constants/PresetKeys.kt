@@ -41,6 +41,11 @@ object PresetKeys {
         PureBlackKey,
         PureBlackMiniPlayerKey,
         PureBlackHeroBackgroundKey,
+        // The Theme screen's explicit text/background color override (Theme.kt's
+        // flatText) — missing here meant a preset never carried the font color the
+        // user actually set, silently falling back to the accent-derived default.
+        AppTextColorKey,
+        AppBackgroundColorKey,
     )
 
     val LAYOUT: List<Preferences.Key<*>> = listOf(
@@ -110,6 +115,7 @@ object PresetKeys {
     )
 
     val GLASS: List<Preferences.Key<*>> = listOf(
+        TopBarBlurStyleKey,
         LiquidGlassGlobalEnabledKey,
         LiquidGlassAdaptiveContrastKey,
         LiquidGlassTextColorKey,
@@ -122,11 +128,11 @@ object PresetKeys {
         LiquidGlassHighlightOpacityKey,
         LiquidGlassVibrancyKey,
         LiquidGlassBlurRadiusKey,
+        MenuBackdropResolutionKey,
         LiquidGlassLensHeightKey,
         LiquidGlassLensAmountKey,
         LiquidGlassChromaticAberrationKey,
         LiquidGlassDepthEffectKey,
-        LiquidGlassPlayerEnabledKey,
         LiquidGlassMiniPlayerEnabledKey,
         LiquidGlassNavBarEnabledKey,
         LiquidGlassSidePanelEnabledKey,
@@ -269,6 +275,7 @@ val presetKeyTypes: Map<String, PrefType> = mapOf(
         "liquidGlassHighlightOpacity" to PrefType.FLOAT,
         "liquidGlassVibrancy" to PrefType.FLOAT,
         "liquidGlassBlurRadius" to PrefType.FLOAT,
+        "menuBackdropResolution" to PrefType.FLOAT,
         "liquidGlassLensHeight" to PrefType.FLOAT,
         "liquidGlassLensAmount" to PrefType.FLOAT,
         "liquidGlassChromaticAberration" to PrefType.BOOL,

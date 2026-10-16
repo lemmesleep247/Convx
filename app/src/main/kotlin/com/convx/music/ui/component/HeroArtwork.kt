@@ -1,32 +1,59 @@
 package com.convx.music.ui.component
 
+import com.convx.music.ui.utils.sharedArtworkTarget
 import android.content.Context
+import android.os.Build
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.ContentDrawScope
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.unit.toIntSize
+import androidx.compose.ui.graphics.lerp as lerpColor
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.Text
 import androidx.compose.runtime.Composable
+import kotlin.math.roundToInt
+import kotlin.math.pow
+import androidx.compose.runtime.State
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.produceState
+import com.valentinilk.shimmer.shimmer
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -38,10 +65,11 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -52,71 +80,304 @@ import coil3.compose.AsyncImage
 import coil3.imageLoader
 import coil3.request.ImageRequest
 import coil3.request.allowHardware
+import coil3.request.crossfade
 import coil3.toBitmap
 import com.convx.music.R
 import com.convx.music.constants.DynamicThemeKey
 import com.convx.music.constants.PureBlackHeroBackgroundKey
+import com.convx.music.constants.ReduceDynamicBlurKey
 import com.convx.music.constants.SelectedThemeColorKey
 import com.convx.music.ui.component.shapes.ContinuousRoundedRectangle
 import com.convx.music.ui.theme.AppleTokens
 import com.convx.music.ui.theme.DefaultThemeColor
 import com.convx.music.ui.theme.LocalAccentColor
-import com.convx.music.ui.theme.extractThemeColor
+import com.convx.music.ui.theme.HeroPalette
+import com.convx.music.ui.theme.extractHeroPalette
 import com.convx.music.utils.rememberPreference
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.convx.music.ui.theme.colorengine.textHierarchyOn
+import com.convx.music.ui.component.backdrop.internal.recordLayer
+import androidx.compose.ui.graphics.asComposeRenderEffect
+import androidx.compose.ui.node.requireGraphicsContext
+import com.convx.music.ui.utils.Motion
+import com.convx.music.ui.utils.resize
+import dev.chrisbanes.haze.ExperimentalHazeApi
+import dev.chrisbanes.haze.HazeInputScale
+import dev.chrisbanes.haze.HazeProgressive
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeEffect
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.materials.ExperimentalHazeMaterialsApi
+import dev.chrisbanes.haze.materials.HazeMaterials
 
-/**
- * Resolved hero image source with priority chain:
- * existing static artwork → animated/canvas artwork → first song artwork →
- * next song artwork → default music image as last resort.
- */
+/** Selected hero image, or the default when no artwork is available. */
 sealed class HeroSource {
     data class Artwork(val url: String, val isAnimated: Boolean = false) : HeroSource()
     data object Default : HeroSource()
 }
 
 /** Blur radius for [HeroBackground]'s Apple-Music-style blurred artwork. */
-private val HeroBlurRadius = 48.dp
+internal val HeroBlurRadius = 48.dp
 
-/**
- * Hero tints keyed by artwork URL (the image's stable id): the Coil decode +
- * palette extraction is expensive, so the same artwork never recomputes on
- * revisit or recomposition. Bounded for a long session.
- */
-private val heroTintCache = android.util.LruCache<String, Color>(128)
+/** Blends the bottom of the artwork into the page using Haze or a color gradient fallback. */
+@Composable
+fun HeroMergeBand(
+    artworkUrl: String?,
+    modifier: Modifier = Modifier,
+    /** Band height; generous, because half its run is spent arriving and half leaving. */
+    bandHeight: Dp = 320.dp,
+    /** Wide enough that nothing of the picture survives at full strength. */
+    blurRadius: Dp = 100.dp,
+    /** Aspect ratio of the hero artwork this band must line up with. */
+    heroRatio: Float = 1f,
+    /** Page color used by the fallback on older Android versions. */
+    pageColor: Color = Color.Black,
+    /** Optional Haze source; its content must be marked with `Modifier.hazeSource`. */
+    hazeState: HazeState? = null,
+) {
+    // Use Haze only on supported Android versions and when dynamic blur is enabled.
+    val reduceBlur by rememberPreference(ReduceDynamicBlurKey, false)
+    val useHaze = hazeState != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !reduceBlur
 
-/**
- * 0..1 scroll progress for [HeroBackground]'s `topBlurProgress`: ramps as the first
- * screenful scrolls up, then pins at 1. Pass a hero screen's list state.
- */
+    if (!useHaze) {
+        // Keep the same band size as the Haze path, with a page-color fade at the join.
+        Box(
+            modifier
+                .fillMaxWidth()
+                .height(bandHeight)
+                .background(
+                    Brush.verticalGradient(
+                        colorStops = Array(12) { i ->
+                            val t = i / 11f
+                            val window = when {
+                                t < 0.85f -> t / 0.85f
+                                else -> 1f - (t - 0.85f) / 0.15f
+                            }
+                            val eased = androidx.compose.animation.core.EaseOutCubic.transform(
+                                window.coerceIn(0f, 1f),
+                            )
+                            t to pageColor.copy(alpha = eased)
+                        },
+                    ),
+                ),
+        )
+        return
+    }
+
+    // Blur content from both sides of the join and mask the band's edges to avoid a hard boundary.
+    @OptIn(ExperimentalHazeMaterialsApi::class, ExperimentalHazeApi::class)
+    Box(
+        modifier
+            .fillMaxWidth()
+            .height(bandHeight)
+            .hazeEffect(
+                state = hazeState,
+                style = HazeMaterials.ultraThin(pageColor),
+            ) {
+                // Match the material tint to the page color behind the join.
+                noiseFactor = 0f
+                mask = Brush.verticalGradient(
+                    0.00f to Color.Transparent,
+                    0.50f to Color.Black,
+                    1.00f to Color.Transparent,
+                )
+            },
+    )
+}
+
+/** Where [HeroMergeBand] is centred: half over the artwork, half over the page. */
+val HeroMergeBandHeight: Dp = 320.dp
+
+/** Fades a progressive blur over the hero as it scrolls under the status bar. */
+@Composable
+fun HeroTopBlur(
+    hazeState: HazeState?,
+    progress: State<Float>,
+    pageColor: Color = AppTheme.colorScheme.background,
+    modifier: Modifier = Modifier,
+    /** Height of the blur strip + the run below it the fade needs to disappear. */
+    height: Dp = 140.dp,
+) {
+    val reduceBlur by rememberPreference(ReduceDynamicBlurKey, false)
+    // Gate Haze with a coarse state so idle frames skip its shader work.
+    val useHaze =
+        hazeState != null &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            !reduceBlur
+    val hazeActive by remember(progress) {
+        androidx.compose.runtime.derivedStateOf { progress.value > 0.001f }
+    }
+
+    if (!useHaze) {
+        // Use a page-color scrim when Haze is unavailable or disabled.
+        Box(
+            modifier
+                .fillMaxWidth()
+                .height(height)
+                .graphicsLayer { alpha = progress.value.coerceIn(0f, 1f) }
+                .background(pageColor),
+        )
+        return
+    }
+
+    if (!hazeActive) {
+        // Same footprint (no layout jump) but no haze node, so a motionless hero
+        // does not pay progressive-blur cost for an invisible strip.
+        Box(modifier.fillMaxWidth().height(height))
+        return
+    }
+
+    @OptIn(ExperimentalHazeMaterialsApi::class, ExperimentalHazeApi::class)
+    Box(
+        modifier
+            .fillMaxWidth()
+            .height(height)
+            .hazeEffect(
+                state = hazeState,
+                style = HazeMaterials.ultraThin(pageColor),
+            ) {
+                blurRadius = 36.dp
+                noiseFactor = 0f
+                // Downscale the input to reduce work during scrolling; the blur hides the upscale.
+                inputScale = HazeInputScale.Fixed(0.33f)
+                // Draw-phase read: intensity follows scroll without recomposing.
+                alpha = progress.value.coerceIn(0f, 1f)
+                // Fade the blur to clear at the strip's lower edge.
+                progressive = HazeProgressive.verticalGradient(
+                    easing = androidx.compose.animation.core.EaseInCubic,
+                    startIntensity = 1f,
+                    endIntensity = 0f,
+                )
+            },
+    )
+}
+
+/** Crossfades three pre-blurred artwork layers as the hero scrolls; blur is not recomputed per frame. */
+@Composable
+fun HeroScrollBlur(
+    artworkUrl: String?,
+    progress: State<Float>,
+    modifier: Modifier = Modifier,
+    blurRadius: Dp = HeroBlurRadius,
+    decodeSize: Int = 160,
+) {
+    val reduceBlur by rememberPreference(ReduceDynamicBlurKey, false)
+    // Compose each layer only while visible; update its alpha in the draw phase.
+    val softOn by remember(progress) {
+        androidx.compose.runtime.derivedStateOf { heroBandOn(progress.value, 0.02f, 0.70f) }
+    }
+    val midOn by remember(progress) {
+        androidx.compose.runtime.derivedStateOf { heroBandOn(progress.value, 0.25f, 0.90f) }
+    }
+    val fullOn by remember(progress) {
+        androidx.compose.runtime.derivedStateOf { progress.value > 0.55f }
+    }
+    if (reduceBlur || artworkUrl.isNullOrBlank()) return
+    if (!softOn && !midOn && !fullOn) return
+
+    Box(modifier.fillMaxSize()) {
+        if (softOn) {
+            BlurredBackdropImage(
+                model = artworkUrl,
+                screenBlurRadiusDp = (blurRadius * 0.3f).value,
+                decodeSize = decodeSize,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { alpha = heroPlateAlpha(progress.value, start = 0.02f, peak = 0.30f, end = 0.70f) },
+            )
+        }
+        if (midOn) {
+            BlurredBackdropImage(
+                model = artworkUrl,
+                screenBlurRadiusDp = (blurRadius * 0.6f).value,
+                decodeSize = decodeSize,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { alpha = heroPlateAlpha(progress.value, start = 0.25f, peak = 0.60f, end = 0.90f) },
+            )
+        }
+        if (fullOn) {
+            BlurredBackdropImage(
+                model = artworkUrl,
+                screenBlurRadiusDp = blurRadius.value,
+                decodeSize = decodeSize,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        val eased = androidx.compose.animation.core.EaseOutCubic.transform(progress.value.coerceIn(0f, 1f))
+                        alpha = ((eased - 0.55f) / 0.45f).coerceIn(0f, 1f)
+                    },
+            )
+        }
+    }
+}
+
+/** True when the triangular band for (start, end) can be non-zero at [p]. */
+internal fun heroBandOn(p: Float, start: Float, end: Float): Boolean {
+    val t = p.coerceIn(0f, 1f)
+    return t > start && t < end
+}
+
+/** Draw-phase plate alpha: eased triangular band (same curve as before). */
+internal fun heroPlateAlpha(p: Float, start: Float, peak: Float, end: Float): Float {
+    val eased = androidx.compose.animation.core.EaseOutCubic.transform(p.coerceIn(0f, 1f))
+    return heroBlurBand(eased, start = start, peak = peak, end = end)
+}
+
+/** Triangular 0→1→0 window: full at [peak], gone at [start]/[end]. */
+internal fun heroBlurBand(p: Float, start: Float, peak: Float, end: Float): Float =
+    when {
+        p <= start || p >= end -> 0f
+        p < peak -> (p - start) / (peak - start)
+        else -> 1f - (p - peak) / (end - peak)
+    }
+
+/** Bounded cache of palettes keyed by artwork URL. */
+internal val heroPaletteCache = android.util.LruCache<String, HeroPalette>(128)
+
+/** Scroll progress for a hero list; uses the same pixel threshold as its chrome scrim. */
 @Composable
 fun rememberHeroTopBlur(
     state: androidx.compose.foundation.lazy.LazyListState,
-    // Blur reaches full strength once the hero header has scrolled this fraction
-    // of its OWN height. Deriving the span from the real header size (instead of a
-    // fixed px threshold) keeps the ramp continuous through the moment the header
-    // scrolls off — a fixed 700px threshold snapped when it didn't match the
-    // header's actual height.
-    fraction: Float = 0.6f,
-): Float {
-    val progress by remember(state) {
-        androidx.compose.runtime.derivedStateOf {
-            if (state.firstVisibleItemIndex > 0) return@derivedStateOf 1f
-            val header = state.layoutInfo.visibleItemsInfo.firstOrNull { it.index == 0 }
-            val span = (header?.size ?: 0) * fraction
-            if (span <= 0f) 0f
-            else (state.firstVisibleItemScrollOffset / span).coerceIn(0f, 1f)
+    thresholdPx: Float = 300f,
+): State<Float> = remember(state) {
+    androidx.compose.runtime.derivedStateOf {
+        val scrolledPx = if (state.firstVisibleItemIndex == 0) {
+            state.firstVisibleItemScrollOffset.toFloat()
+        } else {
+            thresholdPx
         }
+        (scrolledPx / thresholdPx).coerceIn(0f, 1f)
     }
-    return progress
+}
+
+/** [rememberHeroTopBlur], for a header that leads a grid instead of a list. */
+@Composable
+fun rememberHeroTopBlur(
+    state: androidx.compose.foundation.lazy.grid.LazyGridState,
+    thresholdPx: Float = 300f,
+): State<Float> = remember(state) {
+    androidx.compose.runtime.derivedStateOf {
+        val scrolledPx = if (state.firstVisibleItemIndex == 0) {
+            state.firstVisibleItemScrollOffset.toFloat()
+        } else {
+            thresholdPx
+        }
+        (scrolledPx / thresholdPx).coerceIn(0f, 1f)
+    }
+}
+
+/** Constant 0 for optional scroll-progress params that default to "no ramp". */
+val ZeroScrollProgress: State<Float> = object : State<Float> {
+    override val value: Float get() = 0f
 }
 
 /**
- * Resolves the hero image per the priority chain.
+ * Resolves hero artwork from static art, animated art, then song thumbnails.
  *
  * @param staticArt Primary artwork URL (e.g. album/playlist/artist art)
  * @param animatedArt Optional animated/canvas artwork URL
@@ -134,479 +395,10 @@ fun rememberHeroSource(
             !animatedArt.isNullOrBlank() -> HeroSource.Artwork(animatedArt, isAnimated = true)
             else -> {
                 val firstSongArt = songs.firstOrNull { !it.first.isNullOrBlank() }
-                if (firstSongArt != null) {
-                    HeroSource.Artwork(firstSongArt.first!!, isAnimated = firstSongArt.second)
-                } else {
-                    HeroSource.Default
-                }
+                firstSongArt?.let { (thumbnailUrl, isAnimated) ->
+                    thumbnailUrl?.let { HeroSource.Artwork(it, isAnimated) }
+                } ?: HeroSource.Default
             }
         }
     }
-}
-
-/**
- * Extracts the dominant tint color from a hero artwork URL.
- * Returns [AppleTokens.AccentRed] as fallback until extraction completes.
- */
-/**
- * Clamps an extracted artwork color into a pleasant deep background tint:
- * caps lightness (pale/skin/whitish colors become rich, legible) and floors
- * saturation (avoids washed-out grey). Keeps the hue.
- */
-fun Color.asDeepTint(): Color {
-    val hsl = FloatArray(3)
-    androidx.core.graphics.ColorUtils.colorToHSL(toArgb(), hsl)
-    hsl[1] = hsl[1].coerceAtLeast(0.28f)   // floor saturation
-    hsl[2] = hsl[2].coerceIn(0.14f, 0.34f) // cap lightness → deep, not pale
-    return Color(androidx.core.graphics.ColorUtils.HSLToColor(hsl))
-}
-
-/**
- * The artwork tint for [url], from cache when it is there and by extraction when it is not.
- *
- * Cheap on a repeat call even when the cache misses: the 100x100 decode Coil does here
- * lands in its own memory cache, so a second caller pays a lookup rather than a fetch.
- */
-suspend fun heroTintOf(context: Context, url: String): Color? {
-    heroTintCache.get(url)?.let { return it }
-    return withContext(Dispatchers.IO) {
-        try {
-            val request = ImageRequest.Builder(context)
-                .data(url)
-                .size(100, 100)
-                .allowHardware(false)
-                .build()
-            context.imageLoader.execute(request).image?.toBitmap()
-                ?.extractThemeColor()?.asDeepTint()
-                // Not cached on a miss: a later visit with a working network should still
-                // get the real artwork colour rather than a stand-in pinned forever.
-                ?.also { heroTintCache.put(url, it) }
-        } catch (_: Exception) {
-            null
-        }
-    }
-}
-
-/**
- * Starts extracting [url]'s tint now, off any composition.
- *
- * Called as navigation into a hero screen begins, so the colour is already in the cache by
- * the time that screen composes -- otherwise the extraction starts on arrival and the
- * background visibly washes in a beat after the artwork.
- */
-fun prewarmHeroTint(context: Context, url: String?) {
-    if (url.isNullOrEmpty() || heroTintCache.get(url) != null) return
-    val appContext = context.applicationContext
-    heroTintScope.launch { heroTintOf(appContext, url) }
-}
-
-private val heroTintScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
-@Composable
-fun rememberHeroTint(url: String?): Color {
-    val context = LocalContext.current
-
-    // Where a failed extraction lands. The doc above claimed the fallback was
-    // AccentRed, but nothing ever assigned it: black is the *pending* value, and
-    // every failure path below simply left it there — a device that couldn't fetch
-    // the artwork (offline, 403, decode failure, image evicted under memory
-    // pressure) got a permanently black hero plane instead of a colour, which is
-    // the "generated colour falls to black on some phones" report. Resolves to the
-    // user's own theme colour now, so a miss degrades to their accent, not to black.
-    val fallbackTint = LocalAccentColor.current.asDeepTint()
-
-    // Black until the artwork color is extracted (no accent flash); seeded from the
-    // cache so a revisited image shows its tint at once.
-    var tint by remember(url) { mutableStateOf(url?.let { heroTintCache.get(it) } ?: Color.Black) }
-
-    LaunchedEffect(url) {
-        // No early return on a cache hit. Extraction can already be in flight from
-        // prewarmHeroTint, and bailing out because "someone is handling it" left the
-        // tint stuck on its pending black forever.
-        tint = (url?.let { heroTintOf(context, it) }) ?: fallbackTint
-    }
-
-    val animatedTint = tint
-    // Root-cause fix, not per-screen: every hero-tinted screen (Artist, Album,
-    // Playlist, Search, ...) reads its background straight off this value, but
-    // only HeroBackground's own separate PureBlackHeroBackgroundKey check
-    // honored the setting — every screen that composes its own tint plane
-    // instead of going through HeroBackground silently ignored it. Applying the
-    // override here fixes every caller at once instead of repeating this check
-    // in 17 files.
-    val (pureBlack) = rememberPreference(PureBlackHeroBackgroundKey, false)
-    return if (pureBlack) Color.Black else animatedTint
-}
-
-/**
- * The screen background tint actually used — [contentTint] (per-screen, derived
- * from artwork/thumbnails) when the user is on system/dynamic color, or their
- * own picked color (Theme settings) as a flat override when they're not. Ties
- * "custom theme color" directly to what screens paint behind their content,
- * not just Material's accent colors.
- */
-@Composable
-fun rememberAppBackgroundTint(contentTint: Color): Color {
-    val (isDynamic) = rememberPreference(DynamicThemeKey, defaultValue = true)
-    val (selectedColorInt) = rememberPreference(SelectedThemeColorKey, defaultValue = DefaultThemeColor.toArgb())
-    return if (isDynamic) contentTint else Color(selectedColorInt)
-}
-
-/**
- * Album-screen style hero header: a full-width square artwork that fades
- * (DstIn vertical gradient) into whatever tint plane sits behind it, so the
- * image dissolves into the color. Meant to be the FIRST item of a LazyColumn
- * whose parent paints [com.convx.music.ui.theme.AppleTokens] tint behind it.
- *
- * Falls back to the default music image when [artworkUrl] is null/blank.
- */
-@Composable
-fun AlbumStyleHeroImage(
-    artworkUrl: String?,
-    modifier: Modifier = Modifier,
-    // Extra pull-up beyond the status bar, to lift the square higher like AlbumScreen.
-    extraPullUp: androidx.compose.ui.unit.Dp = 48.dp,
-    // Driven by rememberHeroZoom() for pull-to-zoom. Applied to the drawn image
-    // only, so growing it never re-lays-out the list underneath.
-    heroScale: Float = 1f,
-) {
-    val topInset = androidx.compose.foundation.layout.WindowInsets.systemBars
-        .asPaddingValues().calculateTopPadding()
-    val density = LocalDensity.current
-    val pullUpPx = with(density) { (topInset + extraPullUp).roundToPx() }
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .aspectRatio(1f)
-            // Report a shorter height and draw shifted up: the image top tucks
-            // under the status bar and following content sits tight (no gap).
-            .layout { measurable, constraints ->
-                val placeable = measurable.measure(constraints)
-                val h = (placeable.height - pullUpPx).coerceAtLeast(0)
-                layout(placeable.width, h) {
-                    placeable.place(0, -pullUpPx)
-                }
-            }
-            .graphicsLayer {
-                scaleX = heroScale
-                scaleY = heroScale
-                compositingStrategy = CompositingStrategy.Offscreen
-            }
-            .drawWithContent {
-                drawContent()
-                drawRect(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(Color.Black, Color.Transparent),
-                        startY = size.height * 0.45f,
-                        endY = size.height,
-                    ),
-                    blendMode = BlendMode.DstIn,
-                )
-            },
-    ) {
-        if (!artworkUrl.isNullOrBlank()) {
-            AsyncImage(
-                model = artworkUrl,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-            )
-        } else {
-            Image(
-                painter = painterResource(R.drawable.music_note),
-                contentDescription = null,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier
-                    .fillMaxSize(0.4f)
-                    .align(Alignment.Center)
-                    .graphicsLayer { alpha = 0.3f },
-            )
-        }
-    }
-}
-
-/**
- * Full-bleed hero background: flat tint plane with the hero image on top,
- * fading vertically into the tint at its bottom edge.
- *
- * NO gradient scrim — the image dissolves into the color plane.
- * Adaptive contrast: descendants should use [AppleTokens.onColor] for text.
- */
-@Composable
-fun HeroBackground(
-    tint: Color,
-    heroSource: HeroSource,
-    modifier: Modifier = Modifier,
-    // Apple Music browse/player style: full-bleed heavily-blurred artwork with a
-    // darkening scrim, instead of the default sharp top-hero fading to tint.
-    blurArtwork: Boolean = false,
-    // With [blurArtwork], drop the crisp upper layer so the whole background is
-    // uniformly blurred (no sharp-top/blurred-bottom split).
-    fullBlur: Boolean = false,
-    // The [HeroSource.Default] placeholder music-note. Off for screens that want
-    // a clean flat tint behind glass (e.g. search).
-    showDefaultIcon: Boolean = true,
-    // Decorative primary-color wash fading in at the bottom of the screen.
-    bottomGradient: Boolean = false,
-    // 0..1 — extra blur ramped onto the crisp upper artwork as the list scrolls up.
-    topBlurProgress: Float = 0f,
-    // Pull-to-zoom scale for the hero artwork (1 = rest; >1 while overscrolling the top).
-    heroScale: Float = 1f,
-    content: @Composable BoxScope.() -> Unit = {},
-) {
-    val primaryColor = MaterialTheme.colorScheme.primary
-    val (pureBlack) = rememberPreference(PureBlackHeroBackgroundKey, false)
-    // Reuses the existing Default branch (flat tint, no image) to suppress the
-    // artwork backdrop entirely rather than adding a second code path.
-    val effectiveTint = if (pureBlack) Color.Black else tint
-    val effectiveHeroSource = if (pureBlack) HeroSource.Default else heroSource
-    Box(modifier = modifier.background(effectiveTint)) {
-        when (val heroSource = effectiveHeroSource) {
-            is HeroSource.Artwork -> {
-                // Fade-in animation for the hero image (the "smooth transition"
-                // as the artwork resolves).
-                var visible by remember { mutableStateOf(false) }
-                val alpha by animateFloatAsState(
-                    targetValue = if (visible) 1f else 0f,
-                    animationSpec = tween(durationMillis = 600),
-                    label = "heroFadeIn",
-                )
-
-                if (blurArtwork) {
-                    // Blurred lower layer: fills behind the list and dissolves
-                    // into the tint (the primary-color gradient) toward the
-                    // bottom. Decoded at low resolution — a 48dp blur erases all
-                    // detail, so a ~160px source is visually identical to full-res
-                    // while cutting decode time and bitmap memory dramatically.
-                    AsyncImage(
-                        model = ImageRequest.Builder(LocalContext.current)
-                            .data(heroSource.url)
-                            .size(160)
-                            .build(),
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .blur(HeroBlurRadius)
-                            .graphicsLayer {
-                                this.alpha = alpha
-                                scaleX = heroScale
-                                scaleY = heroScale
-                                compositingStrategy = CompositingStrategy.Offscreen
-                            }
-                            .drawWithContent {
-                                drawContent()
-                                drawRect(
-                                    brush = Brush.verticalGradient(
-                                        colors = listOf(Color.Black, Color.Transparent),
-                                        startY = size.height * 0.5f,
-                                        endY = size.height,
-                                    ),
-                                    blendMode = BlendMode.DstIn,
-                                )
-                            },
-                        onSuccess = { visible = true },
-                    )
-                    // Sharp upper layer: the top half stays crisp, then dissolves
-                    // so the blur takes over from roughly where the list begins.
-                    // Skipped entirely in fullBlur mode (uniformly blurred background).
-                    if (!fullBlur) {
-                    AsyncImage(
-                        model = heroSource.url,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .graphicsLayer {
-                                // Cross-fade to the pre-blurred layer underneath as you
-                                // scroll — no per-frame RenderEffect, so it stays smooth.
-                                this.alpha = alpha * (1f - topBlurProgress.coerceIn(0f, 1f))
-                                scaleX = heroScale
-                                scaleY = heroScale
-                                compositingStrategy = CompositingStrategy.Offscreen
-                            }
-                            .drawWithContent {
-                                drawContent()
-                                drawRect(
-                                    brush = Brush.verticalGradient(
-                                        colors = listOf(Color.Black, Color.Transparent),
-                                        startY = size.height * 0.35f,
-                                        endY = size.height * 0.6f,
-                                    ),
-                                    blendMode = BlendMode.DstIn,
-                                )
-                            },
-                    )
-                    }
-                } else {
-                    AsyncImage(
-                        model = heroSource.url,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .graphicsLayer {
-                                this.alpha = alpha
-                                compositingStrategy = CompositingStrategy.Offscreen
-                            }
-                            .drawWithContent {
-                                drawContent()
-                                drawRect(
-                                    brush = Brush.verticalGradient(
-                                        colors = listOf(Color.Black, Color.Transparent),
-                                        startY = size.height * 0.4f,
-                                        endY = size.height
-                                    ),
-                                    blendMode = BlendMode.DstIn
-                                )
-                            },
-                        onSuccess = { visible = true },
-                    )
-                }
-            }
-            is HeroSource.Default -> {
-                // No placeholder icon: a clean flat tint plane behind the content.
-            }
-        }
-        if (bottomGradient) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            0.55f to Color.Transparent,
-                            1f to primaryColor.copy(alpha = 0.55f),
-                        ),
-                    ),
-            )
-        }
-        content()
-    }
-}
-
-/** Side of the hero card in tab view. Matches the reference's ~1/4-width square. */
-val HeroCardSize: Dp = 200.dp
-
-/**
- * Top clearance the wide hero reserves for the floating Back button, which lives
- * at the top-left of the content area in tab view and would otherwise sit over
- * the artwork. One number — raise it if the button still crowds the card.
- */
-val HeroBackButtonClearance: Dp = 56.dp
-
-/**
- * Wide-layout hero: the artwork as a card with the title beside it.
- *
- * The phone hero is a full-bleed square with the title overlaid at its bottom —
- * on a wide layout that wastes the whole right half of the screen and pushes the
- * actual content below the fold. The reference instead makes the artwork a
- * bounded card, sets the title, subtitle and actions in a column next to it, and
- * starts the list directly underneath.
- *
- * Screens choose between this and their phone header on [LocalTabView].
- */
-@Composable
-fun HeroCardHeader(
-    artworkUrl: String?,
-    title: @Composable () -> Unit,
-    modifier: Modifier = Modifier,
-    cardSize: Dp = HeroCardSize,
-    // Artist pages are circular in the reference; albums and playlists are square.
-    circular: Boolean = false,
-    subtitle: (@Composable () -> Unit)? = null,
-    actions: (@Composable ColumnScope.() -> Unit)? = null,
-) {
-    val shape = if (circular) {
-        ContinuousRoundedRectangle(percent = 50)
-    } else {
-        ContinuousRoundedRectangle(16.dp)
-    }
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            // Top clearance drops the card below the floating Back button.
-            .padding(start = 24.dp, end = 24.dp, top = HeroBackButtonClearance, bottom = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            Modifier
-                .size(cardSize)
-                .shadow(elevation = 12.dp, shape = shape)
-                .clip(shape)
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
-        ) {
-            if (!artworkUrl.isNullOrBlank()) {
-                AsyncImage(
-                    model = artworkUrl,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            } else {
-                Image(
-                    painter = painterResource(R.drawable.music_note),
-                    contentDescription = null,
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier
-                        .fillMaxSize(0.4f)
-                        .align(Alignment.Center)
-                        .graphicsLayer { alpha = 0.3f },
-                )
-            }
-        }
-
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .padding(start = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            title()
-            subtitle?.invoke()
-            actions?.invoke(this)
-        }
-    }
-}
-
-/**
- * Convenience overload for the common "big title, quieter subtitle line" pair,
- * so each screen doesn't restate the same two Text styles.
- */
-@Composable
-fun HeroCardHeader(
-    artworkUrl: String?,
-    titleText: String,
-    modifier: Modifier = Modifier,
-    subtitleText: String? = null,
-    cardSize: Dp = HeroCardSize,
-    circular: Boolean = false,
-    actions: (@Composable ColumnScope.() -> Unit)? = null,
-) {
-    HeroCardHeader(
-        artworkUrl = artworkUrl,
-        modifier = modifier,
-        cardSize = cardSize,
-        circular = circular,
-        title = {
-            Text(
-                text = titleText,
-                style = MaterialTheme.typography.displaySmall,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-        },
-        subtitle = subtitleText?.let {
-            {
-                Text(
-                    text = it,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        },
-        actions = actions,
-    )
 }

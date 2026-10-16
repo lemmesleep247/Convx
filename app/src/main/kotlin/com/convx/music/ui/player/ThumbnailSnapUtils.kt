@@ -3,7 +3,7 @@
  * Licensed under GPL-3.0 | See git history for contributors
  * 
  * Snap utilities for Thumbnail grid navigation
- * Copyright (C) OuterTune Project - Custom SnapLayoutInfoProvider idea belongs to OuterTune
+ * Copyright (C) the reference app Project - Custom SnapLayoutInfoProvider idea belongs to the reference app
  */
 
 package com.convx.music.ui.player

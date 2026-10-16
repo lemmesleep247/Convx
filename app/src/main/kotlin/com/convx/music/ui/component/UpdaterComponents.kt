@@ -16,17 +16,17 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
+import com.convx.music.ui.ios.compat.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.IconButton
 import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.MaterialTheme
+import com.convx.music.ui.ios.compat.AppTheme
 import androidx.compose.material3.Snackbar
-import androidx.compose.material3.SnackbarHost
+import com.convx.music.ui.ios.compat.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import com.convx.music.ui.ios.compat.Surface
+import com.convx.music.ui.ios.compat.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -44,7 +44,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.core.content.ContextCompat
-import com.convx.music.vivimusic.updater.extractUrls
+import com.convx.music.core.updater.extractUrls
 @Composable
 fun AnimatedActionButton(
     text: String,
@@ -71,13 +71,13 @@ fun AnimatedActionButton(
             enabled = enabled,
             interactionSource = interactionSource,
             colors = ButtonDefaults.outlinedButtonColors(
-                contentColor = MaterialTheme.colorScheme.primary
+                contentColor = AppTheme.colorScheme.primary
             )
         ) {
             Text(
                 text = text,
                 fontWeight = FontWeight.Bold,
-                style = MaterialTheme.typography.titleMedium
+                style = AppTheme.typography.titleMedium
             )
         }
     } else {
@@ -88,14 +88,14 @@ fun AnimatedActionButton(
             enabled = enabled,
             interactionSource = interactionSource,
             colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary
+                containerColor = AppTheme.colorScheme.primary,
+                contentColor = AppTheme.colorScheme.onPrimary
             )
         ) {
             Text(
                 text = text,
                 fontWeight = FontWeight.Bold,
-                style = MaterialTheme.typography.titleMedium
+                style = AppTheme.typography.titleMedium
             )
         }
     }
@@ -109,7 +109,7 @@ fun ExpressiveIconButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     containerColor: Color = Color.Transparent,
-    contentColor: Color = MaterialTheme.colorScheme.onSurfaceVariant
+    contentColor: Color = AppTheme.colorScheme.onSurfaceVariant
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
@@ -149,11 +149,11 @@ fun ErrorSnackbar(
     ) { data ->
         Snackbar(
             snackbarData = data,
-            containerColor = MaterialTheme.colorScheme.inverseSurface,
-            contentColor = MaterialTheme.colorScheme.inverseOnSurface,
-            actionColor = MaterialTheme.colorScheme.inversePrimary,
-            actionContentColor = MaterialTheme.colorScheme.inversePrimary,
-            dismissActionContentColor = MaterialTheme.colorScheme.inverseOnSurface
+            containerColor = AppTheme.colorScheme.inverseSurface,
+            contentColor = AppTheme.colorScheme.inverseOnSurface,
+            actionColor = AppTheme.colorScheme.inversePrimary,
+            actionContentColor = AppTheme.colorScheme.inversePrimary,
+            dismissActionContentColor = AppTheme.colorScheme.inverseOnSurface
         )
     }
 }
@@ -189,7 +189,7 @@ fun ChangelogItem(
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = shape,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh
+        color = AppTheme.colorScheme.surfaceContainerHigh
     ) {
         val context = LocalContext.current
         val urls = text.extractUrls()
@@ -199,7 +199,7 @@ fun ChangelogItem(
                 addStringAnnotation("URL", url, range.first, range.last + 1)
                 addStyle(
                     SpanStyle(
-                        color = MaterialTheme.colorScheme.primary,
+                        color = AppTheme.colorScheme.primary,
                         textDecoration = TextDecoration.Underline
                     ),
                     range.first,
@@ -215,7 +215,7 @@ fun ChangelogItem(
             Box(
                 modifier = Modifier
                     .size(6.dp)
-                    .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(50))
+                    .background(AppTheme.colorScheme.primary, RoundedCornerShape(50))
             )
             androidx.compose.foundation.layout.Spacer(modifier = Modifier.size(16.dp))
             ClickableText(
@@ -225,7 +225,7 @@ fun ChangelogItem(
                         ContextCompat.startActivity(context, Intent(Intent.ACTION_VIEW, Uri.parse(it.item)), null)
                     }
                 },
-                style = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface)
+                style = AppTheme.typography.bodyMedium.copy(color = AppTheme.colorScheme.onSurface)
             )
         }
     }

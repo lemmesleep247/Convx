@@ -6,29 +6,20 @@
 package com.convx.music.ai
 
 import android.content.Context
+import com.music.innertube.SearchFilter
 import com.music.innertube.YouTube
 import com.music.innertube.models.SongItem
-import com.convx.music.constants.AiProviderKey
-import com.convx.music.constants.OpenRouterApiKey
-import com.convx.music.constants.OpenRouterBaseUrlKey
-import com.convx.music.constants.OpenRouterModelKey
 import com.convx.music.db.InternalDatabase
+import com.convx.music.db.MusicDatabase
 import com.convx.music.db.entities.PlaylistSong
 import com.convx.music.db.entities.PlaylistSongMap
 import com.convx.music.db.entities.SongEntity
-import com.convx.music.utils.dataStore
-import com.convx.music.utils.get
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 
 object AiPlaylistModifier {
-    private val client = OkHttpClient()
 
     suspend fun modifyPlaylist(
         context: Context,
@@ -41,17 +32,7 @@ object AiPlaylistModifier {
 
         onLog("Connecting to AI Provider...")
 
-        val aiProvider = context.dataStore.get(AiProviderKey, "OpenRouter")
-
-        val currentPlaylistJson = JSONArray().apply {
-            currentSongs.forEach { playlistSong ->
-                put(JSONObject().apply {
-                    put("id", playlistSong.map.id)
-                    put("title", playlistSong.song.song.title)
-                    put("artist", playlistSong.song.artists.joinToString { it.name })
-                })
-            }
-        }.toString()
+        val currentPlaylistJson = currentSongs.toPlaylistJson()
 
         val systemPrompt = """
             You are a highly accurate and strict music historian. The user wants to modify an existing playlist based on a specific prompt.
@@ -76,55 +57,7 @@ object AiPlaylistModifier {
             }
         """.trimIndent()
 
-        val jsonOutput = if (aiProvider == "Puter") {
-            onLog("Puter is not implemented yet. Using dummy data.")
-            "{}"
-        } else {
-            val apiKey = context.dataStore.get(OpenRouterApiKey, "")
-            val baseUrl = context.dataStore.get(OpenRouterBaseUrlKey, "https://openrouter.ai/api/v1/chat/completions")
-            val model = context.dataStore.get(OpenRouterModelKey, "google/gemini-2.5-flash-lite")
-
-            if (apiKey.isEmpty()) {
-                onLog("API Key is missing. Please set it in Settings.")
-                return@withContext
-            }
-
-            val requestBody = JSONObject().apply {
-                put("model", model)
-                put("messages", JSONArray().apply {
-                    put(JSONObject().apply {
-                        put("role", "system")
-                        put("content", systemPrompt)
-                    })
-                    put(JSONObject().apply {
-                        put("role", "user")
-                        put("content", userPrompt)
-                    })
-                })
-            }.toString().toRequestBody("application/json".toMediaType())
-
-            val request = Request.Builder()
-                .url(baseUrl)
-                .addHeader("Authorization", "Bearer $apiKey")
-                .post(requestBody)
-                .build()
-
-            try {
-                val response = client.newCall(request).execute()
-                if (!response.isSuccessful) {
-                    onLog("AI Request failed: ${response.code}")
-                    return@withContext
-                }
-
-                val responseString = response.body?.string() ?: return@withContext
-                val responseJson = JSONObject(responseString)
-                val choices = responseJson.optJSONArray("choices") ?: return@withContext
-                choices.optJSONObject(0)?.optJSONObject("message")?.optString("content") ?: "{}"
-            } catch (e: Exception) {
-                onLog("Network error: ${e.message}")
-                return@withContext
-            }
-        }
+        val jsonOutput = AiChatClient.complete(context, systemPrompt, userPrompt, onLog) ?: return@withContext
 
         onLog("Parsing AI response...")
         val cleanJsonStr = jsonOutput.replace("```json", "").replace("```", "").trim()
@@ -136,74 +69,97 @@ object AiPlaylistModifier {
             return@withContext
         }
 
-        val removeIdsArray = parsedJson.optJSONArray("remove_ids")
-        val additionsArray = parsedJson.optJSONArray("additions")
+        val removeIds = parsedJson.optJSONArray("remove_ids")
+        val additions = parsedJson.optJSONArray("additions")
 
-        val totalToRemove = removeIdsArray?.length() ?: 0
-        if (totalToRemove > 0) {
+        val totalToRemove = removeIds?.length() ?: 0
+        val totalToAdd = additions?.length() ?: 0
+
+        if (removeIds != null && totalToRemove > 0) {
             onLog("Removing $totalToRemove songs...")
-            for (i in 0 until totalToRemove) {
-                val idToRemove = removeIdsArray?.optInt(i, -1) ?: -1
-                if (idToRemove != -1) {
-                    val mapEntry = currentSongs.find { it.map.id == idToRemove }?.map
-                    if (mapEntry != null) {
-                        database.delete(mapEntry)
-                    }
-                }
-            }
+            removeSongs(database, currentSongs, removeIds)
         }
 
-        val totalToAdd = additionsArray?.length() ?: 0
-        if (totalToAdd > 0) {
-            val resolvedSongs = mutableListOf<SongItem>()
-            onLog("Searching for $totalToAdd new songs on InnerTube...")
-
-            for (i in 0 until totalToAdd) {
-                val item = additionsArray?.optJSONObject(i) ?: continue
-                val title = item.optString("title")
-                val artist = item.optString("artist")
-                if (title.isNotEmpty()) {
-                    onLog("Searching [${i + 1}/$totalToAdd]: $title - $artist")
-                    val searchQuery = "$title $artist"
-                    val result = YouTube.search(searchQuery, YouTube.SearchFilter.FILTER_SONG).getOrNull()
-                    val topResult = result?.items?.firstOrNull() as? SongItem
-                    if (topResult != null) {
-                        resolvedSongs.add(topResult)
-                    }
-                }
-            }
-
-            if (resolvedSongs.isNotEmpty()) {
-                onLog("Adding ${resolvedSongs.size} songs to playlist...")
-
-                // Get the current max position to append new songs
-                val maxPosition = currentSongs.maxOfOrNull { it.map.position } ?: -1
-
-                resolvedSongs.forEachIndexed { index, songItem ->
-                    val songEntity = SongEntity(
-                        id = songItem.id,
-                        title = songItem.title,
-                        duration = songItem.duration ?: 0,
-                        thumbnailUrl = songItem.thumbnail
-                    )
-                    database.upsert(songEntity)
-                    database.insert(
-                        PlaylistSongMap(
-                            playlistId = playlistId,
-                            songId = songItem.id,
-                            position = maxPosition + 1 + index
-                        )
-                    )
-                }
-            } else {
-                onLog("Failed to find any of the suggested additions.")
-            }
+        if (additions != null && totalToAdd > 0) {
+            addSongs(database, playlistId, currentSongs, additions, onLog)
         }
 
         if (totalToRemove == 0 && totalToAdd == 0) {
             onLog("No modifications requested by AI.")
         } else {
             onLog("Done! Playlist modified.")
+        }
+    }
+
+    private fun List<PlaylistSong>.toPlaylistJson(): String = JSONArray().apply {
+        forEach { playlistSong ->
+            put(JSONObject().apply {
+                put("id", playlistSong.map.id)
+                put("title", playlistSong.song.song.title)
+                put("artist", playlistSong.song.artists.joinToString { it.name })
+            })
+        }
+    }.toString()
+
+    private suspend fun removeSongs(
+        database: MusicDatabase,
+        currentSongs: List<PlaylistSong>,
+        removeIds: JSONArray
+    ) {
+        val mapsById = currentSongs.associate { it.map.id to it.map }
+
+        for (index in 0 until removeIds.length()) {
+            val id = removeIds.optInt(index, -1)
+            if (id != -1) mapsById[id]?.let(database::delete)
+        }
+    }
+
+    private suspend fun addSongs(
+        database: MusicDatabase,
+        playlistId: String,
+        currentSongs: List<PlaylistSong>,
+        additions: JSONArray,
+        onLog: suspend (String) -> Unit
+    ) {
+        val resolvedSongs = mutableListOf<SongItem>()
+        onLog("Searching for ${additions.length()} new songs on InnerTube...")
+
+        for (index in 0 until additions.length()) {
+            val item = additions.optJSONObject(index) ?: continue
+            val title = item.optString("title")
+            val artist = item.optString("artist")
+            if (title.isEmpty()) continue
+
+            onLog("Searching [${index + 1}/${additions.length()}]: $title - $artist")
+            val result = YouTube.search("$title $artist", SearchFilter.FILTER_SONG).getOrNull()
+            val song = result?.items?.firstOrNull() as? SongItem ?: continue
+            resolvedSongs.add(song)
+        }
+
+        if (resolvedSongs.isEmpty()) {
+            onLog("Failed to find any of the suggested additions.")
+            return
+        }
+
+        onLog("Adding ${resolvedSongs.size} songs to playlist...")
+        val maxPosition = currentSongs.maxOfOrNull { it.map.position } ?: -1
+
+        resolvedSongs.forEachIndexed { index, song ->
+            database.upsert(
+                SongEntity(
+                    id = song.id,
+                    title = song.title,
+                    duration = song.duration ?: 0,
+                    thumbnailUrl = song.thumbnail
+                )
+            )
+            database.insert(
+                PlaylistSongMap(
+                    playlistId = playlistId,
+                    songId = song.id,
+                    position = maxPosition + 1 + index
+                )
+            )
         }
     }
 }

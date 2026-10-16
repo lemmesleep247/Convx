@@ -5,6 +5,9 @@
 
 package com.convx.music.ui.menu
 
+import com.convx.music.ui.component.sf
+import com.convx.music.ui.component.SymbolIcon
+import com.convx.music.ui.component.menuBottomInset
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
@@ -12,11 +15,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.convx.music.ui.ios.compat.CircularProgressIndicator
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.Text
+import com.convx.music.ui.ios.compat.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -44,14 +47,16 @@ import com.convx.music.extensions.toMediaItem
 import com.convx.music.models.toMediaMetadata
 import com.convx.music.playback.queues.ListQueue
 import com.convx.music.ui.component.DefaultDialog
-import com.convx.music.ui.component.Material3MenuGroup
-import com.convx.music.ui.component.Material3MenuItemData
+import com.convx.music.ui.component.IosMenuGroup
+import com.convx.music.ui.component.IosMenuItemData
 import kotlinx.coroutines.launch
 import java.time.LocalDateTime
 import com.convx.music.playback.DownloadTarget
+import com.convx.music.playback.combinedDownloadState
 import com.convx.music.playback.cancelDownloads
 import com.convx.music.playback.downloadSongs
 import com.convx.music.playback.removeDownloads
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @Composable
 fun YouTubeSelectionSongMenu(
@@ -60,11 +65,11 @@ fun YouTubeSelectionSongMenu(
     clearAction: () -> Unit,
 ) {
     val context = LocalContext.current
-    val database = LocalDatabase.current
-    val downloadUtil = LocalDownloadUtil.current
+    val database = LocalDatabase.current.get()
+    val downloadUtil = LocalDownloadUtil.current.get()
     val playerConnection = LocalPlayerConnection.current ?: return
     val coroutineScope = rememberCoroutineScope()
-    val syncUtils = LocalSyncUtils.current
+    val syncUtils = LocalSyncUtils.current.get()
 
     var showChoosePlaylistDialog by rememberSaveable {
         mutableStateOf(false)
@@ -77,18 +82,15 @@ fun YouTubeSelectionSongMenu(
         mutableStateOf(false)
     }
 
-    // Check if all songs are liked
     val allLiked by remember(songSelection) {
         mutableStateOf(
             songSelection.isNotEmpty() && songSelection.all { song ->
-                // Convert to MediaMetadata to check liked status
                 val metadata = song.toMediaMetadata()
                 metadata.liked
             }
         )
     }
 
-    // Check if all songs are in library
     val allInLibrary by remember(songSelection) {
         mutableStateOf(
             songSelection.all { song ->
@@ -98,31 +100,15 @@ fun YouTubeSelectionSongMenu(
         )
     }
 
-    // Collected rather than folded into a LaunchedEffect so the current state of each
-    // download is also available at click time — the download and cancel actions filter
-    // on it, see DownloadActions.
-    val downloads by downloadUtil.downloads.collectAsState()
+    val downloads by downloadUtil.downloads.collectAsStateWithLifecycle()
     val downloadState = remember(songSelection, downloads) {
-        when {
-            songSelection.isEmpty() -> Download.STATE_STOPPED
-            songSelection.all { downloads[it.id]?.state == Download.STATE_COMPLETED } ->
-                Download.STATE_COMPLETED
-
-            songSelection.all {
-                downloads[it.id]?.state == Download.STATE_QUEUED ||
-                    downloads[it.id]?.state == Download.STATE_DOWNLOADING ||
-                    downloads[it.id]?.state == Download.STATE_COMPLETED
-            } -> Download.STATE_DOWNLOADING
-
-            else -> Download.STATE_STOPPED
-        }
+        combinedDownloadState(songSelection, downloads) { it.id }
     }
 
     AddToPlaylistDialogOnline(
         isVisible = showChoosePlaylistDialog,
         songs = remember { 
             songSelection.map { song ->
-                // Convert SongItem to Song entity
                 val metadata = song.toMediaMetadata()
                 com.convx.music.db.entities.Song(
                     song = com.convx.music.db.entities.SongEntity(
@@ -170,7 +156,7 @@ fun YouTubeSelectionSongMenu(
             content = {
                 Text(
                     text = stringResource(R.string.remove_download_playlist_confirm, "selection"),
-                    style = MaterialTheme.typography.bodyLarge,
+                    style = AppTheme.typography.bodyLarge,
                     modifier = Modifier.padding(horizontal = 18.dp),
                 )
             },
@@ -200,14 +186,14 @@ fun YouTubeSelectionSongMenu(
             start = 8.dp,
             top = 8.dp,
             end = 8.dp,
-            bottom = 8.dp + WindowInsets.systemBars.asPaddingValues().calculateBottomPadding(),
+            bottom = 8.dp + menuBottomInset(),
         ),
     ) {
         item {
-            Material3MenuGroup(
+            IosMenuGroup(
                 listOfNotNull(
-                    if (!isGuest) Material3MenuItemData(
-                        icon = { Icon(painterResource(R.drawable.play), null) },
+                    if (!isGuest) IosMenuItemData(
+                        icon = { SymbolIcon(symbol = sf("play.fill"), contentDescription = null) },
                         title = { Text(stringResource(R.string.play)) },
                         onClick = {
                             playerConnection.playQueue(
@@ -220,8 +206,8 @@ fun YouTubeSelectionSongMenu(
                             onDismiss()
                         },
                     ) else null,
-                    if (!isGuest) Material3MenuItemData(
-                        icon = { Icon(painterResource(R.drawable.shuffle), null) },
+                    if (!isGuest) IosMenuItemData(
+                        icon = { SymbolIcon(symbol = sf("shuffle"), contentDescription = null) },
                         title = { Text(stringResource(R.string.shuffle)) },
                         onClick = {
                             playerConnection.playQueue(
@@ -234,8 +220,8 @@ fun YouTubeSelectionSongMenu(
                             onDismiss()
                         },
                     ) else null,
-                    if (!isGuest) Material3MenuItemData(
-                        icon = { Icon(painterResource(R.drawable.queue_music), null) },
+                    if (!isGuest) IosMenuItemData(
+                        icon = { SymbolIcon(symbol = sf("music.note.list"), contentDescription = null) },
                         title = { Text(stringResource(R.string.add_to_queue)) },
                         onClick = {
                             playerConnection.addToQueue(songSelection.map { it.toMediaItem() })
@@ -243,14 +229,14 @@ fun YouTubeSelectionSongMenu(
                             onDismiss()
                         },
                     ) else null,
-                    Material3MenuItemData(
-                        icon = { Icon(painterResource(R.drawable.playlist_add), null) },
+                    IosMenuItemData(
+                        icon = { SymbolIcon(symbol = sf("text.badge.plus"), contentDescription = null) },
                         title = { Text(stringResource(R.string.add_to_playlist)) },
                         onClick = {
                             showChoosePlaylistDialog = true
                         },
                     ),
-                    Material3MenuItemData(
+                    IosMenuItemData(
                         title = {
                             Text(
                                 text = stringResource(
@@ -259,12 +245,9 @@ fun YouTubeSelectionSongMenu(
                             )
                         },
                         icon = {
-                            Icon(
-                                painter = painterResource(
-                                    if (allInLibrary) R.drawable.library_add_check else R.drawable.library_add
-                                ),
-                                contentDescription = null,
-                            )
+                            SymbolIcon(symbol = 
+                                    if (allInLibrary) sf("text.badge.checkmark") else sf("text.badge.plus")
+                                , contentDescription = null)
                         },
                         onClick = {
                             if (allInLibrary) {
@@ -274,7 +257,6 @@ fun YouTubeSelectionSongMenu(
                                     }
                                 }
                                 coroutineScope.launch {
-                                    // Use the new reliable method that fetches fresh tokens
                                     songSelection.forEach { song ->
                                         YouTube.toggleSongLibrary(song.id, false)
                                     }
@@ -287,7 +269,6 @@ fun YouTubeSelectionSongMenu(
                                     }
                                 }
                                 coroutineScope.launch {
-                                    // Use the new reliable method that fetches fresh tokens
                                     songSelection.filter { song ->
                                         song.toMediaMetadata().inLibrary == null
                                     }.forEach { song ->
@@ -301,17 +282,14 @@ fun YouTubeSelectionSongMenu(
                     ),
                     when (downloadState) {
                         Download.STATE_COMPLETED -> {
-                            Material3MenuItemData(
+                            IosMenuItemData(
                                 title = {
                                     Text(
                                         text = stringResource(R.string.remove_download)
                                     )
                                 },
                                 icon = {
-                                    Icon(
-                                        painter = painterResource(R.drawable.offline),
-                                        contentDescription = null
-                                    )
+                                    SymbolIcon(symbol = sf("arrow.down.circle"), contentDescription = null)
                                 },
                                 onClick = {
                                     showRemoveDownloadDialog = true
@@ -319,7 +297,7 @@ fun YouTubeSelectionSongMenu(
                             )
                         }
                         Download.STATE_QUEUED, Download.STATE_DOWNLOADING -> {
-                            Material3MenuItemData(
+                            IosMenuItemData(
                                 title = { Text(text = stringResource(R.string.downloading)) },
                                 icon = {
                                     CircularProgressIndicator(
@@ -328,9 +306,6 @@ fun YouTubeSelectionSongMenu(
                                     )
                                 },
                                 onClick = {
-                                    // Cancel, not remove: this used to open the
-                                    // remove-download dialog, which deleted every selected
-                                    // song including the already-finished ones.
                                     cancelDownloads(
                                         context,
                                         songSelection.map { it.id },
@@ -340,13 +315,10 @@ fun YouTubeSelectionSongMenu(
                             )
                         }
                         else -> {
-                            Material3MenuItemData(
+                            IosMenuItemData(
                                 title = { Text(text = stringResource(R.string.action_download)) },
                                 icon = {
-                                    Icon(
-                                        painter = painterResource(R.drawable.download),
-                                        contentDescription = null,
-                                    )
+                                    SymbolIcon(symbol = sf("arrow.down.circle"), contentDescription = null)
                                 },
                                 onClick = {
                                     downloadSongs(
@@ -360,7 +332,7 @@ fun YouTubeSelectionSongMenu(
                             )
                         }
                     },
-                    Material3MenuItemData(
+                    IosMenuItemData(
                         title = {
                             Text(
                                 text = stringResource(
@@ -369,21 +341,16 @@ fun YouTubeSelectionSongMenu(
                             )
                         },
                         icon = {
-                            Icon(
-                                painter = painterResource(
-                                    if (allLiked) R.drawable.favorite else R.drawable.favorite_border
-                                ),
-                                contentDescription = null,
-                            )
+                            SymbolIcon(symbol = 
+                                    if (allLiked) sf("heart.fill") else sf("heart")
+                                , contentDescription = null)
                         },
                         onClick = {
                             database.transaction {
                                 songSelection.forEach { song ->
                                     val metadata = song.toMediaMetadata()
                                     if ((!allLiked && !metadata.liked) || allLiked) {
-                                        // Insert the song first if it doesn't exist
                                         insert(metadata)
-                                        // Create SongEntity with toggled like status
                                         val songEntity = com.convx.music.db.entities.SongEntity(
                                             id = metadata.id,
                                             title = metadata.title,

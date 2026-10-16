@@ -14,33 +14,23 @@ import java.io.ByteArrayOutputStream
 import java.util.zip.GZIPInputStream
 import java.util.zip.GZIPOutputStream
 
-/**
- * Message format for encoding/decoding
- */
 enum class MessageFormat {
     JSON,      // DEPRECATED - will be removed in future versions
     PROTOBUF
 }
 
-/**
- * Codec for encoding and decoding messages in different formats
- */
 class MessageCodec(
     var format: MessageFormat = MessageFormat.JSON,
     var compressionEnabled: Boolean = false
 ) {
     companion object {
         private const val TAG = "MessageCodec"
-        private const val COMPRESSION_THRESHOLD = 100 // Only compress if > 100 bytes
+        private const val COMPRESSION_THRESHOLD = 100
         
-        /**
-         * Detect message format by inspecting first byte
-         */
         fun detectMessageFormat(data: ByteArray): MessageFormat {
             if (data.isEmpty()) return MessageFormat.JSON
-            // JSON messages start with '{'
+            // JSON starts with an object; other messages use protobuf.
             if (data[0] == '{'.code.toByte()) return MessageFormat.JSON
-            // Protobuf messages have field tags
             return MessageFormat.PROTOBUF
         }
     }
@@ -50,9 +40,6 @@ class MessageCodec(
         isLenient = true
     }
     
-    /**
-     * Encode a message with the codec's format and compression settings
-     */
     fun encode(msgType: String, payload: Any?): ByteArray {
         return if (format == MessageFormat.PROTOBUF) {
             encodeProtobuf(msgType, payload)
@@ -61,9 +48,6 @@ class MessageCodec(
         }
     }
     
-    /**
-     * Decode a message, automatically detecting format
-     */
     fun decode(data: ByteArray): Pair<String, ByteArray> {
         val detectedFormat = detectMessageFormat(data)
         
@@ -99,7 +83,7 @@ class MessageCodec(
      * Decode JSON message (DEPRECATED - will be removed in future versions)
      */
     private fun decodeJson(data: ByteArray): Pair<String, ByteArray> {
-        // Try to decompress if it looks compressed (gzip magic bytes)
+        // Older JSON envelopes do not carry a compression flag, so detect gzip by its header.
         val actualData = if (compressionEnabled && data.size > 2 && 
                              data[0] == 0x1f.toByte() && data[1] == 0x8b.toByte()) {
             decompressData(data) ?: data
@@ -113,9 +97,6 @@ class MessageCodec(
         return Pair(msg.type, payloadBytes)
     }
     
-    /**
-     * Encode message using Protocol Buffers
-     */
     private fun encodeProtobuf(msgType: String, payload: Any?): ByteArray {
         var payloadBytes = byteArrayOf()
         var compressed = false
@@ -124,7 +105,6 @@ class MessageCodec(
             val protoMsg = toProtoMessage(payload)
             payloadBytes = protoMsg.toByteArray()
             
-            // Compress if enabled and payload is large enough
             if (compressionEnabled && payloadBytes.size > COMPRESSION_THRESHOLD) {
                 val compressedBytes = compressData(payloadBytes)
                 if (compressedBytes.size < payloadBytes.size) {
@@ -143,9 +123,6 @@ class MessageCodec(
         return envelope.toByteArray()
     }
     
-    /**
-     * Decode protobuf message
-     */
     private fun decodeProtobuf(data: ByteArray): Pair<String, ByteArray> {
         val envelope = Listentogether.Envelope.parseFrom(data)
         
@@ -158,9 +135,6 @@ class MessageCodec(
         return Pair(envelope.type, payloadBytes)
     }
     
-    /**
-     * Compress data using GZIP
-     */
     private fun compressData(data: ByteArray): ByteArray {
         val outputStream = ByteArrayOutputStream()
         GZIPOutputStream(outputStream).use { gzip ->
@@ -169,9 +143,6 @@ class MessageCodec(
         return outputStream.toByteArray()
     }
     
-    /**
-     * Decompress GZIP data
-     */
     private fun decompressData(data: ByteArray): ByteArray? {
         return try {
             val inputStream = ByteArrayInputStream(data)
@@ -184,9 +155,6 @@ class MessageCodec(
         }
     }
     
-    /**
-     * Convert Kotlin objects to protobuf messages
-     */
     private fun toProtoMessage(payload: Any): MessageLite {
         return when (payload) {
             is CreateRoomPayload -> Listentogether.CreateRoomPayload.newBuilder()
@@ -296,9 +264,6 @@ class MessageCodec(
         }
     }
     
-    /**
-     * Decode protobuf payload
-     */
     private fun decodeProtobufPayload(msgType: String, payloadBytes: ByteArray): Any? {
         return when (msgType) {
             MessageTypes.ROOM_CREATED -> {
@@ -416,8 +381,6 @@ class MessageCodec(
         }
     }
     
-    // Helper conversion functions
-    
     private fun trackInfoToProto(track: TrackInfo): Listentogether.TrackInfo {
         return Listentogether.TrackInfo.newBuilder()
             .setId(track.id)
@@ -466,7 +429,7 @@ class MessageCodec(
     }
     
     @Suppress("UNCHECKED_CAST")
-    private fun <T> serializer(value: T): kotlinx.serialization.KSerializer<T> {
+    private fun <T : Any> serializer(value: T): kotlinx.serialization.KSerializer<T> {
         return when (value) {
             is CreateRoomPayload -> CreateRoomPayload.serializer()
             is JoinRoomPayload -> JoinRoomPayload.serializer()
@@ -481,11 +444,9 @@ class MessageCodec(
             is ReconnectPayload -> ReconnectPayload.serializer()
             is TransferHostPayload -> TransferHostPayload.serializer()
             is ChatPayload -> ChatPayload.serializer()
-            // Outbound v2 verbs. Adding a payload to decodePayload alone is not
-            // enough — anything the client SENDS also needs a branch here, or it
-            // throws at encode time and the action silently never leaves.
+            // Outbound payloads also need a serializer here or encode() rejects them.
             is SetControlModePayload -> SetControlModePayload.serializer()
-            else -> throw IllegalArgumentException("Unknown type: ${value!!::class.simpleName}")
+            else -> throw IllegalArgumentException("Unknown type: ${value::class.simpleName}")
         } as kotlinx.serialization.KSerializer<T>
     }
 }

@@ -31,29 +31,29 @@ val MiniPlayerBottomSpacing = 8.dp // Space between MiniPlayer and NavigationBar
 val QueuePeekHeight = 64.dp
 val AppBarHeight = 64.dp
 
-val ListItemHeight = 64.dp
+/** iOS list row: 48 artwork + 5 above and below. */
+val ListItemHeight = 58.dp
 val SuggestionItemHeight = 56.dp
 val SearchFilterHeight = 48.dp
 val ListThumbnailSize = 48.dp
 val SmallGridThumbnailHeight = 128.dp
 val GridThumbnailHeight = 164.dp
 
-// Minimum column width for every vertical GridCells.Adaptive in the app. Sized
-// so a normal phone lands on three columns: the old value was GridThumbnailHeight
-// (a carousel tile's height) swung ±24 by a preference, which gave two very wide
-// columns and made library grids read as oversized.
+// Minimum width for adaptive grid columns; keeps phone library grids at three columns.
 val GridColumnMinWidth = 108.dp
 val AlbumThumbnailSize = 144.dp
 
-// Kept in sync with AppleTokens.Artwork — this is the same token, reachable
-// from :constants which cannot depend on the theme package.
-val ThumbnailCornerRadius = 12.dp
+// Mirrors AppleTokens.Artwork without making :constants depend on the theme package.
+val ThumbnailCornerRadius = 8.dp
 
-// Plain circular corners. This was a continuous (squircle) curve, which reads
-// closer to iOS artwork but costs a generated Path clip on every thumbnail in
-// every list — the shape all content rows and tiles route through. Reverted for
-// the scroll cost, and because the redesign uses one corner vocabulary.
+// Rounded corners avoid a generated path clip for every list thumbnail.
 val ThumbnailRoundedShape = RoundedCornerShape(ThumbnailCornerRadius)
+
+/** Artwork shape for list rows. */
+val ListRowArtShape = RoundedCornerShape(5.dp)
+
+/** Artwork shape for grid cards. */
+val GridCardArtShape = RoundedCornerShape(10.dp)
 
 val PlayerHorizontalPadding = 32.dp
 

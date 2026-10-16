@@ -80,6 +80,7 @@ data class BrowseResponse(
 
     @Serializable
     data class Header(
+        val musicResponsiveHeaderRenderer: com.music.innertube.models.MusicResponsiveHeaderRenderer? = null,
         val musicImmersiveHeaderRenderer: MusicImmersiveHeaderRenderer?,
         val musicDetailHeaderRenderer: MusicDetailHeaderRenderer?,
         val musicEditablePlaylistDetailHeaderRenderer: MusicEditablePlaylistDetailHeaderRenderer?,

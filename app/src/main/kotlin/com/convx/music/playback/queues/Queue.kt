@@ -24,23 +24,25 @@ interface Queue {
         val mediaItemIndex: Int,
         val position: Long = 0L,
     ) {
-        fun filterExplicit(enabled: Boolean = true) =
-            if (enabled) {
-                copy(
-                    items = items.filterExplicit(),
-                )
-            } else {
-                this
-            }
+        fun filterExplicit(enabled: Boolean = true): Status =
+            if (enabled) filterItems { it.metadata?.explicit != true } else this
 
-        fun filterVideoSongs(disableVideos: Boolean = false) =
-            if (disableVideos) {
-                copy(
-                    items = items.filterVideoSongs(true),
-                )
-            } else {
-                this
+        fun filterVideoSongs(disableVideos: Boolean = false): Status =
+            if (disableVideos) filterItems { it.metadata?.isVideoSong != true } else this
+
+        private fun filterItems(keep: (MediaItem) -> Boolean): Status {
+            var selectedIndex = 0
+            val filtered = items.filterIndexed { index, item ->
+                val included = keep(item)
+                if (included && index < mediaItemIndex) selectedIndex++
+                included
             }
+            if (filtered.size == items.size) return this
+            return copy(
+                items = filtered,
+                mediaItemIndex = if (filtered.isEmpty()) 0 else selectedIndex.coerceAtMost(filtered.lastIndex),
+            )
+        }
     }
 }
 

@@ -75,6 +75,9 @@ fun SquigglySlider(
     // Animation state
     var phaseOffset by remember { mutableFloatStateOf(0f) }
     var heightFraction by remember { mutableFloatStateOf(if (isPlaying) 1f else 0f) }
+    // The wave redraws every display frame while playing. Reuse its mutable geometry
+    // instead of allocating a new Path up to 120 times per second.
+    val wavePath = remember { Path() }
 
     val scope = rememberCoroutineScope()
 
@@ -180,7 +183,6 @@ fun SquigglySlider(
             val totalProgressPx = totalWidth * progress
             val centerY = size.height / 2f
 
-            // Calculate wave progress
             val waveProgressPx = if (!transitionEnabled || progress > matchedWaveEndpoint) {
                 totalWidth * progress
             } else {
@@ -188,7 +190,6 @@ fun SquigglySlider(
                 totalWidth * (minWaveEndpoint + (matchedWaveEndpoint - minWaveEndpoint) * t)
             }
 
-            // Helper function to compute amplitude
             fun computeAmplitude(x: Float, sign: Float): Float {
                 return if (transitionEnabled) {
                     val length = transitionPeriods * waveLength
@@ -199,8 +200,10 @@ fun SquigglySlider(
                 }
             }
 
-            // Build wavy path for played portion
-            val path = Path()
+            // Build wavy path for played portion. Path is mutable and owned by this
+            // composable, so reset/rebuild is safe and allocation-free per frame.
+            val path = wavePath
+            path.reset()
             val waveStart = -phaseOffset - waveLength / 2f
             val waveEnd = if (transitionEnabled) totalWidth else waveProgressPx
 
@@ -259,7 +262,6 @@ fun SquigglySlider(
             // Unplayed segment
             drawPathSegment(totalProgressPx, totalWidth, inactiveTrackColor)
 
-            // Helper function to get wave Y position at any X
             fun getWaveY(x: Float): Float {
                 val phase = (x - waveStart) / waveLength
                 val waveCycle = phase - kotlin.math.floor(phase)

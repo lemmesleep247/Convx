@@ -109,11 +109,4 @@ class RingtoneViewModel : ViewModel() {
         dismissProgress()
     }
 
-    fun hasSettingsPermission(context: Context): Boolean {
-        return RingtoneHelper.hasSettingsPermission(context)
-    }
-
-    fun requestSettingsPermission(context: Context) {
-        RingtoneHelper.requestSettingsPermission(context)
-    }
 }

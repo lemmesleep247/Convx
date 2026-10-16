@@ -40,7 +40,7 @@ object RingtoneHelper {
             )
             result.getOrNull()?.streamUrl
         } catch (e: Exception) {
-            e.printStackTrace()
+            reportException(e)
             null
         }
     }
@@ -73,6 +73,7 @@ object RingtoneHelper {
             val connection = java.net.URL(streamUrl).openConnection()
             connection.connect()
             val contentLength = connection.contentLength.toLong()
+            var lastReportedPercent = 10
 
             connection.getInputStream().use { input ->
                 tempFile.outputStream().use { output ->
@@ -86,8 +87,12 @@ object RingtoneHelper {
 
                         if (contentLength > 0) {
                             val progress = 0.1f + (totalBytesRead.toFloat() / contentLength) * 0.4f
-                            withContext(Dispatchers.Main) {
-                                onProgress(progress, "Downloading... ${(progress * 100).toInt()}%")
+                            val percent = (progress * 100).toInt()
+                            if (percent > lastReportedPercent) {
+                                lastReportedPercent = percent
+                                withContext(Dispatchers.Main) {
+                                    onProgress(progress, "Downloading... $percent%")
+                                }
                             }
                         }
                     }
@@ -103,9 +108,7 @@ object RingtoneHelper {
 
             onProgress(0.6f, "Processing audio...")
 
-            // Falls back to the untrimmed source when the codec has no reliable
-            // stream-copy trim path (see trimAudio) rather than failing outright
-            // — the ringtone is then the full track, same as before this fix.
+            // Use the original track if trimming is unsupported.
             val trimmedFile = trimAudio(tempFile, context.cacheDir, "trimmed_ringtone_$songId", startMs, endMs)
                 ?: tempFile.copyTo(File(context.cacheDir, "trimmed_ringtone_$songId.m4a"), overwrite = true)
 
@@ -118,76 +121,7 @@ object RingtoneHelper {
 
             onProgress(0.85f, "Saving ringtone...")
 
-            val outputMimeType = if (trimmedFile.extension.equals("ogg", ignoreCase = true)) "audio/ogg" else "audio/mp4"
-            val fileName = "${title.replace(Regex("[^a-zA-Z0-9\\s]"), "")}_trimmed_$songId.${trimmedFile.extension}"
-
-            val ringtoneUri: Uri = try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    val contentValues = ContentValues().apply {
-                        put(MediaStore.Audio.Media.DISPLAY_NAME, fileName)
-                        put(MediaStore.Audio.Media.MIME_TYPE, outputMimeType)
-                        put(MediaStore.Audio.Media.RELATIVE_PATH, Environment.DIRECTORY_RINGTONES)
-                        put(MediaStore.Audio.Media.IS_RINGTONE, true)
-                        put(MediaStore.Audio.Media.IS_NOTIFICATION, true)
-                        put(MediaStore.Audio.Media.IS_ALARM, true)
-                        put(MediaStore.Audio.Media.TITLE, "$title (Ringtone)")
-                        put(MediaStore.Audio.Media.ARTIST, artist)
-                        put(MediaStore.Audio.Media.IS_PENDING, 1)
-                    }
-
-                    val uri = context.contentResolver.insert(
-                        MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-                        contentValues
-                    ) ?: throw Exception("Failed to create MediaStore entry")
-
-                    context.contentResolver.openOutputStream(uri)?.use { outputStream ->
-                        trimmedFile.inputStream().use { inputStream ->
-                            inputStream.copyTo(outputStream)
-                        }
-                    }
-
-                    contentValues.clear()
-                    contentValues.put(MediaStore.Audio.Media.IS_PENDING, 0)
-                    context.contentResolver.update(uri, contentValues, null, null)
-                    uri
-                } else {
-                    // API 26-28 only (Q+ takes the MediaStore branch above):
-                    // this write needs WRITE_EXTERNAL_STORAGE, a runtime-requested
-                    // permission on these levels. Nothing upstream of this suspend
-                    // function currently requests it — fail with a clear message
-                    // instead of letting a SecurityException surface as it did
-                    // before (opaque "Error: ...").
-                    if (androidx.core.content.ContextCompat.checkSelfPermission(
-                            context, android.Manifest.permission.WRITE_EXTERNAL_STORAGE
-                        ) != android.content.pm.PackageManager.PERMISSION_GRANTED
-                    ) {
-                        throw Exception("Storage permission required to save ringtones on this Android version")
-                    }
-                    val ringtonesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_RINGTONES)
-                    if (!ringtonesDir.exists()) ringtonesDir.mkdirs()
-
-                    val file = File(ringtonesDir, fileName)
-                    trimmedFile.copyTo(file, overwrite = true)
-
-                    val contentValues = ContentValues().apply {
-                        put(MediaStore.Audio.Media.DATA, file.absolutePath)
-                        put(MediaStore.Audio.Media.TITLE, "$title (Ringtone)")
-                        put(MediaStore.Audio.Media.ARTIST, artist)
-                        put(MediaStore.Audio.Media.MIME_TYPE, outputMimeType)
-                        put(MediaStore.Audio.Media.IS_RINGTONE, true)
-                        put(MediaStore.Audio.Media.IS_NOTIFICATION, true)
-                        put(MediaStore.Audio.Media.IS_ALARM, true)
-                    }
-
-                    context.contentResolver.insert(
-                        MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-                        contentValues
-                    ) ?: Uri.fromFile(file)
-                }
-            } finally {
-                tempFile.delete()
-                trimmedFile.delete()
-            }
+            val ringtoneUri = saveRingtone(context, tempFile, trimmedFile, songId, title, artist)
 
             onProgress(0.95f, "Song saved to Ringtones...")
 
@@ -197,11 +131,88 @@ object RingtoneHelper {
             }
 
         } catch (e: Exception) {
-            e.printStackTrace()
+            reportException(e)
             withContext(Dispatchers.Main) {
                 onComplete(false, "Error: ${e.message}", null)
             }
         }
+    }
+
+    private fun saveRingtone(
+        context: Context,
+        tempFile: File,
+        audioFile: File,
+        songId: String,
+        title: String,
+        artist: String,
+    ): Uri {
+        val outputMimeType = if (audioFile.extension.equals("ogg", ignoreCase = true)) "audio/ogg" else "audio/mp4"
+        val fileName = "${title.replace(Regex("[^a-zA-Z0-9\\s]"), "")}_trimmed_$songId.${audioFile.extension}"
+
+        val ringtoneUri: Uri = try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val contentValues = ContentValues().apply {
+                    put(MediaStore.Audio.Media.DISPLAY_NAME, fileName)
+                    put(MediaStore.Audio.Media.MIME_TYPE, outputMimeType)
+                    put(MediaStore.Audio.Media.RELATIVE_PATH, Environment.DIRECTORY_RINGTONES)
+                    put(MediaStore.Audio.Media.IS_RINGTONE, true)
+                    put(MediaStore.Audio.Media.IS_NOTIFICATION, true)
+                    put(MediaStore.Audio.Media.IS_ALARM, true)
+                    put(MediaStore.Audio.Media.TITLE, "$title (Ringtone)")
+                    put(MediaStore.Audio.Media.ARTIST, artist)
+                    put(MediaStore.Audio.Media.IS_PENDING, 1)
+                }
+
+                val uri = context.contentResolver.insert(
+                    MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                    contentValues
+                ) ?: throw Exception("Failed to create MediaStore entry")
+
+                context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+                    audioFile.inputStream().use { inputStream ->
+                        inputStream.copyTo(outputStream)
+                    }
+                }
+
+                contentValues.clear()
+                contentValues.put(MediaStore.Audio.Media.IS_PENDING, 0)
+                context.contentResolver.update(uri, contentValues, null, null)
+                uri
+            } else {
+                // Android 9 and earlier require storage permission for this public folder.
+                if (androidx.core.content.ContextCompat.checkSelfPermission(
+                        context, android.Manifest.permission.WRITE_EXTERNAL_STORAGE
+                    ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                ) {
+                    throw Exception("Storage permission required to save ringtones on this Android version")
+                }
+                val ringtonesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_RINGTONES)
+                if (!ringtonesDir.exists()) ringtonesDir.mkdirs()
+
+                val file = File(ringtonesDir, fileName)
+                audioFile.copyTo(file, overwrite = true)
+
+                val contentValues = ContentValues().apply {
+                    put(MediaStore.Audio.Media.DATA, file.absolutePath)
+                    put(MediaStore.Audio.Media.TITLE, "$title (Ringtone)")
+                    put(MediaStore.Audio.Media.ARTIST, artist)
+                    put(MediaStore.Audio.Media.MIME_TYPE, outputMimeType)
+                    put(MediaStore.Audio.Media.IS_RINGTONE, true)
+                    put(MediaStore.Audio.Media.IS_NOTIFICATION, true)
+                    put(MediaStore.Audio.Media.IS_ALARM, true)
+                }
+
+                context.contentResolver.insert(
+                    MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                    contentValues
+                ) ?: Uri.fromFile(file)
+            }
+        } finally {
+            tempFile.delete()
+            audioFile.delete()
+        }
+
+        return ringtoneUri
     }
 
     /**
@@ -275,7 +286,7 @@ object RingtoneHelper {
             muxer.release()
             outputFile
         } catch (e: Exception) {
-            e.printStackTrace()
+            reportException(e)
             null
         } finally {
             extractor.release()
@@ -301,11 +312,4 @@ object RingtoneHelper {
         }
     }
 
-    fun hasSettingsPermission(context: Context): Boolean {
-        return true
-    }
-
-    fun requestSettingsPermission(context: Context) {
-        // Do nothing, permission is no longer requested
-    }
 }

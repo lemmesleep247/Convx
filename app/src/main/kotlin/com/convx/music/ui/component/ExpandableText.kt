@@ -13,8 +13,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.ClickableText
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -50,8 +50,8 @@ fun ExpandableText(
     var isExpanded by rememberSaveable { mutableStateOf(false) }
     var hasOverflow by rememberSaveable { mutableStateOf(false) }
     val uriHandler = LocalUriHandler.current
-    val linkColor = MaterialTheme.colorScheme.primary
-    val bodyColor = androidx.compose.material3.LocalContentColor.current
+    val linkColor = AppTheme.colorScheme.primary
+    val bodyColor = com.convx.music.ui.ios.compat.LocalContentColor.current
 
     val annotatedText: AnnotatedString = remember(text, runs, linkColor) {
         if (runs.isNullOrEmpty()) {
@@ -79,7 +79,7 @@ fun ExpandableText(
         @Suppress("DEPRECATION")
         ClickableText(
             text = annotatedText,
-            style = MaterialTheme.typography.bodyMedium.copy(color = bodyColor),
+            style = AppTheme.typography.bodyMedium.copy(color = bodyColor),
             maxLines = if (isExpanded) Int.MAX_VALUE else collapsedMaxLines,
             overflow = TextOverflow.Ellipsis,
             onTextLayout = { textLayoutResult ->
@@ -102,14 +102,14 @@ fun ExpandableText(
                 modifier = Modifier
                     .padding(top = 8.dp)
                     .clip(RoundedCornerShape(8.dp))
-                    .background(MaterialTheme.colorScheme.secondaryContainer)
+                    .background(AppTheme.colorScheme.secondaryContainer)
                     .clickable { isExpanded = !isExpanded }
                     .padding(horizontal = 10.dp, vertical = 4.dp)
             ) {
                 Text(
                     text = stringResource(if (isExpanded) R.string.show_less else R.string.show_more),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    style = AppTheme.typography.labelSmall,
+                    color = AppTheme.colorScheme.onSecondaryContainer,
                     fontWeight = FontWeight.Bold
                 )
             }

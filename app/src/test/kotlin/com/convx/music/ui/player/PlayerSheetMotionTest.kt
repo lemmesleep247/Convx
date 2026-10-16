@@ -1,14 +1,16 @@
 package com.convx.music.ui.player
 
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.util.lerp
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * The point of this transition is that the axes do NOT move together. A straight lerp
- * would pass any "does it end up in the right place" check, so these pin the asymmetry
- * itself — that is the part a refactor would silently flatten.
+ * The container itself interpolates linearly (the reference app PlayerSheetGeometry) -- the
+ * spring driving progress shapes the motion, so the rect adds no second curve.
+ * Asymmetry lives in the artwork path and the tracked mini offsets below, and
+ * those are what these pin: a refactor must not silently flatten them.
  */
 class PlayerSheetMotionTest {
 
@@ -31,14 +33,70 @@ class PlayerSheetMotionTest {
     }
 
     @Test
-    fun `container grows tall before it grows wide`() {
+    fun `artwork window lands exactly on a non-square hero target`() {
+        val squareArt = Rect(24f, 900f, 88f, 964f)
+        val hero = Rect(0f, 0f, 1080f, 1560f)
+        assertEquals(squareArt, sharedArtworkWindow(squareArt, hero, 0f))
+        val end = sharedArtworkWindow(squareArt, hero, 1f)
+        assertEquals(hero.left, end.left, 0.01f)
+        assertEquals(hero.top, end.top, 0.01f)
+        assertEquals(hero.right, end.right, 0.01f)
+        assertEquals(hero.bottom, end.bottom, 0.01f)
+        val nan = sharedArtworkWindow(squareArt, hero, Float.NaN)
+        assertEquals(squareArt, nan)
+    }
+
+    @Test
+    fun `ambient transition follows the dj crossfade, clamped`() {
+        assertEquals(AMBIENT_TRANSITION_DEFAULT_MS, ambientTransitionMillis(0L))
+        assertEquals(4_000, ambientTransitionMillis(4_000L))
+        assertEquals(8_000, ambientTransitionMillis(30_000L))
+        assertEquals(900, ambientTransitionMillis(100L))
+    }
+
+    @Test
+    fun `container interpolates linearly edge to edge`() {
         val mid = sharedContainerRect(mini, full, 0.5f)
         val heightFraction = (mid.height - mini.height) / (full.height - mini.height)
         val widthFraction = (mid.width - mini.width) / (full.width - mini.width)
-        // easeInCubic(0.5) = 0.125 against a linear 0.5.
         assertEquals(0.5f, heightFraction, 0.01f)
-        assertEquals(0.125f, widthFraction, 0.01f)
-        assertTrue("width must lag height", widthFraction < heightFraction)
+        assertEquals(0.5f, widthFraction, 0.01f)
+        assertEquals(lerp(mini.left, full.left, 0.5f), mid.left, 0.01f)
+        assertEquals(lerp(mini.top, full.top, 0.5f), mid.top, 0.01f)
+    }
+
+    @Test
+    fun `card corners resolve to zero exactly at full expansion`() {        val radii = sharedContainerCornerRadii(
+            source = SharedContainerCornerRadii.uniform(32f),
+            target = SharedContainerCornerRadii.uniform(28f),
+            progress = 1f,
+        )
+        assertEquals(0f, radii.topStart, 0.001f)
+        assertEquals(0f, radii.bottomEnd, 0.001f)
+        val mid = sharedContainerCornerRadii(
+            source = SharedContainerCornerRadii.uniform(32f),
+            target = SharedContainerCornerRadii.uniform(28f),
+            progress = 0.5f,
+        )
+        assertEquals(30f, mid.topStart, 0.01f)
+    }
+
+    @Test
+    fun `mini title stays absolute while controls ride the right edge`() {
+        val source = Rect(left = 16f, top = 900f, right = 400f, bottom = 964f)
+        val controls = Rect(left = 320f, top = 908f, right = 392f, bottom = 956f)
+        // At rest both shifts are zero: the layer already sits at the corner.
+        assertEquals(0f, sharedMiniPlayerTitleShift(source, source), 0.01f)
+        assertEquals(0f, sharedMiniPlayerControlsShift(source, source, controls), 0.01f)
+        val animated = sharedContainerRect(source, full, 0.5f)
+        // Title compensates the corner travel exactly: absolute x is restored.
+        val titleShift = sharedMiniPlayerTitleShift(source, animated)
+        assertEquals(source.left, animated.left + titleShift, 0.01f)
+        // Controls right edge lands on the travelling right edge minus inset.
+        val sourceInset = source.right - controls.right
+        val shift = sharedMiniPlayerControlsShift(source, animated, controls)
+        val landedRight = animated.left + titleShift + shift + (controls.right - source.left)
+        assertEquals(animated.right - sourceInset, landedRight, 0.01f)
     }
 
     @Test
@@ -120,6 +178,64 @@ class PlayerSheetMotionTest {
                 1080, 2400, 1080, 2400,
                 isInMultiWindowMode = false,
                 isInPictureInPictureMode = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `drag owner follows the end the drag started from`() {
+        assertEquals(
+            PlayerInputOwner.MINI,
+            playerSheetInputOwner(
+                targetOpen = true,
+                isDragging = true,
+                dragStartedFromMiniPlayer = true,
+                progress = 0.5f,
+                sharedLayersReady = true,
+            ),
+        )
+        assertEquals(
+            PlayerInputOwner.FULL,
+            playerSheetInputOwner(
+                targetOpen = false,
+                isDragging = true,
+                dragStartedFromMiniPlayer = false,
+                progress = 0.5f,
+                sharedLayersReady = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `mid-flight taps own nobody once the mini handed over`() {
+        assertEquals(
+            PlayerInputOwner.MINI,
+            playerSheetInputOwner(
+                targetOpen = false,
+                isDragging = false,
+                dragStartedFromMiniPlayer = false,
+                progress = 0.1f,
+                sharedLayersReady = false,
+            ),
+        )
+        assertEquals(
+            PlayerInputOwner.NONE,
+            playerSheetInputOwner(
+                targetOpen = true,
+                isDragging = false,
+                dragStartedFromMiniPlayer = false,
+                progress = 0.5f,
+                sharedLayersReady = false,
+            ),
+        )
+        assertEquals(
+            PlayerInputOwner.FULL,
+            playerSheetInputOwner(
+                targetOpen = true,
+                isDragging = false,
+                dragStartedFromMiniPlayer = false,
+                progress = 1f,
+                sharedLayersReady = false,
             ),
         )
     }

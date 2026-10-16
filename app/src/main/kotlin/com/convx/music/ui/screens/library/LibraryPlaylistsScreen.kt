@@ -5,13 +5,15 @@
 
 package com.convx.music.ui.screens.library
 
+import com.convx.music.ui.component.sf
+import com.convx.music.ui.component.SymbolIcon
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import com.convx.music.ui.ios.compat.DropdownMenu
+import com.convx.music.ui.ios.compat.DropdownMenuItem
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.platform.LocalContext
 import androidx.datastore.preferences.core.booleanPreferencesKey
@@ -21,32 +23,39 @@ import com.convx.music.ui.utils.rememberGridColumns
 import com.convx.music.constants.SongSortType
 import com.convx.music.ui.utils.bounceClick
 import com.convx.music.ui.utils.combinedBounceClick
+import com.convx.music.ui.utils.localPlaylistRoute
 import kotlinx.coroutines.flow.first
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
+
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.material3.ToggleButton
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.Text
+import com.convx.music.ui.ios.compat.SegmentedButton
+import com.convx.music.ui.ios.compat.SingleChoiceSegmentedButtonRow
+import com.composables.sfsymbols.SfSymbols
+import com.composables.sfsymbols.monochrome.SFListBullet
+import com.composables.sfsymbols.monochrome.SFSquareGrid2x2
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -62,9 +71,6 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.role
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavController
@@ -72,6 +78,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import com.music.innertube.utils.parseCookieString
 import com.convx.music.LocalPlayerAwareWindowInsets
 import com.convx.music.R
+import com.convx.music.ui.menu.PlaylistMenu
 import com.convx.music.constants.CONTENT_TYPE_HEADER
 import com.convx.music.constants.CONTENT_TYPE_PLAYLIST
 import com.convx.music.constants.GridItemSize
@@ -95,6 +102,9 @@ import com.convx.music.db.entities.PlaylistEntity
 import com.convx.music.ui.component.buildAlphabetSectionIndex
 import com.convx.music.ui.component.ListScrollRail
 import com.convx.music.ui.component.LargeScreenTitle
+import com.convx.music.ui.component.TopFadeBlur
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeSource
 import com.convx.music.ui.component.CreatePlaylistDialog
 import com.convx.music.ui.component.HideOnScrollFAB
 import com.convx.music.ui.component.LibraryPlaylistGridItem
@@ -113,6 +123,7 @@ import com.convx.music.ui.theme.AppleTokens
 import com.convx.music.ui.utils.heroPullZoom
 import com.convx.music.ui.utils.listOverscroll
 import com.convx.music.ui.utils.rememberHeroZoom
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -141,7 +152,7 @@ fun LibraryPlaylistsScreen(
     
     val (libraryIconsOnly) = rememberPreference(LibraryIconsOnlyKey, defaultValue = true)
 
-    val playlists by viewModel.allPlaylists.collectAsState()
+    val playlists by viewModel.allPlaylists.collectAsStateWithLifecycle()
 
     val topSize by viewModel.topValue.collectAsState(initial = 50)
 
@@ -184,6 +195,16 @@ fun LibraryPlaylistsScreen(
             songCount = 0,
             songThumbnails = emptyList(),
         )
+
+    val aiDjMixPlaylist =
+        Playlist(
+            playlist = PlaylistEntity(
+                id = UUID.randomUUID().toString(),
+                name = stringResource(R.string.ai_dj_mix)
+            ),
+            songCount = 0,
+            songThumbnails = emptyList(),
+        )
         
     val uploadedPlaylist =
         Playlist(
@@ -206,11 +227,14 @@ fun LibraryPlaylistsScreen(
     // Pull-to-refresh only: no hero artwork on this screen, so heroZoom.scale
     // goes unread and the modifier contributes just the rubber-band stretch.
     val heroZoom = rememberHeroZoom()
+    // Progressive top blur so the list dissolves under the status bar instead
+    // of cutting off hard — same technique as the rest of the app's screens.
+    val hazeState = remember { HazeState() }
 
 
     val backStackEntry by navController.currentBackStackEntryAsState()
     val scrollToTop =
-        backStackEntry?.savedStateHandle?.getStateFlow("scrollToTop", false)?.collectAsState()
+        backStackEntry?.savedStateHandle?.getStateFlow("scrollToTop", false)?.collectAsStateWithLifecycle()
 
     val (innerTubeCookie) = rememberPreference(InnerTubeCookieKey, "")
     val isLoggedIn = remember(innerTubeCookie) {
@@ -279,36 +303,24 @@ fun LibraryPlaylistsScreen(
                     playlists.size,
                     playlists.size
                 ),
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.secondary,
+                style = AppTheme.typography.titleSmall,
+                color = AppTheme.colorScheme.secondary,
             )
 
-            FlowRow(
+            SingleChoiceSegmentedButtonRow(
                 modifier = Modifier.padding(start = 12.dp, end = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                LibraryViewType.entries.forEachIndexed { index, type ->
-                    ToggleButton(
-                        checked = viewType == type,
-                        onCheckedChange = { viewType = type },
-                        shapes = when (index) {
-                            0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
-                            LibraryViewType.entries.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
-                            else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                LibraryViewType.entries.forEach { type ->
+                    SegmentedButton(
+                        selected = viewType == type,
+                        onClick = { viewType = type },
+                        icon = {
+                            SymbolIcon(bounceOnEnter = true, symbol = when (type) {
+                                    LibraryViewType.LIST -> sf("SFListBullet")
+                                    LibraryViewType.GRID -> sf("SFSquareGrid2x2")
+                                }, contentDescription = null)
                         },
-                        modifier = Modifier.semantics { role = Role.RadioButton },
-                    ) {
-                        Icon(
-                            painter = painterResource(
-                                when (type) {
-                                    LibraryViewType.LIST -> R.drawable.list
-                                    LibraryViewType.GRID -> R.drawable.grid_view
-                                }
-                            ),
-                            contentDescription = null,
-                        )
-                    }
+                    )
                 }
             }
         }
@@ -316,7 +328,18 @@ fun LibraryPlaylistsScreen(
 
     // Hoisted: both view types de-duped the same list separately, and the scroll rail
     // needs the resulting count too.
-    val visiblePlaylists = remember(playlists) { playlists.distinctBy { it.id } }
+    // Synced (online) playlists lead; ones made on this device follow below a divider.
+    val (onlinePlaylists, devicePlaylists) = remember(playlists) {
+        playlists.distinctBy { it.id }.partition { it.playlist.browseId != null }
+    }
+    val visiblePlaylists = remember(onlinePlaylists, devicePlaylists) { onlinePlaylists + devicePlaylists }
+    val showDivider = onlinePlaylists.isNotEmpty() && devicePlaylists.isNotEmpty()
+
+    // Keep pinned playlists in the regular list; this separate list feeds the pinned row.
+    val pinnedPlaylists = remember(visiblePlaylists) {
+        visiblePlaylists.filter { it.playlist.pinnedAt != null }
+            .sortedByDescending { it.playlist.pinnedAt }
+    }
 
     Box(
         modifier = Modifier.fillMaxSize(),
@@ -326,7 +349,7 @@ fun LibraryPlaylistsScreen(
                 LazyColumn(
                     state = lazyListState,
                     overscrollEffect = heroZoom.listOverscroll(),
-                    modifier = Modifier.heroPullZoom(heroZoom),
+                    modifier = Modifier.heroPullZoom(heroZoom).hazeSource(hazeState),
                     contentPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues(),
                 ) {
                     item(
@@ -350,6 +373,48 @@ fun LibraryPlaylistsScreen(
                         headerContent()
                     }
 
+                    if (pinnedPlaylists.isNotEmpty()) {
+                        item(key = "pinned_header", contentType = CONTENT_TYPE_HEADER) {
+                            Text(
+                                text = stringResource(R.string.pinned),
+                                style = AppTheme.typography.titleMedium,
+                                modifier = Modifier
+                                    .padding(horizontal = AppleTokens.Gutter, vertical = 8.dp)
+                                    .animateItem(),
+                            )
+                        }
+                        item(key = "pinned_row", contentType = "pinned_row") {
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = AppleTokens.Gutter),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .animateItem(),
+                            ) {
+                                items(pinnedPlaylists, key = { "pinned_${it.id}" }) { playlist ->
+                                    PlaylistGridItem(
+                                        playlist = playlist,
+                                        fillMaxWidth = false,
+                                        modifier = Modifier
+                                            .width(150.dp)
+                                            .combinedBounceClick(
+                                                onClick = { navController.navigate(localPlaylistRoute(playlist.id, playlist.thumbnailUrl)) },
+                                                onLongClick = {
+                                                    menuState.show {
+                                                        PlaylistMenu(
+                                                            playlist = playlist,
+                                                            coroutineScope = coroutineScope,
+                                                            onDismiss = menuState::dismiss,
+                                                        )
+                                                    }
+                                                },
+                                            ),
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     if (showLiked) {
                         item(
                             key = "likedPlaylist",
@@ -357,6 +422,7 @@ fun LibraryPlaylistsScreen(
                         ) {
                             AutoPlaylistCard(
                                 playlist = likedPlaylist,
+                                sharedArtworkId = "liked",
                                 grid = false,
                                 onClick = { navController.navigate("auto_playlist/liked") },
                                 showIconOnly = libraryIconsOnly,
@@ -372,6 +438,7 @@ fun LibraryPlaylistsScreen(
                         ) {
                             AutoPlaylistCard(
                                 playlist = downloadPlaylist,
+                                sharedArtworkId = "downloaded",
                                 grid = false,
                                 onClick = { navController.navigate("auto_playlist/downloaded") },
                                 showIconOnly = libraryIconsOnly,
@@ -387,6 +454,7 @@ fun LibraryPlaylistsScreen(
                         ) {
                             AutoPlaylistCard(
                                 playlist = topPlaylist,
+                                sharedArtworkId = topSize.toString(),
                                 grid = false,
                                 onClick = { navController.navigate("top_playlist/$topSize") },
                                 showIconOnly = libraryIconsOnly,
@@ -402,6 +470,7 @@ fun LibraryPlaylistsScreen(
                         ) {
                             AutoPlaylistCard(
                                 playlist = cachePlaylist,
+                                sharedArtworkId = "cached",
                                 grid = false,
                                 onClick = { navController.navigate("cache_playlist/cached") },
                                 showIconOnly = libraryIconsOnly,
@@ -417,12 +486,26 @@ fun LibraryPlaylistsScreen(
                         ) {
                             AutoPlaylistCard(
                                 playlist = uploadedPlaylist,
+                                sharedArtworkId = "uploaded",
                                 grid = false,
                                 onClick = { navController.navigate("auto_playlist/uploaded") },
                                 showIconOnly = libraryIconsOnly,
                                 modifier = Modifier.animateItem(),
                             )
                         }
+                    }
+
+                    item(
+                        key = "aiDjMixPlaylist",
+                        contentType = { CONTENT_TYPE_PLAYLIST },
+                    ) {
+                        AutoPlaylistCard(
+                            playlist = aiDjMixPlaylist,
+                            grid = false,
+                            onClick = { navController.navigate("ai_dj_set") },
+                            showIconOnly = libraryIconsOnly,
+                            modifier = Modifier.animateItem(),
+                        )
                     }
 
                     playlists.let { playlists ->
@@ -432,8 +515,24 @@ fun LibraryPlaylistsScreen(
                         }
 
                         items(
-                            items = visiblePlaylists,
+                            items = onlinePlaylists,
                             key = { it.id },
+                            contentType = { CONTENT_TYPE_PLAYLIST },
+                        ) { playlist ->
+                            LibraryPlaylistListItem(
+                                navController = navController,
+                                menuState = menuState,
+                                coroutineScope = coroutineScope,
+                                playlist = playlist,
+                                modifier = Modifier.animateItem()
+                            )
+                        }
+                        if (showDivider) {
+                            item(key = "local_divider", contentType = CONTENT_TYPE_HEADER) { LocalSectionDivider() }
+                        }
+                        items(
+                            items = devicePlaylists,
+                            key = { "local_${it.id}" },
                             contentType = { CONTENT_TYPE_PLAYLIST },
                         ) { playlist ->
                             LibraryPlaylistListItem(
@@ -453,6 +552,7 @@ fun LibraryPlaylistsScreen(
                     onClick = {
                         showCreatePlaylistDialog = true
                     },
+                    hazeState = hazeState,
                 )
             }
 
@@ -460,7 +560,7 @@ fun LibraryPlaylistsScreen(
                 LazyVerticalGrid(
                     state = lazyGridState,
                     overscrollEffect = heroZoom.listOverscroll(),
-                    modifier = Modifier.heroPullZoom(heroZoom),
+                    modifier = Modifier.heroPullZoom(heroZoom).hazeSource(hazeState),
                     columns = rememberGridColumns(),
                     contentPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues(),
                 ) {
@@ -488,6 +588,56 @@ fun LibraryPlaylistsScreen(
                         headerContent()
                     }
 
+                    if (pinnedPlaylists.isNotEmpty()) {
+                        item(
+                            key = "pinned_header",
+                            span = { GridItemSpan(maxLineSpan) },
+                            contentType = CONTENT_TYPE_HEADER,
+                        ) {
+                            Text(
+                                text = stringResource(R.string.pinned),
+                                style = AppTheme.typography.titleMedium,
+                                modifier = Modifier
+                                    .padding(horizontal = AppleTokens.Gutter, vertical = 8.dp)
+                                    .animateItem(),
+                            )
+                        }
+                        item(
+                            key = "pinned_row",
+                            span = { GridItemSpan(maxLineSpan) },
+                            contentType = "pinned_row",
+                        ) {
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = AppleTokens.Gutter),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .animateItem(),
+                            ) {
+                                items(pinnedPlaylists, key = { "pinned_${it.id}" }) { playlist ->
+                                    PlaylistGridItem(
+                                        playlist = playlist,
+                                        fillMaxWidth = false,
+                                        modifier = Modifier
+                                            .width(150.dp)
+                                            .combinedBounceClick(
+                                                onClick = { navController.navigate(localPlaylistRoute(playlist.id, playlist.thumbnailUrl)) },
+                                                onLongClick = {
+                                                    menuState.show {
+                                                        PlaylistMenu(
+                                                            playlist = playlist,
+                                                            coroutineScope = coroutineScope,
+                                                            onDismiss = menuState::dismiss,
+                                                        )
+                                                    }
+                                                },
+                                            ),
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     if (showLiked) {
                         item(
                             key = "likedPlaylist",
@@ -495,6 +645,7 @@ fun LibraryPlaylistsScreen(
                         ) {
                             AutoPlaylistCard(
                                 playlist = likedPlaylist,
+                                sharedArtworkId = "liked",
                                 grid = true,
                                 onClick = { navController.navigate("auto_playlist/liked") },
                                 showIconOnly = libraryIconsOnly,
@@ -510,6 +661,7 @@ fun LibraryPlaylistsScreen(
                         ) {
                             AutoPlaylistCard(
                                 playlist = downloadPlaylist,
+                                sharedArtworkId = "downloaded",
                                 grid = true,
                                 onClick = { navController.navigate("auto_playlist/downloaded") },
                                 showIconOnly = libraryIconsOnly,
@@ -525,6 +677,7 @@ fun LibraryPlaylistsScreen(
                         ) {
                             AutoPlaylistCard(
                                 playlist = topPlaylist,
+                                sharedArtworkId = topSize.toString(),
                                 grid = true,
                                 onClick = { navController.navigate("top_playlist/$topSize") },
                                 showIconOnly = libraryIconsOnly,
@@ -540,6 +693,7 @@ fun LibraryPlaylistsScreen(
                         ) {
                             AutoPlaylistCard(
                                 playlist = cachePlaylist,
+                                sharedArtworkId = "cached",
                                 grid = true,
                                 onClick = { navController.navigate("cache_playlist/cached") },
                                 showIconOnly = libraryIconsOnly,
@@ -555,12 +709,26 @@ fun LibraryPlaylistsScreen(
                         ) {
                             AutoPlaylistCard(
                                 playlist = uploadedPlaylist,
+                                sharedArtworkId = "uploaded",
                                 grid = true,
                                 onClick = { navController.navigate("auto_playlist/uploaded") },
                                 showIconOnly = libraryIconsOnly,
                                 modifier = Modifier.animateItem(),
                             )
                         }
+                    }
+
+                    item(
+                        key = "aiDjMixPlaylist",
+                        contentType = { CONTENT_TYPE_PLAYLIST },
+                    ) {
+                        AutoPlaylistCard(
+                            playlist = aiDjMixPlaylist,
+                            grid = true,
+                            onClick = { navController.navigate("ai_dj_set") },
+                            showIconOnly = libraryIconsOnly,
+                            modifier = Modifier.animateItem(),
+                        )
                     }
 
                     playlists.let { playlists ->
@@ -570,8 +738,28 @@ fun LibraryPlaylistsScreen(
                         }
 
                         items(
-                            items = visiblePlaylists,
+                            items = onlinePlaylists,
                             key = { it.id },
+                            contentType = { CONTENT_TYPE_PLAYLIST },
+                        ) { playlist ->
+                            LibraryPlaylistGridItem(
+                                navController = navController,
+                                menuState = menuState,
+                                coroutineScope = coroutineScope,
+                                playlist = playlist,
+                                modifier = Modifier.animateItem()
+                            )
+                        }
+                        if (showDivider) {
+                            item(
+                                key = "local_divider",
+                                span = { GridItemSpan(maxLineSpan) },
+                                contentType = CONTENT_TYPE_HEADER,
+                            ) { LocalSectionDivider() }
+                        }
+                        items(
+                            items = devicePlaylists,
+                            key = { "local_${it.id}" },
                             contentType = { CONTENT_TYPE_PLAYLIST },
                         ) { playlist ->
                             LibraryPlaylistGridItem(
@@ -591,9 +779,16 @@ fun LibraryPlaylistsScreen(
                     onClick = {
                         showCreatePlaylistDialog = true
                     },
+                    hazeState = hazeState,
                 )
             }
         }
+
+        TopFadeBlur(
+            hazeState = hazeState,
+            pageColor = AppTheme.colorScheme.background,
+            modifier = Modifier.align(Alignment.TopCenter),
+        )
 
         ListScrollRail(
             lazyListState = lazyListState,
@@ -615,6 +810,7 @@ fun LibraryPlaylistsScreen(
 @Composable
 private fun AutoPlaylistCard(
     playlist: Playlist,
+    sharedArtworkId: String? = null,
     grid: Boolean,
     onClick: () -> Unit,
     showIconOnly: Boolean,
@@ -652,6 +848,7 @@ private fun AutoPlaylistCard(
                 playlist = playlist,
                 fillMaxWidth = true,
                 autoPlaylist = true,
+                sharedArtworkId = sharedArtworkId,
                 showIconOnly = showIconOnly,
                 thumbnailOverrideUrl = override,
                 modifier = clickMod,
@@ -660,6 +857,7 @@ private fun AutoPlaylistCard(
             PlaylistListItem(
                 playlist = playlist,
                 autoPlaylist = true,
+                sharedArtworkId = sharedArtworkId,
                 showIconOnly = showIconOnly,
                 thumbnailOverrideUrl = override,
                 modifier = clickMod,

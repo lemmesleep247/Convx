@@ -5,171 +5,198 @@ import com.dokar.quickjs.QuickJs
 import com.dokar.quickjs.binding.AsyncFunctionBinding
 import com.dokar.quickjs.binding.FunctionBinding
 import com.dokar.quickjs.binding.define
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.suspendCancellableCoroutine
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
+import java.net.URI
+import java.io.IOException
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 internal object QuickJsExecutor {
-
     private const val TAG = "SpineDebug"
-    private const val maxConcurrent = 4
-
-    private val syncHttpClient by lazy {
+    private const val MAX_MODULES = 12
+    private const val ENGINES_PER_MODULE = 3
+    private val httpClient by lazy {
         OkHttpClient.Builder()
-            .connectTimeout(20, TimeUnit.SECONDS)
-            .readTimeout(20, TimeUnit.SECONDS)
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(15, TimeUnit.SECONDS)
+            .callTimeout(20, TimeUnit.SECONDS)
             .build()
     }
 
-    // Modules commonly stash session/auth state in top-level variables set up once
-    // at load time (e.g. an eager token pre-fetch that a later call reuses). The old
-    // one-shot executor re-evaluated the whole script from scratch on every single
-    // exported-function call, so that state never survived from a searchTracks()
-    // call to the getStreamUrl() call for the same track — each ran in its own
-    // throwaway VM. Keeping one QuickJS engine alive per loaded module, reused
-    // across calls, is what a normal module host does and what these modules
-    // assume. LRU-capped at maxConcurrent engines; least-recently-used is evicted
-    // (closed) to make room rather than refusing to load past that count.
+    private class Pool(source: String, val baseUrl: String) {
+        val code by lazy { preprocessModuleCode(source) }
+        val initialization = Mutex()
+        val permits = Semaphore(ENGINES_PER_MODULE)
+        val idle = ArrayDeque<QuickJs>()
+        var initialized = false
+        var manifest = "{}"
+        var users = 0
+        var retired = false
+    }
+
+    // Active exports pin their pool and exclusively lease one VM.
     private val engineLock = Any()
-    private val engines = LinkedHashMap<String, QuickJs>(16, 0.75f, true)
+    private val pools = LinkedHashMap<String, Pool>(16, 0.75f, true)
 
-    suspend fun loadModule(moduleId: String, jsCode: String, fetchBase: String = ""): Result<Unit> {
-        synchronized(engineLock) {
-            if (engines.containsKey(moduleId)) {
-                Log.d(TAG, "▶ loadModule($moduleId) — ENGINE CACHE HIT")
-                return Result.success(Unit)
-            }
-            while (engines.size >= maxConcurrent) {
-                val lruId = engines.keys.firstOrNull() ?: break
-                Log.d(TAG, "  Evicting LRU module engine: $lruId")
-                engines.remove(lruId)?.close()
-            }
+    fun isLoaded(moduleId: String): Boolean = synchronized(engineLock) {
+        pools[moduleId]?.initialized == true
+    }
+
+    suspend fun loadModule(moduleId: String, jsCode: String, fetchBase: String = ""): Result<String> {
+        val pool = synchronized(engineLock) {
+            pools.getOrPut(moduleId) { Pool(jsCode, fetchBase) }.also { it.users++ }
         }
-
-        Log.d(TAG, "▶ loadModule($moduleId) fetchBase=$fetchBase jsCodeLength=${jsCode.length}")
-        return withContext(Dispatchers.Default) {
-            Log.d(TAG, "  Creating QuickJS engine...")
-            val qjs = QuickJs.create(Dispatchers.Default)
-            qjs.maxStackSize = 512 * 1024L
-            runCatching {
-                bindConsole(qjs)
-                bindAsyncFetch(qjs, fetchBase)
-
-                Log.d(TAG, "  Evaluating polyfills...")
-                qjs.evaluate<String>(POLYFILLS)
-                Log.d(TAG, "  ✓ Polyfills loaded")
-
-                val cleanCode = preprocessModuleCode(jsCode)
-                Log.d(TAG, "  Preprocessed code: ${jsCode.length} → ${cleanCode.length} chars")
-                Log.d(TAG, "  First 200 chars: ${cleanCode.take(200)}")
-
-                Log.d(TAG, "  Evaluating IIFE wrapper...")
-                val iifeResult = qjs.evaluate<String>(
-                    """
-                    var __spine_iife_error = null;
-                    var __spine_mod = (function() {
-                        try {
-                            var module = { exports: {} };
-                            var exports = module.exports;
-                            var self = {};
-                            $cleanCode
-                            if (module.exports && (module.exports.searchTracks || module.exports.getTrackStreamUrl)) {
-                                return module.exports;
-                            }
-                            return {};
-                        } catch(e) {
-                            __spine_iife_error = e && e.message ? e.message : String(e);
-                            return {};
-                        }
-                    })();
-                    'ok'
-                    """.trimIndent()
-                )
-                Log.d(TAG, "  IIFE result: $iifeResult")
-
-                val iifeError = qjs.evaluate<String>("__spine_iife_error || 'none'")
-                if (iifeError != "none") {
-                    throw IllegalStateException("Module init error: $iifeError")
+        return try {
+            pool.initialization.withLock {
+                if (!pool.initialized) {
+                    val engine = newEngine(pool)
+                    synchronized(engineLock) {
+                        pool.idle.addLast(engine)
+                        pool.initialized = true
+                    }
                 }
-                Log.d(TAG, "  ✓ IIFE no errors")
+            }
+            Result.success(pool.manifest)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
+        } finally {
+            release(pool)
+        }
+    }
 
-                val availableKeys = qjs.evaluate<String>("Object.keys(__spine_mod).join(', ')")
-                Log.d(TAG, "  Module exports: [$availableKeys]")
-            }.onSuccess {
-                synchronized(engineLock) { engines[moduleId] = qjs }
-            }.onFailure {
-                Log.e(TAG, "  ✗ loadModule FAILED for $moduleId: ${it.message}", it)
-                qjs.close()
-            }.map { }
+    private suspend fun newEngine(pool: Pool): QuickJs = withContext(Dispatchers.Default) {
+        val qjs = QuickJs.create(Dispatchers.Default)
+        qjs.maxStackSize = 512 * 1024L
+        try {
+            bindConsole(qjs)
+            bindAsyncFetch(qjs, pool.baseUrl)
+            qjs.evaluate<String>(POLYFILLS)
+            val code = pool.code
+            qjs.evaluate<String>(
+                """
+                var __spine_mod = (function() {
+                    var module = { exports: {} };
+                    var exports = module.exports;
+                    var self = {};
+                    $code
+                    if (module.exports && (module.exports.searchTracks || module.exports.getTrackStreamUrl)) {
+                        return module.exports;
+                    }
+                    return {};
+                })();
+                'ok'
+                """.trimIndent()
+            )
+            val exports = qjs.evaluate<String>("Object.keys(__spine_mod).join(',')")
+            check(exports.split(',').contains("searchTracks") && exports.split(',').contains("getTrackStreamUrl")) {
+                "Module must export searchTracks and getTrackStreamUrl"
+            }
+            val manifest = qjs.evaluate<String>(
+                "JSON.stringify({settings: __spine_mod.settings || {}, noStreamCache: !!__spine_mod.noStreamCache})",
+            )
+            synchronized(engineLock) { pool.manifest = manifest }
+            qjs
+        } catch (e: Throwable) {
+            qjs.close()
+            throw e
         }
     }
 
     suspend fun callExport(moduleId: String, functionName: String, args: List<String>): Result<String> {
-        val qjs = synchronized(engineLock) { engines[moduleId] }
-            ?: return Result.failure(IllegalStateException("Module $moduleId is not loaded"))
-
-        Log.d(TAG, "▶ callExport($moduleId, $functionName) args=$args")
-        return withContext(Dispatchers.Default) {
-            runCatching {
-                val hasFn = qjs.evaluate<String>("typeof __spine_mod['$functionName']")
-                Log.d(TAG, "  typeof $functionName: $hasFn")
-                if (hasFn != "function") {
-                    throw IllegalStateException("$functionName is not a function on module $moduleId")
+        val pool = synchronized(engineLock) {
+            pools[moduleId]?.also { it.users++ }
+        } ?: return Result.failure(IllegalStateException("Module $moduleId is not loaded"))
+        return try {
+            pool.permits.withPermit {
+                val qjs = synchronized(engineLock) { pool.idle.removeFirstOrNull() } ?: newEngine(pool)
+                var reusable = false
+                try {
+                    val answer = withContext(Dispatchers.Default) {
+                        val name = JSONObject.quote(functionName)
+                        check(qjs.evaluate<String>("typeof __spine_mod[$name]") == "function") {
+                            "$functionName is not exported"
+                        }
+                        val arguments = args.joinToString(",")
+                        qjs.evaluate<String>(
+                            """
+                            var __spine_resolved_json = undefined;
+                            (async function() {
+                                try {
+                                    var r = await __spine_mod[$name]($arguments);
+                                    __spine_resolved_json = typeof r === 'string' ? r : JSON.stringify(r);
+                                } catch(e) {
+                                    __spine_resolved_json = JSON.stringify({error: String(e && e.message || e)});
+                                }
+                            })();
+                            """.trimIndent()
+                        )
+                        qjs.evaluate<String>("__spine_resolved_json")
+                    }
+                    val response = JSONObject(answer)
+                    check(!response.has("error")) {
+                        response.optString("error", "Module call failed")
+                    }
+                    reusable = true
+                    Result.success(answer)
+                } finally {
+                    synchronized(engineLock) {
+                        if (reusable && !pool.retired) pool.idle.addLast(qjs) else qjs.close()
+                    }
                 }
-
-                val argsStr = args.joinToString(",")
-                Log.d(TAG, "  Calling $functionName($argsStr)")
-
-                // evaluate() converts the Promise JSValue via toString() instead of
-                // awaiting it.  Workaround: store the resolved JSON in a global var
-                // inside the async IIFE, then read it in a second evaluate() call.
-                qjs.evaluate<String>(
-                    """
-                    var __spine_resolved_json = undefined;
-                    (async function() {
-                        var __fn = __spine_mod['$functionName'];
-                        if (!__fn) {
-                            __spine_resolved_json = JSON.stringify({ error: '$functionName not found' });
-                            return;
-                        }
-                        try {
-                            var r = await __fn($argsStr);
-                            __spine_resolved_json = typeof r === 'string' ? r : JSON.stringify(r);
-                        } catch(e) {
-                            __spine_resolved_json = JSON.stringify({ error: e && e.message ? e.message : String(e) });
-                        }
-                    })();
-                    """.trimIndent()
-                )
-
-                val rawResult = qjs.evaluate<String>("__spine_resolved_json")
-                Log.d(TAG, "  ═══ RAW RESULT (${rawResult.length} chars) ═══")
-                Log.d(TAG, "  ${rawResult.take(2000)}")
-                rawResult
-            }.onFailure {
-                Log.e(TAG, "  ✗ callExport FAILED for $moduleId.$functionName: ${it.message}", it)
             }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
+        } finally {
+            release(pool)
         }
     }
 
-    fun unload(moduleId: String) {
-        synchronized(engineLock) { engines.remove(moduleId) }?.close()
-        Log.d(TAG, "Unloaded module $moduleId")
+    private fun release(pool: Pool) = synchronized(engineLock) {
+        pool.users--
+        if (pool.retired && pool.users == 0) closeIdle(pool)
+        while (pools.size > MAX_MODULES) {
+            val candidate = pools.entries.firstOrNull { it.value.users == 0 } ?: break
+            pools.remove(candidate.key)
+            candidate.value.retired = true
+            closeIdle(candidate.value)
+        }
     }
 
-    fun unloadAll() {
-        val all = synchronized(engineLock) {
-            val values = engines.values.toList()
-            engines.clear()
-            values
+    private fun closeIdle(pool: Pool) {
+        while (pool.idle.isNotEmpty()) pool.idle.removeFirst().close()
+    }
+
+    fun unload(moduleId: String) = synchronized(engineLock) {
+        pools.remove(moduleId)?.let { pool ->
+            pool.retired = true
+            closeIdle(pool)
         }
-        all.forEach { it.close() }
-        Log.d(TAG, "Unloaded all module engines")
+        Unit
+    }
+
+    fun unloadAll() = synchronized(engineLock) {
+        pools.values.forEach { pool -> pool.retired = true; closeIdle(pool) }
+        pools.clear()
     }
 
     private fun preprocessModuleCode(jsCode: String): String {
@@ -238,15 +265,9 @@ internal object QuickJsExecutor {
                     val body = args[3]?.toString()
                     val url = resolveUrl(rawUrl, fetchBase)
 
-                    Log.d(TAG, "  → fetch $method $url")
-                    if (body != null) Log.d(TAG, "    body: ${body.take(200)}")
 
-                    val (statusCode, responseBody) = fetchUrlSync(url, method, headersJson, body)
+                    val (statusCode, responseBody) = fetchUrl(url, method, headersJson, body)
 
-                    Log.d(TAG, "    HTTP $statusCode (${responseBody.length} bytes)")
-                    if (statusCode >= 400) {
-                        Log.e(TAG, "    HTTP ERROR $statusCode: ${responseBody.take(500)}")
-                    }
                     val respObj = org.json.JSONObject().apply {
                         put("status", statusCode)
                         put("ok", statusCode in 200..299)
@@ -315,18 +336,10 @@ internal object QuickJsExecutor {
     }
 
     private fun resolveUrl(url: String, base: String): String {
-        if (url.startsWith("http://") || url.startsWith("https://")) return url
-        if (base.isEmpty()) return url
-        return if (url.startsWith("/")) {
-            val scheme = base.substringBefore("://")
-            val host = base.substringAfter("://").substringBefore("/")
-            "$scheme://$host$url"
-        } else {
-            "$base/$url"
-        }
+        return if (base.isEmpty()) url else URI(base.trimEnd('/') + "/").resolve(url).toString()
     }
 
-    private fun fetchUrlSync(url: String, method: String, headersJson: String, body: String?): Pair<Int, String> {
+    private suspend fun fetchUrl(url: String, method: String, headersJson: String, body: String?): Pair<Int, String> {
         return try {
             val builder = Request.Builder()
                 .url(url)
@@ -339,7 +352,9 @@ internal object QuickJsExecutor {
                     builder.header(key, value)
                     if (key.equals("user-agent", ignoreCase = true)) hasUserAgent = true
                 }
-            } catch (_: Exception) {}
+            } catch (_: Exception) {
+                // Malformed headers must not prevent the request from using the default User-Agent.
+            }
 
             if (!hasUserAgent) {
                 builder.header(
@@ -348,24 +363,40 @@ internal object QuickJsExecutor {
                 )
             }
 
-            when (method.uppercase()) {
+            val mediaType = (builder.build().header("Content-Type") ?: "application/json; charset=utf-8").toMediaType()
+            when (method.uppercase(java.util.Locale.ROOT)) {
                 "POST" -> {
-                    val mediaType = "application/json; charset=utf-8".toMediaType()
                     builder.post((body ?: "").toRequestBody(mediaType))
                 }
                 "PUT" -> {
-                    val mediaType = "application/json; charset=utf-8".toMediaType()
                     builder.put((body ?: "").toRequestBody(mediaType))
                 }
-                "DELETE" -> builder.delete()
+                "PATCH" -> builder.patch((body ?: "").toRequestBody(mediaType))
+                "DELETE" -> builder.delete(body?.toRequestBody(mediaType))
                 "HEAD" -> builder.head()
                 else -> builder.get()
             }
 
-            syncHttpClient.newCall(builder.build()).execute().use { response ->
-                val responseBody = response.body?.string() ?: ""
-                response.code to responseBody
+            suspendCancellableCoroutine { continuation ->
+                val call = httpClient.newCall(builder.build())
+                continuation.invokeOnCancellation { call.cancel() }
+                call.enqueue(object : Callback {
+                    override fun onFailure(call: Call, error: IOException) {
+                        if (continuation.isActive) continuation.resumeWithException(error)
+                    }
+
+                    override fun onResponse(call: Call, response: Response) {
+                        try {
+                            val result = response.use { it.code to it.body.string() }
+                            if (continuation.isActive) continuation.resume(result)
+                        } catch (error: Exception) {
+                            if (continuation.isActive) continuation.resumeWithException(error)
+                        }
+                    }
+                })
             }
+        } catch (error: CancellationException) {
+            throw error
         } catch (e: Exception) {
             Log.e(TAG, "    fetch FAILED: $method $url — ${e.message}", e)
             throw e
@@ -476,7 +507,9 @@ internal object QuickJsExecutor {
                         var m2 = a.match(/^https?:\/\/([^/]+)(\/.*)?$/);
                         if (m2) { this.hostname = m2[1]; this.pathname = m2[2] || '/'; }
                     }
-                } catch(e) {}
+                } catch(e) {
+                    // Keep the default URL fields when this address cannot be parsed.
+                }
             };
         }
     """

@@ -28,6 +28,11 @@ internal object ShazamSignatureGenerator {
 
     // Spread ring buffer size
     private const val RING_BUF_SIZE = 256
+    private val TIME_SPREAD_OFFSETS = intArrayOf(-1, -3, -6)
+    private val PEAK_NEIGHBOR_OFFSETS = intArrayOf(-10, -7, -4, -3, 1, 2, 5, 8)
+    private val PEAK_SPREAD_OFFSETS = intArrayOf(
+        -53, -45, 165, 172, 179, 186, 193, 200, 214, 221, 228, 235, 242, 249
+    )
 
     // Band IDs matching FrequencyBand enum in C++ (0=250-520Hz, 1=520-1450Hz, 2=1450-3500Hz, 3=3500-5500Hz)
     private const val BAND_250_520 = 0
@@ -123,7 +128,6 @@ internal object ShazamSignatureGenerator {
         }
 
         private fun doPeakSpreading() {
-            // Start with a copy of the last FFT output
             val lastFftIdx = (fftPos - 1 + RING_BUF_SIZE) % RING_BUF_SIZE
             val spread = fftOutputs[lastFftIdx].copyOf()
 
@@ -136,15 +140,13 @@ internal object ShazamSignatureGenerator {
             // Only older entries are updated; the new entry keeps only frequency spreading (matches C++).
             for (pos in 0 until FFT_OUTPUT_SIZE) {
                 var maxVal = spread[pos]
-                for (offset in intArrayOf(-1, -3, -6)) {
+                for (offset in TIME_SPREAD_OFFSETS) {
                     val idx = ((spreadPos + offset) % RING_BUF_SIZE + RING_BUF_SIZE) % RING_BUF_SIZE
                     val oldVal = spreadFfts[idx][pos]
                     if (oldVal > maxVal) maxVal = oldVal
                     spreadFfts[idx][pos] = maxVal
                 }
-                // Note: spread[pos] is intentionally NOT updated here.
-                // The new entry stored in spreadFfts should only have frequency spreading applied,
-                // not time spreading. This matches the original C++ vibra implementation.
+                // The new entry gets frequency spreading only, matching the C++ implementation.
             }
 
             spread.copyInto(spreadFfts[spreadPos])
@@ -156,32 +158,29 @@ internal object ShazamSignatureGenerator {
             val fftMinus46 = fftOutputs[(fftPos - 46 + RING_BUF_SIZE * 2) % RING_BUF_SIZE]
             val spreadMinus49 = spreadFfts[(spreadPos - 49 + RING_BUF_SIZE * 2) % RING_BUF_SIZE]
 
-            val otherOffsets = intArrayOf(-53, -45, 165, 172, 179, 186, 193, 200, 214, 221, 228, 235, 242, 249)
-
             for (binPos in 10 until FFT_OUTPUT_SIZE - 8) {
                 val fftVal = fftMinus46[binPos]
                 if (fftVal < 1.0 / 64.0 || fftVal < spreadMinus49[binPos]) continue
 
-                // Check 8 neighbors in spreadMinus49
+                // Keep only local maxima across neighboring bins and frames.
                 var maxNeighborSpread49 = 0.0
-                for (neighborOffset in intArrayOf(-10, -7, -4, -3, 1, 2, 5, 8)) {
+                for (neighborOffset in PEAK_NEIGHBOR_OFFSETS) {
                     val v = spreadMinus49[binPos + neighborOffset]
                     if (v > maxNeighborSpread49) maxNeighborSpread49 = v
                 }
                 if (fftVal <= maxNeighborSpread49) continue
 
-                // Check 14 other spread FFT offsets
                 var maxNeighborOther = maxNeighborSpread49
-                for (otherOffset in otherOffsets) {
+                for (otherOffset in PEAK_SPREAD_OFFSETS) {
                     val spreadIdx = ((spreadPos + otherOffset) % RING_BUF_SIZE + RING_BUF_SIZE) % RING_BUF_SIZE
                     val v = spreadFfts[spreadIdx][binPos - 1]
                     if (v > maxNeighborOther) maxNeighborOther = v
                 }
                 if (fftVal <= maxNeighborOther) continue
 
-                // Valid peak found: compute corrected bin and frequency
                 val fftNumber = spreadNumWritten - 46
 
+                // Interpolate the peak position between FFT bins.
                 val peakMag = ln(max(1.0 / 64.0, fftVal)) * 1477.3 + 6144
                 val peakMagBefore = ln(max(1.0 / 64.0, fftMinus46[binPos - 1])) * 1477.3 + 6144
                 val peakMagAfter = ln(max(1.0 / 64.0, fftMinus46[binPos + 1])) * 1477.3 + 6144

@@ -69,7 +69,6 @@ class BiquadFilter(
         val cosOmega = cos(omega)
         val alpha = sinOmega / (2.0 * q)
 
-        // Peaking EQ coefficients
         b0 = 1.0 + alpha * A
         b1 = -2.0 * cosOmega
         b2 = 1.0 - alpha * A
@@ -77,13 +76,7 @@ class BiquadFilter(
         a1 = -2.0 * cosOmega
         a2 = 1.0 - alpha / A
 
-        // Normalize coefficients
-        b0 /= a0
-        b1 /= a0
-        b2 /= a0
-        a1 /= a0
-        a2 /= a0
-        a0 = 1.0
+        normalizeCoefficients()
     }
 
     /**
@@ -95,11 +88,10 @@ class BiquadFilter(
         val omega = 2.0 * PI * frequency / sampleRate
         val sinOmega = sin(omega)
         val cosOmega = cos(omega)
-        val S = 1.0 // Shelf slope parameter (could be made adjustable)
-        val alpha = sinOmega / 2.0 * sqrt((A + 1.0 / A) * (1.0 / S - 1.0) + 2.0)
+        val shelfSlope = 1.0
+        val alpha = sinOmega / 2.0 * sqrt((A + 1.0 / A) * (1.0 / shelfSlope - 1.0) + 2.0)
         val sqrtA = sqrt(A)
 
-        // Low-shelf coefficients
         val aPlusOne = A + 1.0
         val aMinusOne = A - 1.0
         val twoSqrtAAlpha = 2.0 * sqrtA * alpha
@@ -111,13 +103,7 @@ class BiquadFilter(
         a1 = -2.0 * (aMinusOne + aPlusOne * cosOmega)
         a2 = aPlusOne + aMinusOne * cosOmega - twoSqrtAAlpha
 
-        // Normalize coefficients
-        b0 /= a0
-        b1 /= a0
-        b2 /= a0
-        a1 /= a0
-        a2 /= a0
-        a0 = 1.0
+        normalizeCoefficients()
     }
 
     /**
@@ -129,11 +115,10 @@ class BiquadFilter(
         val omega = 2.0 * PI * frequency / sampleRate
         val sinOmega = sin(omega)
         val cosOmega = cos(omega)
-        val S = 1.0 // Shelf slope parameter (could be made adjustable)
-        val alpha = sinOmega / 2.0 * sqrt((A + 1.0 / A) * (1.0 / S - 1.0) + 2.0)
+        val shelfSlope = 1.0
+        val alpha = sinOmega / 2.0 * sqrt((A + 1.0 / A) * (1.0 / shelfSlope - 1.0) + 2.0)
         val sqrtA = sqrt(A)
 
-        // High-shelf coefficients
         val aPlusOne = A + 1.0
         val aMinusOne = A - 1.0
         val twoSqrtAAlpha = 2.0 * sqrtA * alpha
@@ -145,7 +130,10 @@ class BiquadFilter(
         a1 = 2.0 * (aMinusOne - aPlusOne * cosOmega)
         a2 = aPlusOne - aMinusOne * cosOmega - twoSqrtAAlpha
 
-        // Normalize coefficients
+        normalizeCoefficients()
+    }
+
+    private fun normalizeCoefficients() {
         b0 /= a0
         b1 /= a0
         b2 /= a0
@@ -160,7 +148,7 @@ class BiquadFilter(
     fun processSample(input: Double): Double {
         val output = b0 * input + b1 * x1L + b2 * x2L - a1 * y1L - a2 * y2L
 
-        // Update state
+        // Shift delay history for the next sample.
         x2L = x1L
         x1L = input
         y2L = y1L
@@ -173,21 +161,16 @@ class BiquadFilter(
      * Process stereo samples (left and right channels)
      */
     fun processStereo(inputLeft: Double, inputRight: Double): Pair<Double, Double> {
-        // Left channel
-        val outputLeft = b0 * inputLeft + b1 * x1L + b2 * x2L - a1 * y1L - a2 * y2L
-        x2L = x1L
-        x1L = inputLeft
-        y2L = y1L
-        y1L = outputLeft
+        return processSample(inputLeft) to processRightSample(inputRight)
+    }
 
-        // Right channel
-        val outputRight = b0 * inputRight + b1 * x1R + b2 * x2R - a1 * y1R - a2 * y2R
+    fun processRightSample(input: Double): Double {
+        val output = b0 * input + b1 * x1R + b2 * x2R - a1 * y1R - a2 * y2R
         x2R = x1R
-        x1R = inputRight
+        x1R = input
         y2R = y1R
-        y1R = outputRight
-
-        return Pair(outputLeft, outputRight)
+        y1R = output
+        return output
     }
 
     /**

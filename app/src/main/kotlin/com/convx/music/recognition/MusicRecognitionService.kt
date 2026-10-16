@@ -19,6 +19,7 @@ import android.media.MediaRecorder
 import androidx.core.content.ContextCompat
 import com.music.shazamkit.Shazam
 import com.music.shazamkit.models.RecognitionStatus
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -35,13 +36,10 @@ import java.nio.ByteOrder
  */
 object MusicRecognitionService {
     
-    // Recording parameters
     private const val RECORDING_SAMPLE_RATE = 44100
     private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
     private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
-    // Recording duration: 10 seconds for better recognition accuracy
-    // Original MusicRecognizer uses: 3s -> 6s -> 9s -> 10s fallback
-    // We use 10s directly to match the fallback duration for maximum compatibility
+    // Use the original recognizer's final 10-second fallback duration.
     private const val RECORDING_DURATION_MS = 10000L
     
     private val _recognitionStatus = MutableStateFlow<RecognitionStatus>(RecognitionStatus.Ready)
@@ -67,12 +65,11 @@ object MusicRecognitionService {
         _recognitionStatus.value = RecognitionStatus.Listening
         
         try {
-            // Step 1: Record audio
             val audioData = recordAudio()
             
             _recognitionStatus.value = RecognitionStatus.Processing
             
-            // Step 2: Convert to mono if needed and resample to 16kHz
+            // Resample to mono 16kHz for fingerprinting.
             val decodedAudio = DecodedAudio(
                 data = audioData,
                 channelCount = 1,
@@ -88,7 +85,6 @@ object MusicRecognitionService {
                 return@withContext _recognitionStatus.value
             }
             
-            // Verify format
             require(
                 resampledAudio.channelCount == 1 &&
                 resampledAudio.sampleRate == VibraSignature.REQUIRED_SAMPLE_RATE &&
@@ -98,7 +94,7 @@ object MusicRecognitionService {
                 resampledAudio.data.size % 2 == 0
             ) { "Invalid audio format for fingerprint generation" }
             
-            // Step 3: Generate fingerprint using native library
+            // Fingerprint with native library.
             val signature = try {
                 VibraSignature.fromI16(resampledAudio.data)
             } catch (e: Exception) {
@@ -106,7 +102,6 @@ object MusicRecognitionService {
                 return@withContext _recognitionStatus.value
             }
             
-            // Step 4: Send to Shazam API
             val sampleDurationMs = (resampledAudio.data.size / 2) * 1000L / VibraSignature.REQUIRED_SAMPLE_RATE
             
             val result = Shazam.recognize(signature, sampleDurationMs)
@@ -126,6 +121,8 @@ object MusicRecognitionService {
             )
             
             _recognitionStatus.value
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             _recognitionStatus.value = RecognitionStatus.Error(e.message ?: "Recognition failed")
             _recognitionStatus.value
@@ -139,7 +136,7 @@ object MusicRecognitionService {
             CHANNEL_CONFIG, 
             AUDIO_FORMAT
         )
-        
+        if (bufferSize <= 0) error("Invalid audio buffer size: $bufferSize")
         val audioRecord = AudioRecord(
             MediaRecorder.AudioSource.MIC,
             RECORDING_SAMPLE_RATE,
@@ -162,7 +159,7 @@ object MusicRecognitionService {
                 }
             }
         } finally {
-            audioRecord.stop()
+            runCatching { audioRecord.stop() }
             audioRecord.release()
         }
         

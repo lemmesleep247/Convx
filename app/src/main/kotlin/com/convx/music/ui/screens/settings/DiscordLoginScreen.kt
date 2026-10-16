@@ -19,22 +19,21 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.navigation.NavController
 import com.convx.music.LocalPlayerAwareWindowInsets
 import com.convx.music.R
 import com.convx.music.constants.DiscordTokenKey
-import com.convx.music.ui.component.IconButton
 import com.convx.music.ui.utils.backToMain
 import com.convx.music.utils.rememberPreference
 import kotlinx.coroutines.Dispatchers
@@ -56,10 +55,16 @@ fun DiscordLoginScreen(navController: NavController) {
     val discordTokenPref = rememberPreference(DiscordTokenKey, "")
     val webViewRef = remember { mutableStateOf<WebView?>(null) }
 
-    Box(
-        modifier = Modifier.fillMaxSize()
+    SettingsScaffold(
+        navController = navController,
+        title = stringResource(R.string.action_login),
+        // A login form, not a feed — nothing scrolls under the bar, so the
+        // compact title is simply always there.
+        titleAlpha = 1f,
+        pageColor = AppTheme.colorScheme.background,
     ) {
         AndroidView(
+            // Keep WebView out of the backdrop capture; recording it causes flicker.
             modifier = Modifier
                 .windowInsetsPadding(LocalPlayerAwareWindowInsets.current)
                 .fillMaxSize(),
@@ -78,7 +83,7 @@ fun DiscordLoginScreen(navController: NavController) {
                     // partway through login with no visible error.
                     CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
 
-                    // Fix for Motorola devices - UA parsing issue breaks Discord login
+                    // Motorola WebView needs the Samsung user agent to complete Discord login.
                     // See: https://github.com/dead8309/Kizzy/issues/345#issuecomment-2699729072
                     if (Build.MANUFACTURER.equals(MOTOROLA, ignoreCase = true)) {
                         settings.userAgentString = SAMSUNG_USER_AGENT
@@ -121,21 +126,6 @@ fun DiscordLoginScreen(navController: NavController) {
 
                     webViewRef.value = this
                     loadUrl("https://discord.com/login")
-                }
-            }
-        )
-
-        TopAppBar(
-            title = { Text(stringResource(R.string.action_login)) },
-            navigationIcon = {
-                IconButton(
-                    onClick = navController::navigateUp,
-                    onLongClick = navController::backToMain
-                ) {
-                    Icon(
-                        painterResource(R.drawable.arrow_back),
-                        contentDescription = null
-                    )
                 }
             }
         )

@@ -1,5 +1,9 @@
 package com.convx.music.ui.screens
 
+import com.convx.music.ui.component.sf
+import com.convx.music.ui.component.SymbolIcon
+import com.convx.music.ui.ios.compat.AppTheme
+
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -10,7 +14,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.SwitchDefaults
+import com.convx.music.ui.component.GlassSwitchCompat as Switch
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.OutlinedButton
+import com.convx.music.ui.ios.compat.Surface
+import com.convx.music.ui.ios.compat.Text
+import com.convx.music.ui.ios.compat.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,12 +52,14 @@ import com.convx.music.BuildConfig
 import com.convx.music.utils.rememberPreference
 import com.convx.music.viewmodels.HomeViewModel
 import kotlinx.coroutines.flow.map
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 
 @Composable
 fun SettingDialoge(
     onDismissRequest: () -> Unit,
     onNavigate: (String) -> Unit,
-    homeViewModel: HomeViewModel
+    homeViewModel: HomeViewModel = hiltViewModel(),
 ) {
     val uriHandler = LocalUriHandler.current
     val (innerTubeCookie, _) = rememberPreference(InnerTubeCookieKey, "")
@@ -55,8 +68,8 @@ fun SettingDialoge(
     }
 
     val (accountEmail, _) = rememberPreference(AccountEmailKey, "")
-    val accountName by homeViewModel.accountName.collectAsState()
-    val accountImageUrl by homeViewModel.accountImageUrl.collectAsState()
+    val accountName = homeViewModel.accountName.collectAsStateWithLifecycle().value
+    val accountImageUrl = homeViewModel.accountImageUrl.collectAsStateWithLifecycle().value
 
     val (useLoginForBrowse, onUseLoginForBrowseChange) = rememberPreference(UseLoginForBrowse, true)
     val (ytmSync, onYtmSyncChange) = rememberPreference(YtmSyncKey, true)
@@ -80,10 +93,10 @@ fun SettingDialoge(
         onDismissRequest = onDismissRequest,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
-        val primaryColor = MaterialTheme.colorScheme.surface
-        val onPrimaryColor = MaterialTheme.colorScheme.onSurface
-        val secondaryColor = MaterialTheme.colorScheme.secondaryContainer
-        val onSecondaryColor = MaterialTheme.colorScheme.onSecondaryContainer
+        val primaryColor = AppTheme.colorScheme.surface
+        val onPrimaryColor = AppTheme.colorScheme.onSurface
+        val secondaryColor = AppTheme.colorScheme.secondaryContainer
+        val onSecondaryColor = AppTheme.colorScheme.onSecondaryContainer
 
         Surface(
             modifier = Modifier
@@ -91,7 +104,11 @@ fun SettingDialoge(
                 .fillMaxWidth(),
             shape = RoundedCornerShape(28.dp),
             color = primaryColor,
-            tonalElevation = 8.dp
+            // No elevation tint ladder in this app's design language (flat iOS
+            // surfaces, see AppColorRoles.surfaceColorAtElevation) — a non-zero
+            // tonalElevation blends in Material's own surfaceTint here, which
+            // reads as a lighter, off-theme surface instead of the flat colour.
+            tonalElevation = 0.dp
         ) {
             Column(
                 modifier = Modifier
@@ -119,7 +136,7 @@ fun SettingDialoge(
                     Text(
                         modifier = Modifier.wrapContentWidth(),
                         text = "CONVX",
-                        style = MaterialTheme.typography.titleMedium.copy(
+                        style = AppTheme.typography.titleMedium.copy(
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 1.sp
                         ),
@@ -171,14 +188,9 @@ fun SettingDialoge(
                                     .clip(CircleShape)
                             )
                         } else {
-                            Icon(
-                                painter = painterResource(R.drawable.account),
-                                contentDescription = "Account Manager",
-                                tint = onSecondaryColor,
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(CircleShape)
-                            )
+                            SymbolIcon(symbol = sf("person.crop.circle"), contentDescription = "Account Manager", size = 36.dp, modifier = Modifier
+                                    
+                                    .clip(CircleShape), tint = onSecondaryColor)
                         }
                         Column(
                             verticalArrangement = Arrangement.Top,
@@ -308,7 +320,6 @@ fun SettingDialoge(
                     )
                 }
 
-                // Footer
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -431,13 +442,8 @@ private fun SwitchOptionItem(
             checked = checked,
             onCheckedChange = null,
             thumbContent = {
-                Icon(
-                    painter = painterResource(
-                        id = if (checked) R.drawable.check else R.drawable.close
-                    ),
-                    contentDescription = null,
-                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                )
+                SymbolIcon(symbol = if (checked) sf("checkmark") else sf("xmark")
+                    , contentDescription = null, modifier = Modifier.size(SwitchDefaults.IconSize))
             },
             modifier = Modifier
                 .padding(end = 2.dp)

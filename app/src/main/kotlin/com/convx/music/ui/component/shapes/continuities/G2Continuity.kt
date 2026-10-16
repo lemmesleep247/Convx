@@ -68,8 +68,6 @@ data class G2Continuity(
         val ratioBR = min(ratioBRV, ratioBRH)
         val ratioBL = min(ratioBLH, ratioBLV)
 
-        // Bezier stuffs
-
         // extended fractions of each corner
         val extFracTL = lerp(capsuleProfile.extendedFraction, profile.extendedFraction, ratioTL)
         val extFracTR = lerp(capsuleProfile.extendedFraction, profile.extendedFraction, ratioTR)
@@ -105,8 +103,6 @@ data class G2Continuity(
         val bezKScaleBRH = lerp(capsuleProfile.bezierCurvatureScale, profile.bezierCurvatureScale, ratioBRH)
         val bezKScaleBLH = lerp(capsuleProfile.bezierCurvatureScale, profile.bezierCurvatureScale, ratioBLH)
         val bezKScaleBLV = lerp(capsuleProfile.bezierCurvatureScale, profile.bezierCurvatureScale, ratioBLV)
-
-        // arc stuffs
 
         // arc fractions of each corner
         val arcFracTL = lerp(capsuleProfile.arcFraction, profile.arcFraction, ratioTL)

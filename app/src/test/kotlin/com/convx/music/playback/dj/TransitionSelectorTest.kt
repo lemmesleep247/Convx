@@ -21,154 +21,69 @@ class TransitionSelectorTest {
     }
 
     @Test
-    fun `a well-matched pair is left alone even with creative transitions on`() {
-        val style = TransitionSelector.select(
-            tier = DjMixTier.FULL_DJ,
-            outgoing = analysis(confidence = 0.95f, profile = loudThroughout()),
-            incoming = analysis(confidence = 0.95f, profile = loudThroughout()),
-            outgoingDurationMs = DURATION_MS,
-            creativeEnabled = true,
-        )
-
-        assertEquals(TransitionStyle.TRANSPARENT, style)
+    fun `any analysed pair gets an effect when creative is on`() {
+        for (tier in DjMixTier.values()) {
+            val style = select(tier = tier, index = 0)
+            assertNotEquals(TransitionStyle.TRANSPARENT, style)
+        }
     }
 
     @Test
-    fun `a mismatched pair ending at full energy gets echoed`() {
-        val style = TransitionSelector.select(
-            tier = DjMixTier.SMART_CROSSFADE,
-            outgoing = analysis(confidence = 0.9f, profile = loudThroughout()),
-            incoming = analysis(confidence = 0.9f, profile = loudThroughout()),
-            outgoingDurationMs = DURATION_MS,
-            creativeEnabled = true,
-        )
+    fun `rotation walks the sequence by transition index`() {
+        val picked = (0L..5L).map { select(index = it) }
 
-        assertEquals(TransitionStyle.ECHO_FREEZE, style)
+        assertEquals(
+            listOf(
+                TransitionStyle.REVERB_BLOOM,
+                TransitionStyle.DELAY_BLEND,
+                TransitionStyle.ECHO_FREEZE,
+                TransitionStyle.REVERB_BLOOM,
+                TransitionStyle.DELAY_BLEND,
+                TransitionStyle.TAPE_STOP,
+            ),
+            picked,
+        )
     }
 
     @Test
-    fun `a track that fades out is echoed rather than looped`() {
-        // Looping a fade-out just repeats the fade.
-        val style = TransitionSelector.select(
-            tier = DjMixTier.SMART_CROSSFADE,
-            outgoing = analysis(confidence = 0.9f, profile = fadesOut()),
-            incoming = analysis(confidence = 0.9f, profile = loudThroughout()),
-            outgoingDurationMs = DURATION_MS,
-            creativeEnabled = true,
-        )
-
-        assertEquals(TransitionStyle.ECHO_FREEZE, style)
+    fun `the brake falls back when tempos are hopeless`() {
+        assertNotEquals(TransitionStyle.TAPE_STOP, select(tier = DjMixTier.PLAIN_CROSSFADE, index = 5))
     }
 
     @Test
-    fun `hopeless tempos with a strong incoming intro get the brake`() {
-        val style = TransitionSelector.select(
-            tier = DjMixTier.PLAIN_CROSSFADE,
-            outgoing = analysis(confidence = 0.2f, profile = loudThroughout()),
-            incoming = analysis(confidence = 0.2f, profile = loudThroughout()),
-            outgoingDurationMs = DURATION_MS,
-            creativeEnabled = true,
-        )
-
-        assertEquals(TransitionStyle.TAPE_STOP, style)
+    fun `the brake lands on a confident pair with a strong intro`() {
+        assertEquals(TransitionStyle.TAPE_STOP, select(tier = DjMixTier.FULL_DJ, index = 5))
     }
 
     @Test
     fun `the brake is withheld when the incoming track opens quietly`() {
-        // Braking into an ambient intro is a brake into silence.
-        val style = TransitionSelector.select(
-            tier = DjMixTier.PLAIN_CROSSFADE,
-            outgoing = analysis(confidence = 0.2f, profile = loudThroughout()),
-            incoming = analysis(confidence = 0.2f, profile = quietIntro()),
-            outgoingDurationMs = DURATION_MS,
-            creativeEnabled = true,
-        )
+        val style = select(tier = DjMixTier.FULL_DJ, index = 5, incoming = analysis(0.9f, quietIntro()))
 
         assertNotEquals(TransitionStyle.TAPE_STOP, style)
     }
 
     @Test
     fun `the same move does not land twice in a row`() {
-        val args = { recent: List<TransitionStyle> ->
-            TransitionSelector.select(
-                tier = DjMixTier.SMART_CROSSFADE,
-                outgoing = analysis(confidence = 0.9f, profile = loudThroughout()),
-                incoming = analysis(confidence = 0.9f, profile = loudThroughout()),
-                outgoingDurationMs = DURATION_MS,
-                creativeEnabled = true,
-                recentStyles = recent,
-            )
-        }
+        val first = select(index = 0)
+        val second = select(index = 0, recent = listOf(first))
 
-        val first = args(emptyList())
-        val second = args(listOf(first))
-
-        assertEquals(TransitionStyle.ECHO_FREEZE, first)
         assertNotEquals(first, second)
     }
 
-    @Test
-    fun `variety never overrides leaving a matched pair alone`() {
-        // TRANSPARENT is exempt from the repeat penalty: "do nothing clever"
-        // getting repetitive is not a problem.
-        val style = TransitionSelector.select(
-            tier = DjMixTier.FULL_DJ,
-            outgoing = analysis(confidence = 0.95f, profile = loudThroughout()),
-            incoming = analysis(confidence = 0.95f, profile = loudThroughout()),
-            outgoingDurationMs = DURATION_MS,
-            creativeEnabled = true,
-            recentStyles = listOf(TransitionStyle.TRANSPARENT, TransitionStyle.TRANSPARENT),
-        )
-
-        assertEquals(TransitionStyle.TRANSPARENT, style)
-    }
-
-    @Test
-    fun `an effect stays locked out until several plain transitions have passed`() {
-        val loud = analysis(confidence = 0.9f, profile = loudThroughout())
-        fun select(recent: List<TransitionStyle>) = TransitionSelector.select(
-            tier = DjMixTier.SMART_CROSSFADE,
-            outgoing = loud,
-            incoming = loud,
-            outgoingDurationMs = DURATION_MS,
-            creativeEnabled = true,
-            recentStyles = recent,
-        )
-
-        // An effect one transition ago locks the next few out entirely — an
-        // effect on every song is a plugin, not a DJ.
-        val justUsed = listOf(TransitionStyle.ECHO_FREEZE)
-        assertEquals(TransitionStyle.TRANSPARENT, select(justUsed))
-        assertEquals(
-            TransitionStyle.TRANSPARENT,
-            select(listOf(TransitionStyle.TRANSPARENT, TransitionStyle.ECHO_FREEZE)),
-        )
-
-        // Once enough transparent transitions have gone by, effects return.
-        val cooledDown = List(4) { TransitionStyle.TRANSPARENT } + TransitionStyle.ECHO_FREEZE
-        assertNotEquals(TransitionStyle.TRANSPARENT, select(cooledDown))
-    }
-
-    @Test
-    fun `nothing measured means no effect, however eligible it looks`() {
-        // Regression: with no analysis every score was computed from UNKNOWN
-        // placeholders and ECHO_FREEZE won on guesswork, cutting the outgoing
-        // track into a delay line on the strength of nothing at all.
-        val blank = TrackAnalysis(
-            grid = BeatGrid(bpm = 0f, anchorBeatMs = 0f, confidence = 0f),
-            energyProfile = ByteArray(0),
-        )
-
-        val style = TransitionSelector.select(
-            tier = DjMixTier.PLAIN_CROSSFADE,
-            outgoing = blank,
-            incoming = blank,
-            outgoingDurationMs = DURATION_MS,
-            creativeEnabled = true,
-        )
-
-        assertEquals(TransitionStyle.TRANSPARENT, style)
-    }
+    private fun select(
+        tier: DjMixTier = DjMixTier.FULL_DJ,
+        index: Long,
+        recent: List<TransitionStyle> = emptyList(),
+        incoming: TrackAnalysis = analysis(0.9f, loudThroughout()),
+    ) = TransitionSelector.select(
+        tier = tier,
+        outgoing = analysis(0.9f, loudThroughout()),
+        incoming = incoming,
+        outgoingDurationMs = DURATION_MS,
+        creativeEnabled = true,
+        recentStyles = recent,
+        transitionIndex = index,
+    )
 
     @Test
     fun `a null outgoing analysis means no effect`() {
@@ -183,18 +98,12 @@ class TransitionSelectorTest {
         assertEquals(TransitionStyle.TRANSPARENT, style)
     }
 
-    // --- fixtures -----------------------------------------------------------
-
     private fun analysis(confidence: Float, profile: ByteArray) = TrackAnalysis(
         grid = BeatGrid(bpm = 128f, anchorBeatMs = 0f, confidence = confidence),
         energyProfile = profile,
     )
 
     private fun loudThroughout() = ByteArray(SECONDS) { 220.toByte() }
-
-    private fun fadesOut() = ByteArray(SECONDS) { second ->
-        if (second < SECONDS - 25) 220.toByte() else (220 - (second - (SECONDS - 25)) * 8).coerceAtLeast(0).toByte()
-    }
 
     private fun quietIntro() = ByteArray(SECONDS) { second -> (if (second < 25) 30 else 220).toByte() }
 

@@ -7,6 +7,7 @@ package com.convx.music.ui.screens.settings
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -15,21 +16,22 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
+import com.convx.music.ui.ios.compat.DropdownMenuItem
+import com.convx.music.ui.ios.compat.ExposedDropdownMenuBox
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.OutlinedTextField
+import com.convx.music.ui.ios.compat.Text
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,7 +39,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -46,14 +47,19 @@ import com.convx.music.LocalPlayerAwareWindowInsets
 import com.convx.music.R
 import com.convx.music.constants.EnabledModulesKey
 import com.convx.music.constants.ModuleSettingsKey
-import com.convx.music.ui.component.IconButton
+import com.convx.music.constants.FetchedModulesKey
 import com.convx.music.ui.component.ModernSwitch
 import com.convx.music.ui.theme.AppleTokens
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.utils.backToMain
 import com.convx.music.utils.rememberPreference
 import org.json.JSONArray
 import org.json.JSONObject
+import com.music.spine.ModuleManager
+import com.music.spine.SpineModule
+import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
+
+private val moduleDetailJson = Json { ignoreUnknownKeys = true }
 
 private val QUALITY_OPTIONS = listOf(
     "Lossless (FLAC 16-bit/44.1kHz)" to "LOSSLESS",
@@ -70,6 +76,24 @@ fun ModuleDetailScreen(
     scrollBehavior: TopAppBarScrollBehavior,
     moduleId: String,
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val (fetchedJson, _) = rememberPreference(FetchedModulesKey, defaultValue = "[]")
+    val module = remember(fetchedJson, moduleId) {
+        runCatching {
+            moduleDetailJson.decodeFromString<List<SpineModule>>(fetchedJson)
+                .firstOrNull { it.id == moduleId }
+        }.getOrNull()
+    }
+    var runtime by remember(moduleId) { mutableStateOf<ModuleManager.LoadedModule?>(null) }
+    LaunchedEffect(module) {
+        val descriptor = module?.takeIf { it.download.startsWith("https://") } ?: return@LaunchedEffect
+        ModuleManager.cacheDir = context.filesDir.resolve("module-scripts")
+        runtime = ModuleManager.shared.loadModule(descriptor).getOrNull()
+    }
+    val qualityOptions = runtime?.manifest?.settings?.get("quality")?.options
+        ?.takeIf { it.isNotEmpty() }?.map { it.label to it.value } ?: QUALITY_OPTIONS
+    val qualityDefault = runtime?.manifest?.defaults?.get("quality").orEmpty()
     val (enabledJson, onEnabledJsonChange) = rememberPreference(EnabledModulesKey, defaultValue = "[]")
     val (moduleSettingsJson, onModuleSettingsJsonChange) = rememberPreference(ModuleSettingsKey, defaultValue = "{}")
 
@@ -87,6 +111,7 @@ fun ModuleDetailScreen(
         if (current.contains(moduleId)) current.remove(moduleId) else current.add(moduleId)
         val arr = JSONArray()
         current.forEach { arr.put(it) }
+        ModuleManager.shared.unloadModule(moduleId)
         onEnabledJsonChange(arr.toString())
     }
 
@@ -104,6 +129,7 @@ fun ModuleDetailScreen(
         val obj = runCatching { JSONObject(moduleSettingsJson) }.getOrElse { JSONObject() }
         val inner = obj.optJSONObject(moduleId) ?: JSONObject()
         inner.put(key, value)
+        ModuleManager.shared.unloadModule(moduleId)
         obj.put(moduleId, inner)
         onModuleSettingsJsonChange(obj.toString())
     }
@@ -113,28 +139,22 @@ fun ModuleDetailScreen(
 
     val currentQuality = moduleSettings["quality"] ?: ""
     val currentTidalQuality = moduleSettings["tidalQuality"] ?: ""
+    var checking by remember(moduleId) { mutableStateOf(false) }
+    var checkStatus by remember(moduleId) { mutableStateOf<String?>(null) }
 
-    Column(
-        Modifier
-            .windowInsetsPadding(
-                LocalPlayerAwareWindowInsets.current.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom)
-            )
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp)
+    SettingsPage(
+        navController = navController,
+        title = stringResource(R.string.module_detail),
+        pageColor = AppTheme.colorScheme.background,
+        horizontalPadding = 24.dp,
     ) {
-        Spacer(
-            Modifier.windowInsetsPadding(
-                LocalPlayerAwareWindowInsets.current.only(WindowInsetsSides.Top)
-            )
-        )
-
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(50))
                 .background(
-                    if (isEnabled) MaterialTheme.colorScheme.primaryContainer
-                    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    if (isEnabled) AppTheme.colorScheme.primaryContainer
+                    else AppTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                 )
                 .padding(horizontal = 24.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -142,9 +162,9 @@ fun ModuleDetailScreen(
         ) {
             Text(
                 text = stringResource(R.string.enable_module),
-                style = MaterialTheme.typography.titleMedium,
-                color = if (isEnabled) MaterialTheme.colorScheme.onPrimaryContainer
-                else MaterialTheme.colorScheme.onSurfaceVariant,
+                style = AppTheme.typography.titleMedium,
+                color = if (isEnabled) AppTheme.colorScheme.onPrimaryContainer
+                else AppTheme.colorScheme.onSurfaceVariant,
             )
             ModernSwitch(
                 checked = isEnabled,
@@ -156,8 +176,8 @@ fun ModuleDetailScreen(
 
         Text(
             text = stringResource(R.string.module_info),
-            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = AppTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+            color = AppTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(bottom = 8.dp),
         )
 
@@ -165,30 +185,62 @@ fun ModuleDetailScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(AppleTokens.CardCorner))
-                .background(MaterialTheme.colorScheme.surfaceContainer)
+                .background(AppTheme.colorScheme.surfaceContainer)
                 .padding(16.dp),
         ) {
+            module?.let {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    ModuleLogo(it)
+                    Spacer(Modifier.size(12.dp))
+                    Column {
+                        Text(it.name, style = AppTheme.typography.titleMedium)
+                        Text("${it.author} · ${it.version}", style = AppTheme.typography.bodySmall)
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+            }
             ModuleInfoRow(stringResource(R.string.module_id), moduleId)
             ModuleInfoRow(
                 stringResource(R.string.module_status),
                 if (isEnabled) stringResource(R.string.enabled) else stringResource(R.string.disabled)
             )
+            module?.takeIf { it.download.startsWith("https://") }?.let { descriptor ->
+                com.convx.music.ui.ios.compat.TextButton(
+                    enabled = !checking,
+                    onClick = {
+                        scope.launch {
+                            checking = true
+                            try {
+                                ModuleManager.cacheDir = context.filesDir.resolve("module-scripts")
+                                val result = ModuleManager.shared.loadModule(descriptor)
+                                runtime = result.getOrNull()
+                                checkStatus = context.getString(
+                                    if (result.isSuccess) R.string.module_ready else R.string.module_load_failed,
+                                )
+                            } finally {
+                                checking = false
+                            }
+                        }
+                    },
+                ) { Text(stringResource(R.string.module_check)) }
+                checkStatus?.let { Text(it, style = AppTheme.typography.bodySmall) }
+            }
         }
 
         Spacer(Modifier.height(24.dp))
 
         Text(
-            text = stringResource(R.string.module_description),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            text = module?.description?.takeIf { it.isNotBlank() } ?: stringResource(R.string.module_description),
+            style = AppTheme.typography.bodyMedium,
+            color = AppTheme.colorScheme.onSurfaceVariant,
         )
 
         Spacer(Modifier.height(24.dp))
 
         Text(
             text = "QUALITY SETTINGS",
-            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = AppTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+            color = AppTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(bottom = 8.dp),
         )
 
@@ -196,13 +248,13 @@ fun ModuleDetailScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(AppleTokens.CardCorner))
-                .background(MaterialTheme.colorScheme.surfaceContainer)
+                .background(AppTheme.colorScheme.surfaceContainer)
                 .padding(16.dp),
         ) {
             Text(
-                text = "Primary Quality",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                text = runtime?.manifest?.settings?.get("quality")?.label?.takeIf { it.isNotBlank() } ?: "Primary Quality",
+                style = AppTheme.typography.bodyMedium,
+                color = AppTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(6.dp))
             ExposedDropdownMenuBox(
@@ -210,7 +262,7 @@ fun ModuleDetailScreen(
                 onExpandedChange = { qualityExpanded = it },
             ) {
                 OutlinedTextField(
-                    value = QUALITY_OPTIONS.find { it.second == currentQuality }?.first ?: "Default",
+                    value = qualityOptions.find { it.second == currentQuality.ifBlank { qualityDefault } }?.first ?: "Default",
                     onValueChange = {},
                     readOnly = true,
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = qualityExpanded) },
@@ -229,7 +281,7 @@ fun ModuleDetailScreen(
                             qualityExpanded = false
                         },
                     )
-                    QUALITY_OPTIONS.forEach { (label, value) ->
+                    qualityOptions.forEach { (label, value) ->
                         DropdownMenuItem(
                             text = { Text(label) },
                             onClick = {
@@ -241,12 +293,19 @@ fun ModuleDetailScreen(
                 }
             }
 
+            runtime?.manifest?.settings?.get("quality")?.description?.takeIf { it.isNotBlank() }?.let {
+                Text(it, style = AppTheme.typography.bodySmall, color = AppTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp))
+            }
+
+            if (runtime == null || runtime?.manifest?.settings.isNullOrEmpty() ||
+                runtime?.manifest?.settings?.containsKey("tidalQuality") == true) {
             Spacer(Modifier.height(16.dp))
 
             Text(
                 text = "Tidal Fallback Quality",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = AppTheme.typography.bodyMedium,
+                color = AppTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(6.dp))
             ExposedDropdownMenuBox(
@@ -284,26 +343,20 @@ fun ModuleDetailScreen(
                     }
                 }
             }
+            }
+            runtime?.manifest?.settings?.filterKeys { it != "quality" && it != "tidalQuality" }?.forEach { (key, setting) ->
+                Spacer(Modifier.height(16.dp))
+                ModuleDeclaredSetting(
+                    setting = setting,
+                    value = moduleSettings[key] ?: runtime?.manifest?.defaults?.get(key).orEmpty(),
+                    onChange = { updateModuleSetting(key, it) },
+                )
+            }
         }
 
         Spacer(Modifier.height(36.dp))
+    
     }
-
-    TopAppBar(
-        windowInsets = appTopBarWindowInsets(),
-        title = { Text(stringResource(R.string.module_detail)) },
-        navigationIcon = {
-            IconButton(
-                onClick = navController::navigateUp,
-                onLongClick = navController::backToMain,
-            ) {
-                Icon(
-                    painterResource(R.drawable.arrow_back),
-                    contentDescription = null,
-                )
-            }
-        },
-    )
 }
 
 @Composable
@@ -316,13 +369,13 @@ private fun ModuleInfoRow(label: String, value: String) {
     ) {
         Text(
             text = label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = AppTheme.typography.bodyMedium,
+            color = AppTheme.colorScheme.onSurfaceVariant,
         )
         Text(
             text = value,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface,
+            style = AppTheme.typography.bodyMedium,
+            color = AppTheme.colorScheme.onSurface,
         )
     }
 }

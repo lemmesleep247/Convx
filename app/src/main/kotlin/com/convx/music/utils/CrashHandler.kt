@@ -12,6 +12,7 @@ import com.convx.music.BuildConfig
 import com.convx.music.ui.screens.CrashActivity
 import timber.log.Timber
 import java.io.PrintWriter
+import java.io.File
 import java.io.StringWriter
 import kotlin.system.exitProcess
 
@@ -23,38 +24,35 @@ class CrashHandler private constructor(
         Thread.getDefaultUncaughtExceptionHandler()
 
     override fun uncaughtException(thread: Thread, throwable: Throwable) {
-        // media3's MediaNotificationManager calls the platform's (final,
-        // un-overridable) Service.startForeground() directly and
-        // asynchronously — a posted Handler callback, not on a frame app
-        // code controls — so this global handler is the only remaining
-        // place to catch a promotion the OS refused (app backgrounded past
-        // its foreground-service grace window; confirmed via a real device
-        // crash log, Samsung/Android 16, app 1.5.1). The OS already refused
-        // the promotion; there's nothing to recover except not killing the
-        // process over it — the notification just stays unpromoted until
-        // playback next starts in the foreground normally.
+        // Media3 promotes the service asynchronously, outside app-controlled code.
+        // Ignore Android 12+ refusals; playback can retry when it starts in foreground.
         if (Build.VERSION.SDK_INT >= 31 &&
             throwable is android.app.ForegroundServiceStartNotAllowedException
         ) {
             Timber.tag("CrashHandler").w(throwable, "Foreground service start refused by platform — ignoring, not crashing")
             return
         }
+        // Restore closes Room and exits after replacing the database file.
+        // Ignore queries still in flight against the closed database.
+        if (databaseCloseExpected && throwable is android.database.SQLException) {
+            Timber.tag("CrashHandler").w(throwable, "SQLException during expected restore DB close — ignoring, process is already exiting")
+            return
+        }
         try {
             val crashLog = buildCrashLog(throwable)
             Timber.e(throwable, "App crashed")
+            // Reports can exceed Binder's transaction limit. The isolated recovery
+            // process reads this private file after the failing process exits.
+            File(applicationContext.filesDir, CRASH_REPORT_FILE).writeText(crashLog)
             
-            // Launch crash activity
             val intent = Intent(applicationContext, CrashActivity::class.java).apply {
-                putExtra(EXTRA_CRASH_LOG, crashLog)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
             }
             applicationContext.startActivity(intent)
             
-            // Kill the current process
             android.os.Process.killProcess(android.os.Process.myPid())
             exitProcess(1)
         } catch (e: Exception) {
-            // If we fail to handle the crash, fall back to default handler
             Timber.e(e, "Error handling crash")
             defaultHandler?.uncaughtException(thread, throwable)
         }
@@ -84,6 +82,12 @@ class CrashHandler private constructor(
 
     companion object {
         const val EXTRA_CRASH_LOG = "crash_log"
+        const val CRASH_REPORT_FILE = "last_crash_report.txt"
+
+        /** Set by [com.convx.music.viewmodels.BackupRestoreViewModel] right before it closes
+         *  the shared database ahead of an intentional process exit. See the guard above. */
+        @Volatile
+        var databaseCloseExpected: Boolean = false
 
         fun install(context: Context) {
             val handler = CrashHandler(context.applicationContext)

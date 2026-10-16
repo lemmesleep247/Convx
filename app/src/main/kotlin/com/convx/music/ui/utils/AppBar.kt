@@ -115,11 +115,7 @@ class AppBarScrollBehavior(
                         state.contentOffset = 0f
                     }
                 }
-                // The bar's position is a function of how far the content is from its top,
-                // not of the last gesture's direction. Accumulating consumed.y instead
-                // (which is what this was) brought the bar back on any upward flick, so it
-                // reappeared in the middle of a list over content it had nothing to do with.
-                // Tied to contentOffset it is only on screen near the actual top.
+                // Derive the bar position from scroll offset so it only appears near the list top.
                 state.heightOffset = state.contentOffset.coerceIn(state.heightOffsetLimit, 0f)
                 return Offset.Zero
             }

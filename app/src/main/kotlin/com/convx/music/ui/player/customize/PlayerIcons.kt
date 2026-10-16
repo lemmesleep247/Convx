@@ -5,15 +5,33 @@
 
 package com.convx.music.ui.player.customize
 
+import androidx.compose.ui.unit.dp
 import android.content.Context
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -51,16 +69,16 @@ enum class PlayerIconSlot(
     SEEK_THUMB(R.drawable.play_applemusic, R.string.player_icon_seek_thumb),
 
     // V2 Apple Music Player slots
-    V2_PLAY(R.drawable.play_applemusic, R.string.v2_player_icon_play, isV2 = true),
-    V2_PAUSE(R.drawable.pause_applemusic, R.string.v2_player_icon_pause, isV2 = true),
-    V2_PREVIOUS(R.drawable.apple_skip_previous, R.string.v2_player_icon_previous, isV2 = true),
-    V2_NEXT(R.drawable.apple_skip_next, R.string.v2_player_icon_next, isV2 = true),
-    V2_LIKE(R.drawable.favorite_border, R.string.v2_player_icon_like, isV2 = true),
-    V2_LIKED(R.drawable.favorite, R.string.v2_player_icon_liked, isV2 = true),
-    V2_MORE(R.drawable.more_horiz, R.string.v2_player_icon_more, isV2 = true),
-    V2_LYRICS(R.drawable.apple_lyrics, R.string.v2_player_icon_lyrics, isV2 = true),
-    V2_QUEUE(R.drawable.apple_queue, R.string.v2_player_icon_queue, isV2 = true),
-    V2_VOLUME_DOWN(R.drawable.speaker_apple, R.string.v2_player_icon_volume, isV2 = true),
+    V2_PLAY(R.drawable.flamingo_play, R.string.v2_player_icon_play, isV2 = true),
+    V2_PAUSE(R.drawable.flamingo_pause, R.string.v2_player_icon_pause, isV2 = true),
+    V2_PREVIOUS(R.drawable.flamingo_rewind, R.string.v2_player_icon_previous, isV2 = true),
+    V2_NEXT(R.drawable.flamingo_fforward, R.string.v2_player_icon_next, isV2 = true),
+    V2_LIKE(R.drawable.flamingo_favorite, R.string.v2_player_icon_like, isV2 = true),
+    V2_LIKED(R.drawable.flamingo_favorited, R.string.v2_player_icon_liked, isV2 = true),
+    V2_MORE(R.drawable.flamingo_more, R.string.v2_player_icon_more, isV2 = true),
+    V2_LYRICS(R.drawable.flamingo_lyrics, R.string.v2_player_icon_lyrics, isV2 = true),
+    V2_QUEUE(R.drawable.flamingo_queue, R.string.v2_player_icon_queue, isV2 = true),
+    V2_VOLUME_DOWN(R.drawable.flamingo_volume, R.string.v2_player_icon_volume, isV2 = true),
     ;
 
     /** Slider thumbs are decorative-only and hidden unless the user supplies an image. */
@@ -198,8 +216,56 @@ fun PlayerGlyph(
     modifier: Modifier = Modifier,
     contentDescription: String? = null,
 ) {
-    val resolved = if (slot != null) rememberPlayerIcon(slot) else null
+    val resolved = if (slot != null) rememberPlayerIcon(slot).takeIf { it.isCustom } else null
     val painter = resolved?.painter ?: painterResource(fallback)
+    val isLike = slot == PlayerIconSlot.LIKE || slot == PlayerIconSlot.LIKED
+    // The heart eases between its outline and filled looks, and pops when it becomes liked.
+    val shownTint = if (isLike) {
+        androidx.compose.animation.animateColorAsState(tint, tween(220), label = "heartTint").value
+    } else tint
+    val filter = when {
+        resolved == null -> ColorFilter.tint(shownTint)
+        else -> resolved.colorFilterFor(shownTint)
+    }
+    val pop = remember { androidx.compose.animation.core.Animatable(1f) }
+    var settled by remember { androidx.compose.runtime.mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(slot) {
+        if (settled && slot == PlayerIconSlot.LIKED) {
+            pop.animateTo(1.4f, tween(90))
+            pop.animateTo(1f, spring(dampingRatio = 0.35f, stiffness = 380f))
+        }
+        settled = true
+    }
+    androidx.compose.animation.Crossfade(
+        targetState = painter,
+        animationSpec = tween(if (isLike) 180 else 0),
+        label = "glyph",
+    ) { shown ->
+        Image(
+            painter = shown,
+            contentDescription = contentDescription,
+            contentScale = ContentScale.Fit,
+            colorFilter = filter,
+            modifier = if (isLike) modifier.graphicsLayer { scaleX = pop.value; scaleY = pop.value } else modifier,
+        )
+    }
+}
+
+/**
+ * [PlayerGlyph] variant rendering an SF Symbol ([ImageVector]) as the stock glyph instead of a
+ * [androidx.annotation.DrawableRes]. Custom-image overrides for [slot] still win; only the default
+ * glyph source differs.
+ */
+@Composable
+fun PlayerGlyph(
+    slot: PlayerIconSlot?,
+    fallbackVector: ImageVector,
+    tint: androidx.compose.ui.graphics.Color,
+    modifier: Modifier = Modifier,
+    contentDescription: String? = null,
+) {
+    val resolved = if (slot != null) rememberPlayerIcon(slot).takeIf { it.isCustom } else null
+    val painter = resolved?.painter ?: rememberVectorPainter(fallbackVector)
     val filter = when {
         resolved == null -> ColorFilter.tint(tint)
         else -> resolved.colorFilterFor(tint)
@@ -211,6 +277,143 @@ fun PlayerGlyph(
         colorFilter = filter,
         modifier = modifier,
     )
+}
+
+/**
+ * [PlayerGlyph] drawing the stock glyph as a bold hierarchical SF Symbol with the shared chrome.
+ * A user's custom image for [slot] still wins.
+ */
+@Composable
+fun PlayerGlyph(
+    slot: PlayerIconSlot?,
+    fallbackSymbol: com.composables.sfsymbols.SfSymbol,
+    tint: androidx.compose.ui.graphics.Color,
+    modifier: Modifier = Modifier,
+    contentDescription: String? = null,
+    size: androidx.compose.ui.unit.Dp = 22.dp,
+    bounce: Boolean = false,
+) {
+    val resolved = if (slot != null) rememberPlayerIcon(slot).takeIf { it.isCustom } else null
+    if (resolved != null) {
+        Image(
+            painter = resolved.painter,
+            contentDescription = contentDescription,
+            contentScale = ContentScale.Fit,
+            colorFilter = resolved.colorFilterFor(tint),
+            modifier = modifier,
+        )
+    } else {
+        // The caller's modifier sizes the slot; the symbol sits centred inside it at [size].
+        androidx.compose.foundation.layout.Box(modifier, contentAlignment = androidx.compose.ui.Alignment.Center) {
+            com.convx.music.ui.component.SymbolIcon(
+                symbol = fallbackSymbol,
+                contentDescription = contentDescription,
+                size = size,
+                tint = tint,
+                bounceOnTouch = bounce,
+                // Black is the DstOut cut-out of an active tab disc: it must stay a plain mask.
+                chrome = if (tint == androidx.compose.ui.graphics.Color.Black) 0f else com.convx.music.ui.utils.MenuIconChrome,
+            )
+        }
+    }
+}
+
+/**
+ * [PlayerGlyph] for the play/pause button, popping between the two states instead of cutting.
+ *
+ * Flamingo's transport: the outgoing glyph shrinks to a third of its size as it fades, and
+ * the incoming one grows out of the same point. Swapping the drawable outright — which both
+ * players did — reads as a different button appearing rather than the same button changing
+ * its mind, and at this size that is the most-looked-at control on the screen.
+ *
+ * Still a [PlayerGlyph] underneath, so a user's custom play/pause icons animate too.
+ */
+@Composable
+fun AnimatedPlayerGlyph(
+    isPlaying: Boolean,
+    playSlot: PlayerIconSlot?,
+    pauseSlot: PlayerIconSlot?,
+    @DrawableRes playFallback: Int,
+    @DrawableRes pauseFallback: Int,
+    tint: androidx.compose.ui.graphics.Color,
+    modifier: Modifier = Modifier,
+    playDescription: String? = null,
+    pauseDescription: String? = null,
+    // Flamingo sizes play and pause differently (one dp apart) as an optical correction —
+    // the play triangle reads smaller than the pause bars at identical bounding-box size.
+    // Null keeps the old fillMaxSize-of-modifier behaviour for callers that don't care.
+    playSize: androidx.compose.ui.unit.Dp? = null,
+    pauseSize: androidx.compose.ui.unit.Dp? = null,
+) {
+    AnimatedContent(
+        targetState = isPlaying,
+        transitionSpec = {
+            // Apple Music (designRefrence/GVRecorder_1788117512105~3.mp4): the outgoing glyph is
+            // already shrunk under the finger and just goes; the incoming one springs up from
+            // ~0.2x with a slight settle while the press disc fades behind it.
+            (scaleIn(spring(dampingRatio = 0.75f, stiffness = 500f), initialScale = 0.2f) + fadeIn(tween(120)))
+                .togetherWith(
+                    scaleOut(tween(100, easing = FastOutSlowInEasing), targetScale = 0.2f) + fadeOut(tween(90)),
+                )
+                .using(SizeTransform(clip = false))
+        },
+        contentKey = { it },
+        label = "player_play_pause",
+        modifier = modifier,
+    ) { playing ->
+        val explicitSize = if (playing) pauseSize else playSize
+        PlayerGlyph(
+            slot = if (playing) pauseSlot else playSlot,
+            fallback = if (playing) pauseFallback else playFallback,
+            tint = tint,
+            contentDescription = if (playing) pauseDescription else playDescription,
+            modifier = if (explicitSize != null) Modifier.size(explicitSize) else Modifier.fillMaxSize(),
+        )
+    }
+}
+
+/**
+ * [AnimatedPlayerGlyph] vector-fallback variant — see the [ImageVector] overload of [PlayerGlyph].
+ */
+@Composable
+fun AnimatedPlayerGlyph(
+    isPlaying: Boolean,
+    playSlot: PlayerIconSlot?,
+    pauseSlot: PlayerIconSlot?,
+    playFallbackVector: ImageVector,
+    pauseFallbackVector: ImageVector,
+    tint: androidx.compose.ui.graphics.Color,
+    modifier: Modifier = Modifier,
+    playDescription: String? = null,
+    pauseDescription: String? = null,
+    playSize: androidx.compose.ui.unit.Dp? = null,
+    pauseSize: androidx.compose.ui.unit.Dp? = null,
+) {
+    AnimatedContent(
+        targetState = isPlaying,
+        transitionSpec = {
+            // Apple Music (designRefrence/GVRecorder_1788117512105~3.mp4): the outgoing glyph is
+            // already shrunk under the finger and just goes; the incoming one springs up from
+            // ~0.2x with a slight settle while the press disc fades behind it.
+            (scaleIn(spring(dampingRatio = 0.75f, stiffness = 500f), initialScale = 0.2f) + fadeIn(tween(120)))
+                .togetherWith(
+                    scaleOut(tween(100, easing = FastOutSlowInEasing), targetScale = 0.2f) + fadeOut(tween(90)),
+                )
+                .using(SizeTransform(clip = false))
+        },
+        contentKey = { it },
+        label = "player_play_pause",
+        modifier = modifier,
+    ) { playing ->
+        val explicitSize = if (playing) pauseSize else playSize
+        PlayerGlyph(
+            slot = if (playing) pauseSlot else playSlot,
+            fallbackVector = if (playing) pauseFallbackVector else playFallbackVector,
+            tint = tint,
+            contentDescription = if (playing) pauseDescription else playDescription,
+            modifier = if (explicitSize != null) Modifier.size(explicitSize) else Modifier.fillMaxSize(),
+        )
+    }
 }
 
 /**

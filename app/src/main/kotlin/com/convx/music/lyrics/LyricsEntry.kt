@@ -22,7 +22,7 @@ data class LyricsEntry(
     val agent: String? = null,
     val isBackground: Boolean = false
 ) : Comparable<LyricsEntry> {
-    override fun compareTo(other: LyricsEntry): Int = (time - other.time).toInt()
+    override operator fun compareTo(other: LyricsEntry): Int = (time - other.time).toInt()
 
     companion object {
         val HEAD_LYRICS_ENTRY = LyricsEntry(0L, "")

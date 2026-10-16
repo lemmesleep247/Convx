@@ -5,6 +5,10 @@
 
 package com.convx.music.ui.screens.recognition
 
+import com.convx.music.ui.component.sf
+import com.convx.music.ui.component.SymbolIcon
+import com.convx.music.utils.openSearchResults
+
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -38,18 +42,18 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
+import com.convx.music.ui.ios.compat.Button
+import com.convx.music.ui.ios.compat.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
+import com.convx.music.ui.ios.compat.FilledTonalButton
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.IconButton
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.OutlinedButton
+import com.convx.music.ui.ios.compat.Scaffold
+import com.convx.music.ui.ios.compat.Text
+import com.convx.music.ui.ios.compat.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -67,7 +71,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -76,16 +79,28 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.navigation.NavController
 import coil3.compose.AsyncImage
+import com.composables.sfsymbols.SfSymbols
+import com.composables.sfsymbols.monochrome.SFArrowClockwise
+import com.composables.sfsymbols.monochrome.SFClock
+import com.composables.sfsymbols.monochrome.SFExclamationmarkTriangle
+import com.composables.sfsymbols.monochrome.SFMicrophone
+import com.composables.sfsymbols.monochrome.SFMusicNote
+import com.composables.sfsymbols.monochrome.SFPlayFill
+import com.composables.sfsymbols.monochrome.SFXmark
 import com.convx.music.LocalDatabase
 import com.convx.music.R
 import com.convx.music.db.entities.RecognitionHistory
 import com.convx.music.ui.component.IconButton
+import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.utils.backToMain
 import com.music.shazamkit.models.RecognitionResult
 import com.music.shazamkit.models.RecognitionStatus
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.time.LocalDateTime
+import com.convx.music.ui.component.ScreenScaffold
+import com.convx.music.ui.component.topBarContentPadding
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -93,23 +108,20 @@ fun RecognitionScreen(
     navController: NavController
 ) {
     val context = LocalContext.current
-    val database = LocalDatabase.current
+    val database = LocalDatabase.current.get()
     val coroutineScope = rememberCoroutineScope()
     
-    // Reset recognition status when entering the screen
     LaunchedEffect(Unit) {
         com.convx.music.recognition.MusicRecognitionService.reset()
     }
     
-    // Reset recognition status when leaving the screen
     DisposableEffect(Unit) {
         onDispose {
             com.convx.music.recognition.MusicRecognitionService.reset()
         }
     }
     
-    // Observe recognition status from service for real-time updates (Listening -> Processing -> Result)
-    val recognitionStatus by com.convx.music.recognition.MusicRecognitionService.recognitionStatus.collectAsState()
+    val recognitionStatus by com.convx.music.recognition.MusicRecognitionService.recognitionStatus.collectAsStateWithLifecycle()
     
     var hasPermission by remember {
         mutableStateOf(
@@ -169,36 +181,22 @@ fun RecognitionScreen(
         }
     }
     
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.recognize_music)) },
-                navigationIcon = {
-                    IconButton(
-                        onClick = { navController.navigateUp() },
-                        onLongClick = { navController.backToMain() }
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.arrow_back),
-                            contentDescription = null
-                        )
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { navController.navigate("recognition_history") }) {
-                        Icon(
-                            painter = painterResource(R.drawable.history),
-                            contentDescription = stringResource(R.string.recognition_history)
-                        )
-                    }
-                }
-            )
-        }
-    ) { paddingValues ->
+    ScreenScaffold(
+        title = stringResource(R.string.recognize_music),
+        // A single centred listening view, nothing scrolls under the bar.
+        titleAlpha = 1f,
+        onBack = { navController.navigateUp() },
+        onBackLongClick = { navController.backToMain() },
+        actions = {
+            IconButton(onClick = { navController.navigate("recognition_history") }) {
+                SymbolIcon(symbol = sf("SFClock"), contentDescription = stringResource(R.string.recognition_history))
+            }
+        },
+    ) { chrome ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
+                .padding(top = topBarContentPadding())
                 .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
@@ -228,7 +226,7 @@ fun RecognitionScreen(
                             onPlayOnApp = { result ->
                                 // Search for the track on YouTube Music
                                 val searchQuery = "${result.title} ${result.artist}"
-                                navController.navigate("search/${java.net.URLEncoder.encode(searchQuery, "UTF-8")}")
+                                navController.openSearchResults(searchQuery)
                             },
                             onTryAgain = {
                                 startRecognition()
@@ -274,8 +272,8 @@ private fun ReadyState(
                 .background(
                     Brush.radialGradient(
                         colors = listOf(
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                            AppTheme.colorScheme.primary.copy(alpha = 0.3f),
+                            AppTheme.colorScheme.primary.copy(alpha = 0.1f),
                             Color.Transparent
                         )
                     )
@@ -287,22 +285,17 @@ private fun ReadyState(
                 modifier = Modifier
                     .size(160.dp)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary),
+                    .background(AppTheme.colorScheme.primary),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    painter = painterResource(R.drawable.mic),
-                    contentDescription = null,
-                    modifier = Modifier.size(64.dp),
-                    tint = MaterialTheme.colorScheme.onPrimary
-                )
+SymbolIcon(symbol = sf("SFMicrophone"), contentDescription = null, size = 64.dp, tint = AppTheme.colorScheme.onPrimary)
             }
         }
         
         Text(
             text = stringResource(R.string.tap_to_recognize),
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface
+            style = AppTheme.typography.titleMedium,
+            color = AppTheme.colorScheme.onSurface
         )
     }
 }
@@ -337,7 +330,7 @@ private fun ListeningState(
                     .size(200.dp)
                     .graphicsLayer { scaleX = scale; scaleY = scale }
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+                    .background(AppTheme.colorScheme.primary.copy(alpha = 0.2f))
             )
 
             // Inner pulsing ring
@@ -346,31 +339,25 @@ private fun ListeningState(
                     .size(180.dp)
                     .graphicsLayer { scaleX = scale * 0.9f; scaleY = scale * 0.9f }
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
+                    .background(AppTheme.colorScheme.primary.copy(alpha = 0.3f))
             )
             
-            // Main button
             Box(
                 modifier = Modifier
                     .size(160.dp)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary)
+                    .background(AppTheme.colorScheme.primary)
                     .bounceClick { onCancel() },
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    painter = painterResource(R.drawable.mic),
-                    contentDescription = null,
-                    modifier = Modifier.size(64.dp),
-                    tint = MaterialTheme.colorScheme.onPrimary
-                )
+SymbolIcon(symbol = sf("SFMicrophone"), contentDescription = null, size = 64.dp, tint = AppTheme.colorScheme.onPrimary)
             }
         }
         
         Text(
             text = stringResource(R.string.listening),
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.primary
+            style = AppTheme.typography.titleMedium,
+            color = AppTheme.colorScheme.primary
         )
         
         OutlinedButton(onClick = onCancel) {
@@ -407,29 +394,24 @@ private fun ProcessingState() {
                         width = 4.dp,
                         brush = Brush.sweepGradient(
                             colors = listOf(
-                                MaterialTheme.colorScheme.primary,
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                                AppTheme.colorScheme.primary,
+                                AppTheme.colorScheme.primary.copy(alpha = 0.5f),
                                 Color.Transparent,
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
-                                MaterialTheme.colorScheme.primary
+                                AppTheme.colorScheme.primary.copy(alpha = 0.5f),
+                                AppTheme.colorScheme.primary
                             )
                         ),
                         shape = CircleShape
                     )
             )
             
-            Icon(
-                painter = painterResource(R.drawable.music_note),
-                contentDescription = null,
-                modifier = Modifier.size(48.dp),
-                tint = MaterialTheme.colorScheme.primary
-            )
+            SymbolIcon(symbol = sf("SFMusicNote"), contentDescription = null, size = 48.dp, tint = AppTheme.colorScheme.primary)
         }
         
         Text(
             text = stringResource(R.string.processing),
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface
+            style = AppTheme.typography.titleMedium,
+            color = AppTheme.colorScheme.onSurface
         )
     }
 }
@@ -442,7 +424,6 @@ private fun SuccessState(
     onClose: () -> Unit,
     onSaveToHistory: (RecognitionResult) -> Unit
 ) {
-    // Save to history when success is shown
     LaunchedEffect(result) {
         onSaveToHistory(result)
     }
@@ -452,7 +433,6 @@ private fun SuccessState(
         verticalArrangement = Arrangement.spacedBy(16.dp),
         modifier = Modifier.padding(horizontal = 16.dp)
     ) {
-        // Album art
         Card(
             modifier = Modifier
                 .size(180.dp)
@@ -470,10 +450,9 @@ private fun SuccessState(
         
         Spacer(modifier = Modifier.height(8.dp))
         
-        // Track info
         Text(
             text = result.title,
-            style = MaterialTheme.typography.headlineSmall,
+            style = AppTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center,
             maxLines = 2,
@@ -482,8 +461,8 @@ private fun SuccessState(
         
         Text(
             text = result.artist,
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = AppTheme.typography.titleMedium,
+            color = AppTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
@@ -492,8 +471,8 @@ private fun SuccessState(
         result.album?.let { album ->
             Text(
                 text = album,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                style = AppTheme.typography.bodyMedium,
+                color = AppTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                 textAlign = TextAlign.Center,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -511,11 +490,7 @@ private fun SuccessState(
                 onClick = { onPlayOnApp(result) },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Icon(
-                    painter = painterResource(R.drawable.play),
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
+                SymbolIcon(symbol = sf("SFPlayFill"), contentDescription = null, size = 18.dp)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(stringResource(R.string.play_on_app))
             }
@@ -524,25 +499,16 @@ private fun SuccessState(
                 onClick = onTryAgain,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Icon(
-                    painter = painterResource(R.drawable.mic),
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
+                SymbolIcon(symbol = sf("SFMicrophone"), contentDescription = null, size = 18.dp)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(stringResource(R.string.re_listen))
             }
             
-            // Close button - Material 3 Expressive outlined style
             OutlinedButton(
                 onClick = onClose,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Icon(
-                    painter = painterResource(R.drawable.close),
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
+                SymbolIcon(symbol = sf("SFXmark"), contentDescription = null, size = 18.dp)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(stringResource(R.string.close))
             }
@@ -563,37 +529,28 @@ private fun NoMatchState(
             modifier = Modifier
                 .size(120.dp)
                 .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.errorContainer),
+                .background(AppTheme.colorScheme.errorContainer),
             contentAlignment = Alignment.Center
         ) {
-            Icon(
-                painter = painterResource(R.drawable.close),
-                contentDescription = null,
-                modifier = Modifier.size(48.dp),
-                tint = MaterialTheme.colorScheme.onErrorContainer
-            )
+            SymbolIcon(symbol = sf("SFXmark"), contentDescription = null, size = 48.dp, tint = AppTheme.colorScheme.onErrorContainer)
         }
         
         Text(
             text = stringResource(R.string.no_match_found),
-            style = MaterialTheme.typography.titleLarge,
+            style = AppTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold
         )
         
         Text(
             text = message,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = AppTheme.typography.bodyMedium,
+            color = AppTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(horizontal = 32.dp)
         )
         
         Button(onClick = onTryAgain) {
-            Icon(
-                painter = painterResource(R.drawable.refresh),
-                contentDescription = null,
-                modifier = Modifier.size(18.dp)
-            )
+            SymbolIcon(symbol = sf("SFArrowClockwise"), contentDescription = null, size = 18.dp)
             Spacer(modifier = Modifier.width(8.dp))
             Text(stringResource(R.string.try_again))
         }
@@ -613,37 +570,28 @@ private fun ErrorState(
             modifier = Modifier
                 .size(120.dp)
                 .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.errorContainer),
+                .background(AppTheme.colorScheme.errorContainer),
             contentAlignment = Alignment.Center
         ) {
-            Icon(
-                painter = painterResource(R.drawable.error),
-                contentDescription = null,
-                modifier = Modifier.size(48.dp),
-                tint = MaterialTheme.colorScheme.onErrorContainer
-            )
+            SymbolIcon(symbol = sf("SFExclamationmarkTriangle"), contentDescription = null, size = 48.dp, tint = AppTheme.colorScheme.onErrorContainer)
         }
         
         Text(
             text = stringResource(R.string.recognition_error),
-            style = MaterialTheme.typography.titleLarge,
+            style = AppTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold
         )
         
         Text(
             text = message,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = AppTheme.typography.bodyMedium,
+            color = AppTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(horizontal = 32.dp)
         )
         
         Button(onClick = onTryAgain) {
-            Icon(
-                painter = painterResource(R.drawable.refresh),
-                contentDescription = null,
-                modifier = Modifier.size(18.dp)
-            )
+            SymbolIcon(symbol = sf("SFArrowClockwise"), contentDescription = null, size = 18.dp)
             Spacer(modifier = Modifier.width(8.dp))
             Text(stringResource(R.string.try_again))
         }

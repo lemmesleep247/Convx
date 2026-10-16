@@ -6,70 +6,55 @@
 package com.convx.music.ui.screens.library
 
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
 import androidx.navigation.NavController
-import com.convx.music.R
 import com.convx.music.constants.ChipSortTypeKey
 import com.convx.music.constants.LibraryFilter
-import com.convx.music.ui.component.ChipsRow
-import com.convx.music.ui.component.HomeImageBackground
+import com.convx.music.ui.screens.library.apple.AppleAlbumsPage
+import com.convx.music.ui.screens.library.apple.AppleArtistsPage
+import com.convx.music.ui.screens.library.apple.AppleLibraryDestination
+import com.convx.music.ui.screens.library.apple.AppleLibraryScreen
+import com.convx.music.ui.screens.library.apple.ApplePlaylistsPage
+import com.convx.music.ui.screens.library.apple.AppleSongsPage
+import com.convx.music.ui.screens.library.apple.AppleLocalSongsPage
 import com.convx.music.utils.rememberEnumPreference
 
 @Composable
 fun LibraryScreen(navController: NavController) {
     var filterType by rememberEnumPreference(ChipSortTypeKey, LibraryFilter.LIBRARY)
 
-    val filterContent = @Composable {
-        Row {
-            ChipsRow(
-                chips =
-                listOf(
-                    LibraryFilter.PLAYLISTS to stringResource(R.string.filter_playlists),
-                    LibraryFilter.SONGS to stringResource(R.string.filter_songs),
-                    LibraryFilter.ALBUMS to stringResource(R.string.filter_albums),
-                ),
-                currentValue = filterType,
-                onValueUpdate = {
-                    filterType =
-                        if (filterType == it) {
-                            LibraryFilter.LIBRARY
-                        } else {
-                            it
-                        }
-                },
-                modifier = Modifier.weight(1f),
-            )
-        }
-    }
-
-    Box(
-        modifier = Modifier.fillMaxSize(),
-    ) {
-        // Hoisted here (not per-tab) so switching Songs/Albums/Artists/Playlists
-        // doesn't lose the custom background — previously only LibraryMixScreen drew it.
-        HomeImageBackground(withGradient = true)
-
+    val back = { filterType = LibraryFilter.LIBRARY }
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Apple Music's Library and its lists: new screens on the plain system background.
         when (filterType) {
-            LibraryFilter.LIBRARY -> LibraryMixScreen(navController, filterContent)
-            LibraryFilter.PLAYLISTS -> LibraryPlaylistsScreen(navController, filterContent)
-            LibraryFilter.SONGS -> LibrarySongsScreen(
-                navController,
-                { filterType = LibraryFilter.LIBRARY })
-
-            LibraryFilter.ALBUMS -> LibraryAlbumsScreen(
-                navController,
-                { filterType = LibraryFilter.LIBRARY })
-
-            // Artists are no longer offered in Library, but the stored preference can
-            // still hold ARTISTS from a build that had the chip — fall back to the mixed
-            // view instead of leaving those users on a filter with no chip to leave it by.
-            LibraryFilter.ARTISTS -> LibraryMixScreen(navController, filterContent)
+            LibraryFilter.LIBRARY -> AppleLibraryScreen(
+                navController = navController,
+                onOpen = { destination ->
+                    when (destination) {
+                        AppleLibraryDestination.Playlists -> filterType = LibraryFilter.PLAYLISTS
+                        AppleLibraryDestination.Artists -> filterType = LibraryFilter.ARTISTS
+                        AppleLibraryDestination.Albums -> filterType = LibraryFilter.ALBUMS
+                        AppleLibraryDestination.Songs -> filterType = LibraryFilter.SONGS
+                        AppleLibraryDestination.Local -> filterType = LibraryFilter.LOCAL
+                        AppleLibraryDestination.Downloaded -> navController.navigate("auto_playlist/downloaded")
+                        AppleLibraryDestination.Liked -> navController.navigate("auto_playlist/liked")
+                        AppleLibraryDestination.Podcasts -> navController.navigate("auto_playlist/podcasts")
+                        AppleLibraryDestination.Cached -> navController.navigate("cache_playlist/cached")
+                        AppleLibraryDestination.Top -> navController.navigate("top_playlist/50")
+                        AppleLibraryDestination.Uploaded -> navController.navigate("auto_playlist/uploaded")
+                        AppleLibraryDestination.History -> navController.navigate("history")
+                    }
+                },
+            )
+            LibraryFilter.PLAYLISTS -> ApplePlaylistsPage(navController, back)
+            LibraryFilter.SONGS -> AppleSongsPage(navController, back)
+            LibraryFilter.ALBUMS -> AppleAlbumsPage(navController, back)
+            LibraryFilter.ARTISTS -> AppleArtistsPage(navController, back)
+            LibraryFilter.LOCAL -> AppleLocalSongsPage(navController, back)
         }
     }
 }

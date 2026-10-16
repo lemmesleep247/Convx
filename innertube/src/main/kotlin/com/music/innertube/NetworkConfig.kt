@@ -11,20 +11,15 @@ import kotlinx.serialization.json.Json
 import java.io.File
 import java.util.concurrent.TimeUnit
 
-/**
- * Enhanced network configuration for better performance and reliability
- * Inspired by ArchiveTune optimizations
- */
+/** Shared HTTP settings for YouTube API clients. */
 object NetworkConfig {
-    
-    // Timeout settings
+
     private const val CONNECT_TIMEOUT_SECONDS = 30L
     private const val READ_TIMEOUT_SECONDS = 60L
     private const val WRITE_TIMEOUT_SECONDS = 60L
     private const val REQUEST_TIMEOUT_MILLIS = 60000L
     
-    // Cache settings
-    private const val CACHE_SIZE_MB = 50L * 1024L * 1024L // 50 MB
+    private const val CACHE_SIZE_BYTES = 50L * 1024L * 1024L // 50 MiB
     
     @OptIn(ExperimentalSerializationApi::class)
     fun createOptimizedHttpClient(
@@ -55,41 +50,25 @@ object NetworkConfig {
 
         engine {
             config {
-                // Timeout configurations
                 connectTimeout(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
                 readTimeout(READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
                 writeTimeout(WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
                 
-                // Retry configuration
                 retryOnConnectionFailure(true)
                 
-                // Cache configuration
                 if (enableCache) {
                     val cacheDirectory = cacheDir ?: File(System.getProperty("java.io.tmpdir"), "vivimusic_http_cache")
-                    cache(okhttp3.Cache(cacheDirectory, CACHE_SIZE_MB))
+                    cache(okhttp3.Cache(cacheDirectory, CACHE_SIZE_BYTES))
                 }
             }
         }
     }
     
-    /**
-     * Create a client specifically optimized for YouTube Music API
-     */
-    @OptIn(ExperimentalSerializationApi::class)
-    fun createYouTubeMusicClient(
-        cacheDir: File? = null
-    ): HttpClient {
-        val baseClient = createOptimizedHttpClient(cacheDir)
-        return baseClient.config {
-            // Additional configuration can be added here if needed
-        }
-    }
-    
-    /**
-     * Network quality detection and adaptive configuration
-     */
-    fun getAdaptiveTimeouts(networkQuality: NetworkQuality): TimeoutConfig {
-        return when (networkQuality) {
+    fun createYouTubeMusicClient(cacheDir: File? = null): HttpClient =
+        createOptimizedHttpClient(cacheDir)
+
+    fun getAdaptiveTimeouts(networkQuality: NetworkQuality): TimeoutConfig =
+        when (networkQuality) {
             NetworkQuality.EXCELLENT -> TimeoutConfig(
                 connectTimeout = 10000L,
                 readTimeout = 30000L,
@@ -111,7 +90,6 @@ object NetworkConfig {
                 requestTimeout = REQUEST_TIMEOUT_MILLIS
             )
         }
-    }
     
     enum class NetworkQuality {
         EXCELLENT, GOOD, POOR, UNKNOWN

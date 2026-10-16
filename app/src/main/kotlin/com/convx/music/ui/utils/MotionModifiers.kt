@@ -10,8 +10,11 @@ import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.OverscrollEffect
 import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.rememberOverscrollEffect
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.MutableFloatState
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.mutableFloatStateOf
@@ -33,52 +36,34 @@ import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import com.convx.music.constants.IosOverscrollKey
 import com.convx.music.utils.rememberPreference
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.launch
 import kotlin.math.sign
 
-/**
- * Everything a hero screen needs for pull-to-zoom, so each one is two lines
- * instead of five: pass [scale] to `HeroBackground(heroScale = …)` and
- * [Modifier.heroPullZoom] to its list.
- *
- * [rawPull] is the distance the FINGER has travelled past the top edge; [offset]
- * is how far the content is actually allowed to move, which is [rubberBand] of
- * that. Keeping the two apart is the whole point: the previous version stored the
- * damped value and damped it *again* on each delta with
- * `resistance = (1 - pull/maxPull) * 0.5`, so the content moved at HALF finger
- * speed from the very first pixel and then hit a hard clamp at maxPull. Starting
- * at half speed is what made the pull feel cheap and disconnected — iOS tracks the
- * finger 1:1 at the start and only stiffens as you go, which is exactly what the
- * rubber band curve does.
- *
- * Both are plain [MutableFloatState]s rather than an
- * [androidx.compose.animation.core.Animatable] mutated via `scope.launch { snapTo(...) }`
- * on every scroll delta — that pattern let a fast drag queue up dozens of
- * coroutines racing each other (same bug class as the app's overscroll had),
- * and the zoom could get stuck mid-scale when one of them applied a stale
- * value after a newer one. Scroll-time updates are now a direct synchronous
- * write; a coroutine (and a real spring) is only used once, on release.
- */
+/** Current pull and visual recovery for a hero list's rubber-band movement. */
 @Stable
 class HeroZoom internal constructor(
     internal val rawPull: MutableFloatState,
-    /** List height in px, measured by [heroPullZoom]; the curve scales with it. */
+    internal val returnPull: MutableFloatState,
+    /** Viewport height in pixels. */
     internal val viewport: MutableFloatState,
     val maxPull: Float,
     val enabled: Boolean,
 ) {
-    /**
-     * How far the list is translated down, in px. Also what a hero image must
-     * grow by to keep covering the top of the screen while the list slides.
-     */
+    /** List translation in pixels. */
     val offset: Float
-        get() = if (enabled) rubberBand(rawPull.floatValue, viewport.floatValue) else 0f
+        get() = if (enabled) {
+            rubberBand(rawPull.floatValue + returnPull.floatValue, viewport.floatValue)
+        } else 0f
 
-    /**
-     * Zoom only responds to the TOP pull. The bottom edge shares the same offset
-     * (it is the same rubber band, just negative) but must not shrink the hero.
-     */
+    /** Only pulling past the top grows the artwork. */
     val scale: Float
         get() = if (enabled) 1f + (offset / maxPull).coerceIn(0f, 1f) * 0.18f else 1f
 }
@@ -86,34 +71,21 @@ class HeroZoom internal constructor(
 @Composable
 fun rememberHeroZoom(maxPull: Dp = 220.dp): HeroZoom {
     val rawPull = remember { mutableFloatStateOf(0f) }
+    val returnPull = remember { mutableFloatStateOf(0f) }
     val viewport = remember { mutableFloatStateOf(0f) }
     val maxPullPx = with(LocalDensity.current) { maxPull.toPx() }
     val enabled by rememberPreference(IosOverscrollKey, defaultValue = true)
-    return remember(rawPull, viewport, maxPullPx, enabled) {
-        HeroZoom(rawPull, viewport, maxPullPx, enabled)
+    return remember(rawPull, returnPull, viewport, maxPullPx, enabled) {
+        HeroZoom(rawPull, returnPull, viewport, maxPullPx, enabled)
     }
 }
 
-/**
- * What to pass as a hero list's `overscrollEffect`: null while [heroPullZoom] owns
- * BOTH edges (it would otherwise eat the leftover before the zoom connection ever
- * sees it), otherwise the ambient effect, so switching the motion preference off
- * leaves the list with normal overscroll rather than none at all.
- */
+/** [heroPullZoom] owns both edges when enabled; otherwise use the ambient effect. */
 @Composable
 fun HeroZoom.listOverscroll(): OverscrollEffect? =
     if (enabled) null else rememberOverscrollEffect()
 
-/**
- * Rubber-band overscroll for a hero-header list, on the same [rubberBand] curve as
- * the plain list bounce. The top pull additionally drives the zoom: pass
- * [HeroZoom.scale] to `HeroBackground(heroScale = …)`. The bottom edge is a plain
- * bounce. No-ops when the iOS-motion preference is off.
- *
- * Deliberately gesture-only: the top pull used to double as pull-to-refresh, which
- * meant a plain overscroll could kick off a network reload nobody asked for. The
- * stretch is a stretch now; reloading is the screen's own affair.
- */
+/** Moves the list with the pull and drives [HeroZoom.scale]; pulling does not refresh. */
 fun Modifier.heroPullZoom(
     zoom: HeroZoom,
 ): Modifier = composed {
@@ -121,113 +93,146 @@ fun Modifier.heroPullZoom(
 
     val rawPull = zoom.rawPull
     val viewport = zoom.viewport
-    val connection = remember(zoom) {
-        object : NestedScrollConnection {
-            // Scrolling back toward rest pays down the existing stretch before the
-            // list itself gets to scroll, otherwise the content jumps. In raw
-            // (finger) space, so the return trip is damped by the same curve as
-            // the outbound pull and the content tracks the finger symmetrically.
-            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                val curr = rawPull.floatValue
-                if (curr != 0f && available.y != 0f && sign(available.y) != sign(curr)) {
-                    val target = curr + available.y
-                    val settled = if (sign(target) != sign(curr)) 0f else target
-                    rawPull.floatValue = settled
-                    return Offset(0f, settled - curr)
-                }
-                return Offset.Zero
+    val scope = rememberCoroutineScope()
+    val connection = remember(zoom, scope) { HeroPullConnection(rawPull, zoom.returnPull, scope) }
+    DisposableEffect(connection) {
+        onDispose { connection.dispose() }
+    }
+    this
+        .onSizeChanged { viewport.floatValue = it.height.toFloat() }
+        .graphicsLayer { translationY = zoom.offset }
+        .pointerInput(connection) {
+            awaitEachGesture {
+                awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                connection.pauseReturnForTouch()
+                do {
+                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                } while (event.changes.any { it.pressed })
+                connection.finishTouch()
             }
+        }
+        .nestedScroll(connection)
+}
 
-            override fun onPostScroll(
-                consumed: Offset,
-                available: Offset,
-                source: NestedScrollSource,
-            ): Offset {
-                // Both edges: pulling down past the top drives the hero stretch,
-                // pushing up past the bottom is a plain bounce. The bottom used to
-                // do nothing at all here — heroPullZoom was top-only AND
-                // listOverscroll() hands these lists a null effect, so the bottom
-                // edge had no bounce of any kind.
-                //
-                // Drag only. Absorbing (and reporting as consumed) the leftover
-                // of a fling keeps the scrollable's decay animation alive for its
-                // full duration with the zoom held at max — it reads as the pull
-                // sticking, then snapping back late. Let the fling end at the
-                // edge instead; onPreFling below does the spring.
-                if (available.y == 0f || source != NestedScrollSource.UserInput) return Offset.Zero
-                // Accumulate the RAW finger distance; the resistance lives entirely
-                // in rubberBand, which starts 1:1 and stiffens as it goes rather
-                // than starting at half speed and clamping.
-                rawPull.floatValue += available.y
-                return available
-            }
+private class HeroPullConnection(
+    private val rawPull: MutableFloatState,
+    private val returnPull: MutableFloatState,
+    private val scope: CoroutineScope,
+) : NestedScrollConnection {
+    private var gestureGeneration = 0L
+    private var releasedGesture = 0L
+    private var releasedFling: Job? = null
+    private var reboundGeneration = 0L
+    private var reboundJob: Job? = null
+    private var disposed = false
 
-            override suspend fun onPreFling(available: Velocity): Velocity {
-                if (rawPull.floatValue != 0f) {
-                    // Critically damped: iOS returns and stops dead, it does not
-                    // wobble at the end, and a wobbling hero zoom is the tell.
-                    //
-                    // Tuning is shared with the plain-list bounce rather than set
-                    // here. This used to be Spring.StiffnessMedium (1500), roughly
-                    // 2.5x faster than the list bounce's 247 -- so the ~25 hero
-                    // screens (album, artist, charts, explore, history, library,
-                    // every playlist) snapped back on visibly different timing from
-                    // every other scroller in the app. It also seeded the spring
-                    // with NO velocity at all while consuming the whole fling, so a
-                    // hard flick into the top edge produced no overshoot whatsoever.
-                    val seedVelocity = bounceSeedVelocity(available.y)
-                    animate(
-                        initialValue = rawPull.floatValue,
-                        targetValue = 0f,
-                        initialVelocity = seedVelocity,
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioNoBouncy,
-                            stiffness = bounceStiffnessFor(seedVelocity),
-                        ),
-                    ) { value, _ -> rawPull.floatValue = value }
-                    return available
-                }
-                return Velocity.Zero
-            }
+    fun pauseReturnForTouch() {
+        gestureGeneration++
+        releasedFling = null
+        cancelRebound()
+        releaseActivePull()
+    }
 
-            /**
-             * The bounce for a flick that reaches an edge under its own momentum.
-             *
-             * This connection had no `onPostFling` at all, which is why hero screens
-             * (artist, album, every playlist, charts, explore, history, library) never
-             * overshot: [onPreFling] only springs when a stretch already exists, and a
-             * pure fling never builds one — [onPostScroll] ignores everything that is
-             * not `UserInput`, precisely so the scrollable's decay ends at the edge
-             * instead of being held at full stretch for its whole duration. So the
-             * leftover velocity arrived here and was dropped on the floor. Plain lists
-             * bounced anyway because the ambient effect owns their fling; these lists
-             * hand it a null effect (see [listOverscroll]) and own it themselves.
-             *
-             * Same spring and same seeding as [onPreFling] and the plain-list bounce,
-             * so a flick into an edge settles on identical timing everywhere.
-             */
-            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
-                if (available.y == 0f) return Velocity.Zero
-                val seedVelocity = bounceSeedVelocity(available.y)
+    fun finishTouch() {
+        // Release always springs back, even when no fling is dispatched after the touch.
+        if (rawPull.floatValue != 0f) startRebound(0f) else resumeReturnIfNeeded()
+    }
+
+    fun dispose() {
+        disposed = true
+        gestureGeneration++
+        releasedFling = null
+        cancelRebound()
+        rawPull.floatValue = 0f
+        returnPull.floatValue = 0f
+    }
+
+    private fun releaseActivePull() {
+        returnPull.floatValue += rawPull.floatValue
+        rawPull.floatValue = 0f
+    }
+
+    private fun resumeReturnIfNeeded() {
+        if (reboundJob == null && returnPull.floatValue != 0f) startRebound(0f)
+    }
+
+    private fun cancelRebound() {
+        reboundGeneration++
+        reboundJob?.cancel()
+        reboundJob = null
+    }
+
+    override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+        if (source == NestedScrollSource.UserInput) {
+            gestureGeneration++
+            resumeReturnIfNeeded()
+        }
+        val current = rawPull.floatValue
+        if (current != 0f && available.y != 0f && sign(available.y) != sign(current)) {
+            val target = current + available.y
+            val settled = if (sign(target) != sign(current)) 0f else target
+            rawPull.floatValue = settled
+            return Offset(0f, settled - current)
+        }
+        return Offset.Zero
+    }
+
+    override fun onPostScroll(
+        consumed: Offset,
+        available: Offset,
+        source: NestedScrollSource,
+    ): Offset {
+        if (available.y == 0f || source != NestedScrollSource.UserInput) return Offset.Zero
+        // Top edge only: a bottom pull dragged the whole list and left it stuck.
+        if (available.y < 0f && rawPull.floatValue <= 0f) return Offset.Zero
+        rawPull.floatValue += available.y
+        return Offset(0f, available.y)
+    }
+
+    override suspend fun onPreFling(available: Velocity): Velocity {
+        releasedGesture = gestureGeneration
+        releasedFling = currentCoroutineContext()[Job]
+        if (rawPull.floatValue == 0f) return Velocity.Zero
+        startRebound(available.y)
+        return Velocity(0f, available.y)
+    }
+
+    override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+        // A cancelled fling can finish after the user has touched down again.
+        if (disposed || releasedFling !== currentCoroutineContext()[Job] ||
+            releasedGesture != gestureGeneration
+        ) return Velocity.Zero
+        releasedFling = null
+        if (available.y == 0f) return Velocity.Zero
+        startRebound(available.y)
+        return Velocity(0f, available.y)
+    }
+
+    private fun startRebound(leftoverVelocity: Float) {
+        if (disposed) return
+        cancelRebound()
+        releaseActivePull()
+        val rebound = reboundGeneration
+        reboundJob = scope.launch {
+            try {
+                val seedVelocity = bounceSeedVelocity(leftoverVelocity)
                 animate(
-                    initialValue = rawPull.floatValue,
+                    initialValue = returnPull.floatValue,
                     targetValue = 0f,
                     initialVelocity = seedVelocity,
                     animationSpec = spring(
                         dampingRatio = Spring.DampingRatioNoBouncy,
                         stiffness = bounceStiffnessFor(seedVelocity),
                     ),
-                ) { value, _ -> rawPull.floatValue = value }
-                return available
+                ) { value, _ -> returnPull.floatValue = value }
+            } finally {
+                if (rebound == reboundGeneration) {
+                    returnPull.floatValue = 0f
+                    reboundJob = null
+                }
             }
         }
     }
-    // Translate the WHOLE list down by the pull so the header and the content
-    // below move as one unit (iOS stretch), not just the image scaling in place.
-    this
-        .onSizeChanged { viewport.floatValue = it.height.toFloat() }
-        .graphicsLayer { translationY = zoom.offset }
-        .nestedScroll(connection)
 }
 
 /**

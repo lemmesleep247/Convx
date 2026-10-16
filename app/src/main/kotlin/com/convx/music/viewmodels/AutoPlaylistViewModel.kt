@@ -45,7 +45,8 @@ constructor(
     savedStateHandle: SavedStateHandle,
     private val syncUtils: SyncUtils,
 ) : ViewModel() {
-    val playlist = savedStateHandle.get<String>("playlist")!!
+    val playlist = requireNotNull(savedStateHandle.get<String>("playlist")) { "Missing playlist" }
+    val thumbArg = savedStateHandle.get<String>("thumb")?.takeIf { it.isNotEmpty() }
 
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing = _isRefreshing.asStateFlow()
@@ -67,6 +68,9 @@ constructor(
                 when (playlist) {
                     "liked" -> database.likedSongs(sortType, descending)
                         .map { it.filterExplicit(hideExplicit).filterVideoSongs(hideVideoSongs) }
+
+                    "podcasts" -> database.likedSongs(sortType, descending)
+                        .map { songs -> songs.filter { it.song.isPodcastEpisode }.filterExplicit(hideExplicit) }
 
                     "downloaded" -> database.downloadedSongs(sortType, descending)
                         .map { it.filterExplicit(hideExplicit).filterVideoSongs(hideVideoSongs) }
@@ -95,6 +99,7 @@ constructor(
             _isRefreshing.value = true
             when (playlist) {
                 "liked" -> syncUtils.syncLikedSongsSuspend()
+                "podcasts" -> syncUtils.syncLikedSongsSuspend()
                 "uploaded" -> syncUtils.syncUploadedSongsSuspend()
             }
             _isRefreshing.value = false

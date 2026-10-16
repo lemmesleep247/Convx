@@ -89,8 +89,6 @@ class BeatTrackerTest {
         assertTrue(analyze(padTrack()).confidence < 0.20f)
     }
 
-    // --- fixtures -----------------------------------------------------------
-
     private fun analyze(samples: FloatArray, startPositionMs: Long = 0L): BeatGrid {
         val tracker = BeatTracker(SAMPLE_RATE)
         tracker.beginAt(startPositionMs)

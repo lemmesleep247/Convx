@@ -21,9 +21,6 @@ import java.io.File
  */
 object ParametricEQParser {
 
-    /**
-     * Parse a ParametricEQ file
-     */
     fun parseFile(file: File): ParametricEQ {
         if (!file.exists()) {
             throw IllegalArgumentException("File does not exist: ${file.absolutePath}")
@@ -32,16 +29,8 @@ object ParametricEQParser {
         return parseText(file.readText())
     }
 
-    /**
-     * Parse a ParametricEQ file from a path string
-     */
-    fun parseFile(filePath: String): ParametricEQ {
-        return parseFile(File(filePath))
-    }
+    fun parseFile(filePath: String): ParametricEQ = parseFile(File(filePath))
 
-    /**
-     * Parse ParametricEQ text content
-     */
     fun parseText(content: String): ParametricEQ {
         val lines = content.lines()
         var preamp = 0.0
@@ -53,12 +42,10 @@ object ParametricEQParser {
             if (trimmedLine.isEmpty()) continue
 
             when {
-                // Parse preamp line: "Preamp: -5.2 dB"
                 trimmedLine.startsWith("Preamp:", ignoreCase = true) -> {
                     preamp = parsePreamp(trimmedLine)
                 }
 
-                // Parse filter line: "Filter 1: ON LSC Fc 105 Hz Gain 8.8 dB Q 0.70"
                 trimmedLine.startsWith("Filter", ignoreCase = true) -> {
                     val band = parseFilterLine(trimmedLine)
                     if (band != null) {
@@ -66,7 +53,7 @@ object ParametricEQParser {
                     }
                 }
 
-                // Store other lines as metadata
+                // Preserve unrecognized key/value lines as metadata.
                 else -> {
                     val parts = trimmedLine.split(":", limit = 2)
                     if (parts.size == 2) {
@@ -99,7 +86,7 @@ object ParametricEQParser {
      */
     private fun parseFilterLine(line: String): ParametricEQBand? {
         try {
-            // Check if filter is ON
+            // Ignore disabled filters.
             if (!line.contains("ON", ignoreCase = true)) {
                 return null
             }
@@ -186,42 +173,31 @@ object ParametricEQParser {
         return sb.toString()
     }
 
-    /**
-     * Validate a ParametricEQ profile
-     * Returns a list of validation error messages (empty list if valid)
-     */
     fun validate(eq: ParametricEQ): List<String> {
         val errors = mutableListOf<String>()
 
-        // Validate preamp
-        if (eq.preamp < -50.0 || eq.preamp > 50.0) {
+        if (!eq.preamp.isFinite() || eq.preamp < -50.0 || eq.preamp > 50.0) {
             errors.add("Preamp value ${eq.preamp} dB is out of range (-50 to +50 dB)")
         }
 
-        // Validate bands exist
         if (eq.bands.isEmpty()) {
             errors.add("EQ profile must have at least one band")
         }
 
-        // Validate number of bands
         if (eq.bands.size > ParametricEQ.MAX_BANDS) {
             errors.add("EQ profile has ${eq.bands.size} bands, maximum is ${ParametricEQ.MAX_BANDS}")
         }
 
-        // Validate each band
         eq.bands.forEachIndexed { index, band ->
-            // Validate frequency
-            if (band.frequency <= 0.0 || band.frequency > 100000.0) {
+            if (!band.frequency.isFinite() || band.frequency <= 0.0 || band.frequency > 100000.0) {
                 errors.add("Band ${index + 1}: Frequency ${band.frequency} Hz is out of range (1 to 100000 Hz)")
             }
 
-            // Validate gain
-            if (band.gain < -30.0 || band.gain > 30.0) {
+            if (!band.gain.isFinite() || band.gain < -30.0 || band.gain > 30.0) {
                 errors.add("Band ${index + 1}: Gain ${band.gain} dB is out of range (-30 to +30 dB)")
             }
 
-            // Validate Q factor
-            if (band.q <= 0.0 || band.q > 20.0) {
+            if (!band.q.isFinite() || band.q <= 0.0 || band.q > 20.0) {
                 errors.add("Band ${index + 1}: Q factor ${band.q} is out of range (0.01 to 20)")
             }
         }

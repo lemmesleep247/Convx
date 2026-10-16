@@ -34,7 +34,8 @@ constructor(
     database: MusicDatabase,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
-    val top = savedStateHandle.get<String>("top")!!
+    val top = requireNotNull(savedStateHandle.get<String>("top")) { "Missing top" }
+    val thumbArg = savedStateHandle.get<String>("thumb")?.takeIf { it.isNotEmpty() }
 
     val topPeriod = MutableStateFlow(MyTopFilter.ALL_TIME)
 

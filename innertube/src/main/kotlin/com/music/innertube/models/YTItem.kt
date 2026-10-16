@@ -1,6 +1,7 @@
 package com.music.innertube.models
 
 import com.music.innertube.models.WatchEndpoint.WatchEndpointMusicSupportedConfigs.WatchEndpointMusicConfig.Companion.MUSIC_VIDEO_TYPE_ATV
+import com.music.innertube.models.WatchEndpoint.WatchEndpointMusicSupportedConfigs.WatchEndpointMusicConfig.Companion.MUSIC_VIDEO_TYPE_PODCAST_EPISODE
 
 sealed class YTItem {
     abstract val id: String
@@ -37,8 +38,11 @@ data class SongItem(
     val libraryRemoveToken: String? = null,
     val historyRemoveToken: String? = null
 ) : YTItem() {
+    val isPodcastEpisode: Boolean
+        get() = musicVideoType == MUSIC_VIDEO_TYPE_PODCAST_EPISODE
+
     val isVideoSong: Boolean
-        get() = musicVideoType != null && musicVideoType != MUSIC_VIDEO_TYPE_ATV
+        get() = musicVideoType != null && musicVideoType != MUSIC_VIDEO_TYPE_ATV && !isPodcastEpisode
 
     override val shareLink: String
         get() = "https://music.youtube.com/watch?v=$id"

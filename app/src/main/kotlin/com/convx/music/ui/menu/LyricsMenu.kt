@@ -5,6 +5,9 @@
 
 package com.convx.music.ui.menu
 
+import com.convx.music.ui.component.sf
+import com.convx.music.ui.component.SymbolIcon
+import com.convx.music.ui.component.menuBottomInset
 import android.app.SearchManager
 import android.content.Intent
 import android.content.res.Configuration
@@ -28,22 +31,24 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.CircularWavyProgressIndicator
+import com.convx.music.ui.ios.compat.CircularWavyProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.convx.music.ui.ios.compat.Slider
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.IconButton
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.OutlinedTextField
+import com.convx.music.ui.ios.compat.Surface
+import com.convx.music.ui.ios.compat.Switch
+import com.convx.music.ui.component.shapes.ContinuousRoundedRectangle
+import com.convx.music.ui.ios.compat.Text
+import com.convx.music.ui.ios.compat.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -66,10 +71,12 @@ import com.convx.music.db.entities.SongEntity
 import com.convx.music.models.MediaMetadata
 import com.convx.music.ui.component.DefaultDialog
 import com.convx.music.ui.component.ListDialog
-import com.convx.music.ui.component.Material3MenuGroup
-import com.convx.music.ui.component.Material3MenuItemData
+import com.convx.music.ui.component.IosMenuGroup
+import com.convx.music.ui.component.IosMenuItemData
 import com.convx.music.ui.component.NewAction
 import com.convx.music.ui.component.NewActionGrid
+import com.convx.music.ui.component.LyricsProviderSelector
+import com.convx.music.ui.component.LyricsProviderMenu
 import com.convx.music.ui.component.TextFieldDialog
 import com.convx.music.viewmodels.LyricsMenuViewModel
 import com.convx.music.constants.OpenRouterApiKey
@@ -77,12 +84,13 @@ import com.convx.music.constants.DeeplApiKey
 import com.convx.music.constants.AiProviderKey
 import com.convx.music.constants.TranslateLanguageKey
 import com.convx.music.constants.TranslateModeKey
+import com.convx.music.constants.VocalSuppressionKey
 import com.convx.music.constants.OpenRouterBaseUrlKey
 import com.convx.music.constants.OpenRouterModelKey
 import com.convx.music.constants.DeeplFormalityKey
 import com.convx.music.lyrics.LyricsTranslationHelper
 import com.convx.music.utils.rememberPreference
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -95,7 +103,7 @@ fun LyricsMenu(
     viewModel: LyricsMenuViewModel = hiltViewModel(),
 ) {
     val context = LocalContext.current
-    val database = LocalDatabase.current
+    val database = LocalDatabase.current.get()
     
     val openRouterApiKey by rememberPreference(OpenRouterApiKey, "")
     val deeplApiKey by rememberPreference(DeeplApiKey, "")
@@ -110,7 +118,14 @@ fun LyricsMenu(
 
     // Observe the authoritative translation-active state from the singleton; this persists
     // correctly across menu open/close cycles and avoids the lyricsProvider() race condition.
-    val hasTranslations by LyricsTranslationHelper.hasActiveTranslations.collectAsState()
+    val hasTranslations by LyricsTranslationHelper.hasActiveTranslations.collectAsStateWithLifecycle()
+    val (savedVocalSuppression, saveVocalSuppression) = rememberPreference(VocalSuppressionKey, 0f)
+    var vocalSuppression by rememberSaveable(mediaMetadataProvider().id) {
+        mutableFloatStateOf(savedVocalSuppression)
+    }
+    LaunchedEffect(savedVocalSuppression) {
+        vocalSuppression = savedVocalSuppression
+    }
 
     var showEditDialog by rememberSaveable {
         mutableStateOf(false)
@@ -119,7 +134,7 @@ fun LyricsMenu(
     if (showEditDialog) {
         TextFieldDialog(
             onDismiss = { showEditDialog = false },
-            icon = { Icon(painter = painterResource(R.drawable.edit), contentDescription = null) },
+            icon = { SymbolIcon(symbol = sf("pencil"), contentDescription = null) },
             title = { Text(text = mediaMetadataProvider().title) },
             initialTextFieldValue = TextFieldValue(lyricsProvider()?.lyrics.orEmpty()),
             singleLine = false,
@@ -144,6 +159,10 @@ fun LyricsMenu(
         mutableStateOf(false)
     }
 
+    var showProviderMenu by rememberSaveable(mediaMetadataProvider().id) {
+        mutableStateOf(false)
+    }
+
     val searchMediaMetadata =
         remember(showSearchDialog) {
             mediaMetadataProvider()
@@ -165,17 +184,14 @@ fun LyricsMenu(
             )
         }
 
-    val isNetworkAvailable by viewModel.isNetworkAvailable.collectAsState()
+    val isNetworkAvailable by viewModel.isNetworkAvailable.collectAsStateWithLifecycle()
 
     if (showSearchDialog) {
         DefaultDialog(
             modifier = Modifier.verticalScroll(rememberScrollState()),
             onDismiss = { showSearchDialog = false },
             icon = {
-                Icon(
-                    painter = painterResource(R.drawable.search),
-                    contentDescription = null
-                )
+                SymbolIcon(symbol = sf("magnifyingglass"), contentDescription = null)
             },
             title = { Text(stringResource(R.string.search_lyrics)) },
             buttons = {
@@ -201,6 +217,7 @@ fun LyricsMenu(
                                 },
                             )
                         } catch (_: Exception) {
+                            // No browser may be available to handle web search.
                         }
                     },
                 ) {
@@ -251,8 +268,8 @@ fun LyricsMenu(
     }
 
     if (showSearchResultDialog) {
-        val results by viewModel.results.collectAsState()
-        val isLoading by viewModel.isLoading.collectAsState()
+        val results by viewModel.results.collectAsStateWithLifecycle()
+        val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
 
         var expandedItemIndex by rememberSaveable {
             mutableIntStateOf(-1)
@@ -274,7 +291,7 @@ fun LyricsMenu(
                                     LyricsEntity(
                                         id = searchMediaMetadata.id,
                                         lyrics = result.lyrics,
-                                        provider = result.providerName,
+                                        provider = result.providerId,
                                     ),
                                 )
                             }
@@ -287,15 +304,15 @@ fun LyricsMenu(
                     ) {
                         Text(
                             text = result.lyrics,
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = AppTheme.typography.bodyMedium,
                             maxLines = if (index == expandedItemIndex) Int.MAX_VALUE else 2,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.padding(bottom = 4.dp),
                         )
 
                         Surface(
-                            color = MaterialTheme.colorScheme.secondaryContainer,
-                            shape = RoundedCornerShape(6.dp),
+                            color = AppTheme.colorScheme.secondaryContainer,
+                            shape = ContinuousRoundedRectangle(6.dp),
                             modifier = Modifier.padding(top = 4.dp)
                         ) {
                             Row(
@@ -304,19 +321,14 @@ fun LyricsMenu(
                             ) {
                                 Text(
                                     text = result.providerName,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    style = AppTheme.typography.labelMedium,
+                                    color = AppTheme.colorScheme.onSecondaryContainer,
                                     maxLines = 1,
                                 )
                                 if (result.lyrics.startsWith("[")) {
-                                    Icon(
-                                        painter = painterResource(R.drawable.sync),
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                                        modifier = Modifier
+                                    SymbolIcon(symbol = sf("arrow.triangle.2.circlepath"), contentDescription = null, size = 14.dp, modifier = Modifier
                                             .padding(start = 4.dp)
-                                            .size(14.dp),
-                                    )
+                                            , tint = AppTheme.colorScheme.onSecondaryContainer)
                                 }
                             }
                         }
@@ -327,10 +339,7 @@ fun LyricsMenu(
                             expandedItemIndex = if (expandedItemIndex == index) -1 else index
                         },
                     ) {
-                        Icon(
-                            painter = painterResource(if (index == expandedItemIndex) R.drawable.expand_less else R.drawable.expand_more),
-                            contentDescription = null,
-                        )
+                        SymbolIcon(symbol = if (index == expandedItemIndex) sf("chevron.up") else sf("chevron.down"), contentDescription = null)
                     }
                 }
             }
@@ -360,16 +369,12 @@ fun LyricsMenu(
         }
     }
 
-    var showRomanizationDialog by rememberSaveable {
-        mutableStateOf(false)
-    }
-
     var showRomanization by rememberSaveable { mutableStateOf(false) }
     var isChecked by remember { mutableStateOf(songProvider()?.romanizeLyrics ?: true) }
 
     var lyricsOffset by rememberSaveable { mutableIntStateOf(songProvider()?.lyricsOffset ?: 0) }
 
-    // Sync isChecked with song changes
+    // Refresh the setting when the active song changes.
     LaunchedEffect(songProvider()) {
         isChecked = songProvider()?.romanizeLyrics ?: true
     }
@@ -381,25 +386,22 @@ fun LyricsMenu(
     val configuration = LocalConfiguration.current
     val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
 
-    LazyColumn(
-        contentPadding = PaddingValues(
-            start = 0.dp,
-            top = 0.dp,
-            end = 0.dp,
-            bottom = 8.dp + WindowInsets.systemBars.asPaddingValues().calculateBottomPadding(),
-        ),
+    if (showProviderMenu) {
+        LyricsProviderMenu(
+            metadata = mediaMetadataProvider(),
+            lyrics = lyricsProvider(),
+            onBack = { showProviderMenu = false },
+            modifier = Modifier.fillMaxWidth(),
+        )
+    } else LazyColumn(
+        contentPadding = PaddingValues(start = 0.dp, top = 0.dp, end = 0.dp, bottom = 8.dp + menuBottomInset()),
     ) {
         item {
             NewActionGrid(
                 actions = listOf(
                     NewAction(
                         icon = {
-                            Icon(
-                                painter = painterResource(R.drawable.edit),
-                                contentDescription = null,
-                                modifier = Modifier.size(28.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            SymbolIcon(symbol = sf("pencil"), contentDescription = null, size = 28.dp, tint = AppTheme.colorScheme.onSurfaceVariant)
                         },
                         text = stringResource(R.string.edit),
                         onClick = {
@@ -408,12 +410,7 @@ fun LyricsMenu(
                     ),
                     NewAction(
                         icon = {
-                            Icon(
-                                painter = painterResource(R.drawable.cached),
-                                contentDescription = null,
-                                modifier = Modifier.size(28.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            SymbolIcon(symbol = sf("arrow.triangle.2.circlepath"), contentDescription = null, size = 28.dp, tint = AppTheme.colorScheme.onSurfaceVariant)
                         },
                         text = stringResource(R.string.refetch),
                         onClick = {
@@ -423,12 +420,7 @@ fun LyricsMenu(
                     ),
                     NewAction(
                         icon = {
-                            Icon(
-                                painter = painterResource(R.drawable.search),
-                                contentDescription = null,
-                                modifier = Modifier.size(28.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            SymbolIcon(symbol = sf("magnifyingglass"), contentDescription = null, size = 28.dp, tint = AppTheme.colorScheme.onSurfaceVariant)
                         },
                         text = stringResource(R.string.search),
                         onClick = {
@@ -440,23 +432,55 @@ fun LyricsMenu(
             )
         }
 
+        item(key = "lyrics_provider") {
+            Box(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                contentAlignment = Alignment.CenterEnd,
+            ) {
+                LyricsProviderSelector(
+                    metadata = mediaMetadataProvider(),
+                    lyrics = lyricsProvider(),
+                    onOpenMenu = { showProviderMenu = true },
+                )
+            }
+        }
+
+        item(key = "vocal_reduction") {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = stringResource(R.string.karaoke_vocal_reduction),
+                        style = AppTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        text = "${(vocalSuppression * 100).toInt()}%",
+                        style = AppTheme.typography.bodySmall,
+                        color = AppTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Slider(
+                    value = vocalSuppression,
+                    onValueChange = { vocalSuppression = it },
+                    onValueChangeFinished = { saveVocalSuppression(vocalSuppression) },
+                    valueRange = 0f..1f,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+
         item {
-            Material3MenuGroup(
+            IosMenuGroup(
                 items = buildList {
-                    // Add "Translate with AI" option if API key is configured
                     if (hasApiKey) {
                         add(
-                            Material3MenuItemData(
+                            IosMenuItemData(
                                 title = { Text(stringResource(R.string.ai_lyrics_translation)) },
                                 icon = {
-                                    Icon(
-                                        painter = painterResource(R.drawable.translate),
-                                        contentDescription = null,
-                                    )
+                                    SymbolIcon(symbol = sf("character.bubble"), contentDescription = null)
                                 },
                                 onClick = {
                                     if (hasTranslations) {
-                                        // Remove translations
                                         lyricsProvider()?.let { lyrics ->
                                             val clearedLyrics = LyricsTranslationHelper.clearTranslations(lyrics)
                                             database.query {
@@ -466,7 +490,6 @@ fun LyricsMenu(
                                             LyricsTranslationHelper.triggerClearTranslations()
                                         }
                                     } else {
-                                        // Trigger translation
                                         LyricsTranslationHelper.triggerManualTranslation()
                                     }
                                 },
@@ -495,13 +518,10 @@ fun LyricsMenu(
                     }
                     
                     add(
-                        Material3MenuItemData(
+                        IosMenuItemData(
                             title = { Text(stringResource(R.string.lyrics_offset)) },
                             icon = {
-                                Icon(
-                                    painter = painterResource(R.drawable.fast_forward),
-                                    contentDescription = null,
-                                )
+                                SymbolIcon(symbol = sf("forward.fill"), contentDescription = null)
                             },
                             onClick = {
                                 onDismiss()
@@ -510,15 +530,15 @@ fun LyricsMenu(
                             trailingContent = {
                                 Text(
                                     text = "${if (lyricsOffset >= 0) "+" else ""}${lyricsOffset}ms",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    style = AppTheme.typography.bodyMedium,
+                                    color = AppTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         )
                     )
                     
                     add(
-                        Material3MenuItemData(
+                        IosMenuItemData(
                             title = { Text(text = stringResource(R.string.romanize_current_track)) },
                             icon = {
                                 Icon(
@@ -554,49 +574,4 @@ fun LyricsMenu(
         }
     }
     
-    /* if (showRomanizationDialog) {
-        var isChecked by remember { mutableStateOf(songProvider()?.romanizeLyrics ?: true) }
-
-        // Sync with song changes
-        LaunchedEffect(songProvider()) {
-            isChecked = songProvider()?.romanizeLyrics ?: true
-        }
-
-        DefaultDialog(
-            onDismiss = { showRomanizationDialog = false },
-            title = { Text(stringResource(R.string.romanization)) }
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable {
-                        // Toggle isChecked when the row is clicked
-                        isChecked = !isChecked
-                        songProvider()?.let { song ->
-                            database.query {
-                                upsert(song.copy(romanizeLyrics = isChecked))
-                            }
-                        }
-                    }
-                    .padding(vertical = 8.dp, horizontal = 16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = stringResource(R.string.romanize_current_track),
-                    modifier = Modifier.weight(1f)
-                )
-                Switch(
-                    checked = isChecked,
-                    onCheckedChange = { newCheckedState ->
-                        isChecked = newCheckedState
-                        songProvider()?.let { song ->
-                            database.query {
-                                upsert(song.copy(romanizeLyrics = newCheckedState))
-                            }
-                        }
-                    }
-                )
-            }
-        }
-    } */
 }

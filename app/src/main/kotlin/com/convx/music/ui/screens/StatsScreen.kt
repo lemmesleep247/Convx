@@ -5,6 +5,9 @@
 
 package com.convx.music.ui.screens
 
+import com.convx.music.ui.component.sf
+import dev.chrisbanes.haze.hazeSource
+import com.convx.music.ui.component.SymbolIcon
 import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.only
@@ -47,10 +50,10 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.IconButton
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -68,6 +71,8 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.music.innertube.models.WatchEndpoint
+import com.convx.music.ui.utils.albumRoute
+import com.convx.music.ui.utils.artistRoute
 import com.convx.music.ui.utils.bounceClick
 import com.convx.music.ui.utils.combinedBounceClick
 import com.convx.music.LocalPlayerAwareWindowInsets
@@ -79,10 +84,10 @@ import com.convx.music.models.toMediaMetadata
 import com.convx.music.playback.queues.ListQueue
 import com.convx.music.playback.queues.YouTubeQueue
 import com.convx.music.ui.component.ChoiceChipsRow
-import com.convx.music.ui.component.CollapsedTitleBar
+import com.convx.music.ui.component.FrostedTopBar
 import com.convx.music.ui.component.HideOnScrollFAB
 import com.convx.music.ui.component.LargeScreenTitle
-import com.convx.music.ui.component.rememberTitleCollapseProgress
+import com.convx.music.ui.component.rememberTitleCollapseProgressState
 import com.convx.music.ui.component.LocalAlbumsGrid
 import com.convx.music.ui.component.LocalArtistsGrid
 import com.convx.music.ui.component.LocalMenuState
@@ -99,6 +104,7 @@ import com.convx.music.utils.makeTimeString
 import com.convx.music.viewmodels.StatsViewModel
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -109,21 +115,22 @@ fun StatsScreen(
     val menuState = LocalMenuState.current
     val haptic = LocalHapticFeedback.current
     val playerConnection = LocalPlayerConnection.current ?: return
-    val isPlaying by playerConnection.isEffectivelyPlaying.collectAsState()
-    val mediaMetadata by playerConnection.mediaMetadata.collectAsState()
+    val isPlaying by playerConnection.isEffectivelyPlaying.collectAsStateWithLifecycle()
+    val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
-    val indexChips by viewModel.indexChips.collectAsState()
-    val mostPlayedSongs by viewModel.mostPlayedSongs.collectAsState()
-    val mostPlayedSongsStats by viewModel.mostPlayedSongsStats.collectAsState()
-    val mostPlayedArtists by viewModel.mostPlayedArtists.collectAsState()
-    val mostPlayedAlbums by viewModel.mostPlayedAlbums.collectAsState()
-    val firstEvent by viewModel.firstEvent.collectAsState()
+    val indexChips by viewModel.indexChips.collectAsStateWithLifecycle()
+    val mostPlayedSongs by viewModel.mostPlayedSongs.collectAsStateWithLifecycle()
+    val mostPlayedSongsStats by viewModel.mostPlayedSongsStats.collectAsStateWithLifecycle()
+    val mostPlayedArtists by viewModel.mostPlayedArtists.collectAsStateWithLifecycle()
+    val mostPlayedAlbums by viewModel.mostPlayedAlbums.collectAsStateWithLifecycle()
+    val firstEvent by viewModel.firstEvent.collectAsStateWithLifecycle()
     val currentDate = LocalDateTime.now()
 
     val coroutineScope = rememberCoroutineScope()
     val lazyListState = rememberLazyListState()
-    val selectedOption by viewModel.selectedOption.collectAsState()
+    val statsTitleProgress = rememberTitleCollapseProgressState(lazyListState)
+    val selectedOption by viewModel.selectedOption.collectAsStateWithLifecycle()
 
     val weeklyDates =
         if (currentDate != null && firstEvent != null) {
@@ -220,12 +227,12 @@ fun StatsScreen(
     ) {
       HeroTintedContent(tint = tint, backdrop = heroBackdrop) {
         val chromeShape = ContinuousRoundedRectangle(percent = 50)
+        val hazeState = androidx.compose.runtime.remember { dev.chrisbanes.haze.HazeState() }
 
         Box(modifier = Modifier.fillMaxSize()) {
             LazyColumn(
-                // No bounce here: the top pull drives the hero zoom instead.
                 overscrollEffect = heroZoom.listOverscroll(),
-                modifier = Modifier.heroPullZoom(heroZoom),
+                modifier = Modifier.heroPullZoom(heroZoom).hazeSource(hazeState),
                 state = lazyListState,
                 contentPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues(),
             ) {
@@ -392,7 +399,7 @@ fun StatsScreen(
                                     Modifier
                                         .combinedBounceClick(
                                             onClick = {
-                                                navController.navigate("artist/${artist.id}")
+                                                navController.navigate(artistRoute(artist.id, artist.artist.thumbnailUrl))
                                             },
                                             onLongClick = {
                                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -430,18 +437,20 @@ fun StatsScreen(
                                 items = mostPlayedAlbums,
                                 key = { _, album -> album.id },
                             ) { index, album ->
+                                val playCount = album.songCountListened ?: 0
                                 LocalAlbumsGrid(
                                     title = "${index + 1}. ${album.album.title}",
                                     subtitle =
                                     joinByBullet(
                                         pluralStringResource(
                                             R.plurals.n_time,
-                                            album.songCountListened!!,
-                                            album.songCountListened
+                                            playCount,
+                                            playCount,
                                         ),
                                         makeTimeString(album.timeListened),
                                     ),
                                     thumbnailUrl = album.album.thumbnailUrl,
+                                    sharedArtworkId = album.id,
                                     isActive = album.id == mediaMetadata?.album?.id,
                                     isPlaying = isPlaying,
                                     modifier =
@@ -449,7 +458,7 @@ fun StatsScreen(
                                         .fillMaxWidth()
                                         .combinedBounceClick(
                                             onClick = {
-                                                navController.navigate("album/${album.id}")
+                                                navController.navigate(albumRoute(album.id, album.album.thumbnailUrl))
                                             },
                                             onLongClick = {
                                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -469,7 +478,6 @@ fun StatsScreen(
                 }
             }
 
-            // FAB to shuffle most played songs
             if (mostPlayedSongs.isNotEmpty()) {
                 HideOnScrollFAB(
                     visible = true,
@@ -486,11 +494,17 @@ fun StatsScreen(
                 )
             }
 
-            // Top bar logic
-            CollapsedTitleBar(
+            com.convx.music.ui.component.TopFadeBlur(
+                hazeState = hazeState,
+                pageColor = tint,
+                modifier = Modifier.align(Alignment.TopCenter),
+            )
+
+            FrostedTopBar(
                 title = stringResource(R.string.stats),
-                progress = rememberTitleCollapseProgress(lazyListState),
-                color = onTint,
+                titleAlpha = 0f,
+                titleAlphaProvider = { statsTitleProgress.value },
+                titleColor = onTint,
                 modifier = Modifier.align(Alignment.TopCenter),
             )
 
@@ -507,10 +521,7 @@ fun StatsScreen(
                     onClick = navController::navigateUp,
                     onLongClick = navController::backToMain,
                 ) {
-                    Icon(
-                        painterResource(R.drawable.arrow_back),
-                        contentDescription = null,
-                    )
+                    SymbolIcon(symbol = sf("arrow.left"), contentDescription = null)
                 }
 
                 Spacer(Modifier.weight(1f))

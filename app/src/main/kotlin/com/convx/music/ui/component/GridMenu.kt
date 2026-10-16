@@ -5,6 +5,9 @@
 
 package com.convx.music.ui.component
 
+import com.convx.music.ui.utils.MenuItemChrome
+import com.convx.music.ui.utils.MenuIconChrome
+import com.convx.music.ui.utils.additiveChrome
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
@@ -19,12 +22,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyGridScope
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.LocalContentColor
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ShapeDefaults
-import androidx.compose.material3.Text
+import com.convx.music.ui.ios.compat.CircularProgressIndicator
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.LocalContentColor
+import com.convx.music.ui.ios.compat.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,6 +39,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.media3.exoplayer.offline.Download
 import com.convx.music.R
+import com.convx.music.ui.component.shapes.ContinuousRoundedRectangle
+import com.convx.music.ui.ios.foundation.IosTheme
 import com.convx.music.utils.makeTimeString
 
 val GridMenuItemHeight = 108.dp
@@ -87,7 +90,7 @@ fun LazyGridScope.GridMenuItem(
     item {
         Column(
             modifier = modifier
-                .clip(ShapeDefaults.Large)
+                .clip(ContinuousRoundedRectangle(18.dp))
                 .height(GridMenuItemHeight)
                 .clickable(
                     enabled = enabled,
@@ -101,17 +104,22 @@ fun LazyGridScope.GridMenuItem(
                     .fillMaxWidth()
                     .weight(1f),
                 contentAlignment = Alignment.Center,
-                content = icon
+                content = {
+                    androidx.compose.runtime.CompositionLocalProvider(
+                        LocalSymbolChrome provides MenuItemChrome,
+                        LocalSymbolIconSize provides 22.dp,
+                    ) { icon() }
+                }
             )
             Text(
                 text = stringResource(title),
-                style = MaterialTheme.typography.labelLarge,
+                style = IosTheme.typography.caption,
                 textAlign = TextAlign.Center,
                 maxLines = 2,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(with(LocalDensity.current) {
-                        MaterialTheme.typography.labelLarge.lineHeight.toDp() * 2
+                        IosTheme.typography.caption.lineHeight.toDp() * 2
                     })
             )
         }
@@ -165,7 +173,7 @@ fun LazyGridScope.SleepTimerGridMenu(
     item {
         Column(
             modifier = modifier
-                .clip(ShapeDefaults.Large)
+                .clip(ContinuousRoundedRectangle(18.dp))
                 .height(GridMenuItemHeight)
                 .clickable(
                     onClick = onClick
@@ -178,18 +186,14 @@ fun LazyGridScope.SleepTimerGridMenu(
                     .weight(1f),
                 contentAlignment = Alignment.Center,
                 content = {
-                    Icon(
-                        painterResource(R.drawable.bedtime),
-                        contentDescription = null,
-                        modifier = Modifier.alpha(if (enabled) 1f else 0.5f)
-                    )
+                    SymbolIcon(symbol = sf("moon.fill"), contentDescription = null, modifier = Modifier.alpha(if (enabled) 1f else 0.5f))
                 }
             )
             Text(
                 text = if (enabled) makeTimeString(sleepTimerTimeLeft) else stringResource(
                     id = R.string.sleep_timer
                 ),
-                style = MaterialTheme.typography.labelLarge,
+                style = IosTheme.typography.caption,
                 textAlign = TextAlign.Center,
                 maxLines = 2,
                 modifier = Modifier.fillMaxWidth()

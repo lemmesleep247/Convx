@@ -5,61 +5,110 @@
 
 package com.convx.music.ui.screens.settings
 
-import com.convx.music.R
-import android.os.Build
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.painter.Painter
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
-import com.convx.music.BuildConfig
 import com.convx.music.LocalPlayerAwareWindowInsets
-import com.convx.music.ui.component.IconButton
-import com.convx.music.ui.component.Material3SettingsGroup
-import com.convx.music.ui.component.Material3SettingsItem
-import com.convx.music.ui.theme.AppleTokens
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.ui.utils.backToMain
-import com.convx.music.vivimusic.updater.getUpdateAvailableState
+import com.convx.music.R
+import com.convx.music.core.updater.getAutoUpdateCheckSetting
+import com.convx.music.core.updater.getUpdateAvailableState
+import com.convx.music.ui.component.AccountAvatar
+import com.convx.music.ui.component.SymbolIcon
+import com.convx.music.ui.component.sf
+import com.convx.music.ui.component.shapes.ContinuousCapsule
+import com.convx.music.ui.component.shapes.ContinuousRoundedRectangle
+import com.convx.music.ui.ios.compat.Text
+import com.convx.music.ui.ios.foundation.IosTheme
+import com.convx.music.ui.ios.foundation.iosRowPress
+import com.convx.music.ui.ios.foundation.IosMetrics
+import com.convx.music.constants.LocalOnlyModeKey
+import com.convx.music.utils.rememberPreference
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.Switch
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.ui.res.painterResource
+import com.convx.music.viewmodels.HomeViewModel
+
+/** Root rows that open a page directly rather than a category. */
+private val historyLink = SettingsLink("History", R.drawable.music_history, { systemCyan }, SettingsAction.Route("history"))
+private val statsLink = SettingsLink("Stats", R.drawable.stats, { systemYellow }, SettingsAction.Route("stats"))
+private val listenTogetherLink = SettingsLink("Listen Together", R.drawable.group, { systemCyan }, SettingsAction.Route("listen_together_from_topbar"))
+private val updateLink = SettingsLink("Software Update", R.drawable.network_update, { systemGray }, SettingsAction.Route("settings/update"))
+
+/** The root, grouped the way the categories are read: what you hear, what you see, your stuff, help. */
+private val rootGroups = listOf(
+    listOf(listenTogetherLink),
+    listOf(SettingsHubs.player.asLink(), SettingsHubs.playback.asLink(), SettingsHubs.appearance.asLink()),
+    listOf(SettingsHubs.library.asLink(), SettingsHubs.accounts.asLink()),
+    listOf(SettingsHubs.privacy.asLink(), historyLink, statsLink),
+    listOf(updateLink, SettingsHubs.help.asLink()),
+)
+
+/** Wider than this, the root becomes a sidebar with the chosen category beside it. */
+private val SplitWidth = 840.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -67,375 +116,287 @@ fun SettingsScreen(
     navController: NavController,
     scrollBehavior: TopAppBarScrollBehavior,
 ) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val isUpdateAvailable = getUpdateAvailableState(context) &&
-        com.convx.music.vivimusic.updater.getAutoUpdateCheckSetting(context)
+    val context = LocalContext.current
+    val updateAvailable = getUpdateAvailableState(context) && getAutoUpdateCheckSetting(context)
+    val homeViewModel: HomeViewModel = hiltViewModel()
+    val accountName by homeViewModel.accountName.collectAsStateWithLifecycle()
+    val accountImageUrl by homeViewModel.accountImageUrl.collectAsStateWithLifecycle()
+    val onAction = rememberSettingsActionHandler(navController)
 
-    var searchQuery by rememberSaveable { mutableStateOf("") }
-    val searchLower = searchQuery.trim().lowercase()
+    var query by rememberSaveable { mutableStateOf("") }
+    var selectedHubId by rememberSaveable { mutableStateOf(SettingsHubs.player.id) }
+    val searchEntries = rememberSearchEntries()
 
-    androidx.compose.foundation.lazy.LazyColumn(
-        Modifier
-            .windowInsetsPadding(LocalPlayerAwareWindowInsets.current.only(WindowInsetsSides.Horizontal))
-    ) {
-        item(key = "top_spacer") {
-            Spacer(
-                Modifier.windowInsetsPadding(
-                    LocalPlayerAwareWindowInsets.current.only(WindowInsetsSides.Top)
-                )
-            )
-        }
+    BoxWithConstraints(Modifier.fillMaxSize().background(IosTheme.colors.systemGroupedBackground)) {
+        val split = maxWidth >= SplitWidth
+        val trailing: (SettingsLink) -> String? = { if (it == updateLink && updateAvailable) "1" else null }
 
-        // Large title (iOS style)
-        item(key = "title") {
-            Text(
-                text = stringResource(R.string.settings),
-                style = MaterialTheme.typography.displaySmall.copy(
-                    fontWeight = FontWeight.SemiBold
-                ),
-                color = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.padding(start = 20.dp, top = 24.dp, bottom = 8.dp)
-            )
-        }
-
-        // Search field — filters the settings catalog and jumps to the matching screen.
-        item(key = "search_field") {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                placeholder = { Text(stringResource(R.string.search)) },
-                leadingIcon = {
-                    Icon(
-                        painter = painterResource(R.drawable.search),
-                        contentDescription = stringResource(R.string.search)
-                    )
-                },
-                trailingIcon = {
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { searchQuery = "" }) {
-                            Icon(
-                                painter = painterResource(R.drawable.close),
-                                contentDescription = null
+        val rootList: @Composable (Boolean) -> Unit = { sidebar ->
+            SettingsLazyPage(
+                navController = navController,
+                title = stringResource(R.string.settings),
+                horizontalPadding = 16.dp,
+                maxContentWidth = if (sidebar) 10_000.dp else 720.dp,
+                listState = rememberLazyListState(),
+            ) {
+                item("profile") {
+                    ProfileCard(accountName, accountImageUrl) { navController.navigate("settings/account") }
+                }
+                if (query.isBlank()) item("localOnly") {
+                    Spacer(Modifier.height(20.dp))
+                    LocalOnlyRow()
+                }
+                if (query.isBlank()) {
+                    rootGroups.forEachIndexed { i, links ->
+                        item("group$i") {
+                            Spacer(Modifier.height(if (i == 0) 20.dp else 28.dp))
+                            SettingsLinkCard(
+                                title = null,
+                                links = links,
+                                trailing = trailing,
+                                selected = if (sidebar) links.firstOrNull { it.action == SettingsAction.Route("settings/hub/$selectedHubId") } else null,
+                                onAction = { action ->
+                                    val hub = (action as? SettingsAction.Route)?.route?.removePrefix("settings/hub/")?.let(SettingsHubs::byId)
+                                    if (sidebar && hub != null) selectedHubId = hub.id else onAction(action)
+                                },
                             )
                         }
                     }
-                },
-                singleLine = true,
-                shape = RoundedCornerShape(24.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 20.dp, end = 20.dp, bottom = 8.dp)
-            )
-        }
-
-        if (searchLower.isEmpty()) {
-        // Section: General
-        item(key = "general_header") { SettingsSectionHeader("GENERAL") }
-        item(key = "general_section") {
-            SettingsSection {
-                SettingsNavItem(
-                    icon = painterResource(if (isUpdateAvailable) R.drawable.convx_logo else R.drawable.network_update),
-                    iconTint = if (isUpdateAvailable) MaterialTheme.colorScheme.error else Color(0xFF007AFF),
-                    title = stringResource(R.string.system_update),
-                    badge = if (isUpdateAvailable) stringResource(R.string.update_available) else null,
-                    onClick = { navController.navigate("settings/update") },
-                )
-                SettingsDivider()
-                SettingsNavItem(
-                    icon = painterResource(R.drawable.palette),
-                    iconTint = Color(0xFFAF52DE),
-                    title = stringResource(R.string.appearance),
-                    onClick = { navController.navigate("settings/appearance") },
-                )
-                SettingsDivider()
-                SettingsNavItem(
-                    icon = painterResource(R.drawable.play),
-                    iconTint = Color(0xFFFF375F),
-                    title = stringResource(R.string.player_and_audio),
-                    onClick = { navController.navigate("settings/player") },
-                )
-            }
-        }
-
-        item(key = "spacer_1") { Spacer(Modifier.height(24.dp)) }
-
-        // Section: Account
-        item(key = "account_header") { SettingsSectionHeader("ACCOUNT") }
-        item(key = "account_section") {
-            SettingsSection {
-                SettingsNavItem(
-                    icon = painterResource(R.drawable.account),
-                    iconTint = Color(0xFF34C759),
-                    title = stringResource(R.string.account),
-                    onClick = { navController.navigate("settings/account") },
-                )
-                SettingsDivider()
-                SettingsNavItem(
-                    icon = painterResource(R.drawable.group),
-                    iconTint = Color(0xFF5856D6),
-                    title = stringResource(R.string.listen_together),
-                    // Screens.ListenTogether.route ("listen_together") is a
-                    // MainTabsPager page now, not its own NavHost destination, and
-                    // this screen has no access to the pager state to scroll it.
-                    // "listen_together_from_topbar" is the same screen (showTopBar =
-                    // true) as a real, always-registered destination -- exactly what
-                    // the top bar's own Listen Together entry point already uses.
-                    onClick = { navController.navigate("listen_together_from_topbar") },
-                )
-            }
-        }
-
-        item(key = "spacer_activity") { Spacer(Modifier.height(24.dp)) }
-
-        // Section: Activity — history/stats moved here from the top bar, which now
-        // only shows the logo and this settings/profile pill.
-        item(key = "activity_header") { SettingsSectionHeader("ACTIVITY") }
-        item(key = "activity_section") {
-            SettingsSection {
-                SettingsNavItem(
-                    icon = painterResource(R.drawable.music_history),
-                    iconTint = Color(0xFF32ADE6),
-                    title = stringResource(R.string.history),
-                    onClick = { navController.navigate("history") },
-                )
-                SettingsDivider()
-                SettingsNavItem(
-                    icon = painterResource(R.drawable.stats),
-                    iconTint = Color(0xFFFFCC00),
-                    title = stringResource(R.string.stats),
-                    onClick = { navController.navigate("stats") },
-                )
-            }
-        }
-
-        item(key = "spacer_2") { Spacer(Modifier.height(24.dp)) }
-
-        // Section: Content
-        item(key = "content_header") { SettingsSectionHeader("CONTENT") }
-        item(key = "content_section") {
-            SettingsSection {
-                SettingsNavItem(
-                    icon = painterResource(R.drawable.language),
-                    iconTint = Color(0xFF007AFF),
-                    title = stringResource(R.string.content),
-                    onClick = { navController.navigate("settings/content") },
-                )
-                SettingsDivider()
-                SettingsNavItem(
-                    icon = painterResource(R.drawable.link),
-                    iconTint = Color(0xFF5856D6),
-                    title = stringResource(R.string.modules),
-                    onClick = { navController.navigate("settings/modules") },
-                )
-                SettingsDivider()
-                SettingsNavItem(
-                    icon = painterResource(R.drawable.translate),
-                    iconTint = Color(0xFFFF9500),
-                    title = stringResource(R.string.ai_lyrics_translation),
-                    onClick = { navController.navigate("settings/ai") },
-                )
-            }
-        }
-
-        item(key = "spacer_3") { Spacer(Modifier.height(24.dp)) }
-
-        // Section: Data & Privacy
-        item(key = "privacy_header") { SettingsSectionHeader("DATA & PRIVACY") }
-        item(key = "privacy_section") {
-            SettingsSection {
-                SettingsNavItem(
-                    icon = painterResource(R.drawable.security),
-                    iconTint = Color(0xFF007AFF),
-                    title = stringResource(R.string.privacy),
-                    onClick = { navController.navigate("settings/privacy") },
-                )
-                SettingsDivider()
-                SettingsNavItem(
-                    icon = painterResource(R.drawable.storage),
-                    iconTint = Color(0xFF8E8E93),
-                    title = stringResource(R.string.storage),
-                    onClick = { navController.navigate("settings/storage") },
-                )
-                SettingsDivider()
-                SettingsNavItem(
-                    icon = painterResource(R.drawable.restore),
-                    iconTint = Color(0xFF34C759),
-                    title = stringResource(R.string.backup_restore),
-                    onClick = { navController.navigate("settings/backup_restore") },
-                )
-            }
-        }
-
-        item(key = "spacer_4") { Spacer(Modifier.height(24.dp)) }
-
-        // Section: About
-        item(key = "about_section") {
-            SettingsSection {
-                SettingsNavItem(
-                    icon = painterResource(R.drawable.info),
-                    iconTint = Color(0xFF007AFF),
-                    title = stringResource(R.string.about),
-                    onClick = { navController.navigate("settings/about") },
-                )
-            }
-        }
-
-        item(key = "bottom_spacer") {
-            Spacer(
-                Modifier
-                    .height(50.dp)
-                    .windowInsetsPadding(LocalPlayerAwareWindowInsets.current.only(WindowInsetsSides.Bottom))
-            )
-        }
-        } else {
-            item(key = "search_results") {
-                val results = getAllSearchableSettings()
-                    .filter {
-                        it.title.lowercase().contains(searchLower) ||
-                            it.description?.lowercase()?.contains(searchLower) == true
-                    }
-                if (results.isEmpty()) {
-                    Text(
-                        text = "No settings found for \"$searchQuery\"",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 32.dp)
-                    )
                 } else {
-                    Material3SettingsGroup(
-                        items = results.map { setting ->
-                            Material3SettingsItem(
-                                icon = painterResource(R.drawable.search),
-                                title = { Text(setting.title) },
-                                description = { Text(setting.category) },
-                                onClick = { navController.navigate(setting.route) }
-                            )
-                        }
+                    item("results") {
+                        Spacer(Modifier.height(20.dp))
+                        SearchResults(searchEntries, query, onAction)
+                    }
+                }
+                // Clears the docked search field.
+                item("searchSpace") { Spacer(Modifier.height(96.dp)) }
+            }
+        }
+
+        if (split) {
+            Row(Modifier.fillMaxSize()) {
+                Box(Modifier.width(380.dp).fillMaxHeight()) {
+                    rootList(true)
+                    SearchBar(query, { query = it }, Modifier.align(Alignment.BottomCenter))
+                }
+                Crossfade(selectedHubId, Modifier.weight(1f), tween(200), label = "settingsDetail") { id ->
+                    val hub = SettingsHubs.byId(id) ?: SettingsHubs.player
+                    Column(
+                        Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .windowInsetsPadding(LocalPlayerAwareWindowInsets.current.only(WindowInsetsSides.Top + WindowInsetsSides.End))
+                            .padding(horizontal = 24.dp, vertical = 24.dp),
+                    ) {
+                        Text(
+                            hub.title,
+                            style = IosTheme.typography.largeTitle,
+                            color = IosTheme.colors.label,
+                            modifier = Modifier.padding(start = 4.dp, top = 40.dp, bottom = 20.dp),
+                        )
+                        Column(Modifier.widthIn(max = 720.dp)) { SettingsHubBody(hub, onAction) }
+                    }
+                }
+            }
+        } else {
+            rootList(false)
+            SearchBar(query, { query = it }, Modifier.align(Alignment.BottomCenter))
+        }
+    }
+}
+
+private data class SearchEntry(val link: SettingsLink, val category: String)
+
+/** Every row of every category, plus the individual settings, searchable by name, description and synonyms. */
+@Composable
+private fun rememberSearchEntries(): List<SearchEntry> {
+    val settings = getAllSearchableSettings()
+    return remember(settings) {
+        val fromTree = SettingsHubs.all.flatMap { hub ->
+            listOf(SearchEntry(hub.asLink(), "Settings")) +
+                hub.groups.flatMap { g -> g.links.map { SearchEntry(it, hub.title) } }
+        }
+        val treeTitles = fromTree.map { it.link.title.lowercase() }.toSet()
+        fromTree + settings.filter { it.title.lowercase() !in treeTitles }.map { s ->
+            SearchEntry(
+                SettingsLink(
+                    s.title,
+                    R.drawable.search,
+                    { systemGray },
+                    if (s.opensLyricsSheet) SettingsAction.LyricsStyle else SettingsAction.Route(s.route),
+                    s.description,
+                ),
+                s.category,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SearchResults(entries: List<SearchEntry>, query: String, onAction: (SettingsAction) -> Unit) {
+    val q = query.trim().lowercase()
+    val hits = entries.filter { e ->
+        e.link.title.lowercase().contains(q) ||
+            e.link.subtitle?.lowercase()?.contains(q) == true ||
+            e.link.keywords.contains(q) ||
+            e.category.lowercase().contains(q)
+    }
+    if (hits.isEmpty()) {
+        Text(
+            "No settings found for “${query.trim()}”",
+            style = IosTheme.typography.body,
+            color = IosTheme.colors.secondaryLabel,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
+        )
+        return
+    }
+    // Results keep their category so "Background" under Player reads differently from a home background.
+    SettingsLinkCard(
+        title = "${hits.size} result${if (hits.size == 1) "" else "s"}",
+        links = hits.map { it.link.copy(subtitle = it.category + (it.link.subtitle?.let { s -> " · $s" } ?: "")) },
+        onAction = onAction,
+    )
+}
+
+/** Local only mode: a root-level switch, so it is one tap from the top of Settings. */
+@Composable
+private fun LocalOnlyRow() {
+    val (localOnly, setLocalOnly) = rememberPreference(LocalOnlyModeKey, defaultValue = false)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(ContinuousRoundedRectangle(IosMetrics.GroupedCornerRadius))
+            .background(IosTheme.colors.secondarySystemGroupedBackground)
+            .clickable { setLocalOnly(!localOnly) }
+            .defaultMinSize(minHeight = 56.dp)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier.size(30.dp).clip(ContinuousRoundedRectangle(7.dp)).background(IosTheme.colors.systemOrange),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(painterResource(R.drawable.music_note), null, tint = Color.White, modifier = Modifier.size(18.dp))
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(stringResource(R.string.local_only_mode), style = IosTheme.typography.body, color = IosTheme.colors.label)
+            Text(
+                stringResource(R.string.local_only_mode_desc),
+                style = IosTheme.typography.footnote,
+                color = IosTheme.colors.secondaryLabel,
+            )
+        }
+        Switch(checked = localOnly, onCheckedChange = setLocalOnly)
+    }
+}
+
+@Composable
+private fun ProfileCard(accountName: String, accountImageUrl: String?, onClick: () -> Unit) {
+    val signedIn = accountName.isNotBlank() && !accountName.equals("Guest", ignoreCase = true)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(ContinuousRoundedRectangle(20.dp))
+            .background(IosTheme.colors.secondarySystemGroupedBackground)
+            .iosRowPress(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AccountAvatar(
+            imageUrl = accountImageUrl.takeIf { signedIn },
+            name = accountName.takeIf { signedIn }.orEmpty(),
+            size = 60.dp,
+        )
+        Column(Modifier.weight(1f).padding(start = 16.dp)) {
+            Text(
+                if (signedIn) accountName else "Sign in",
+                style = IosTheme.typography.title3,
+                fontWeight = FontWeight.SemiBold,
+                color = IosTheme.colors.label,
+                maxLines = 1,
+            )
+            Text(
+                if (signedIn) "YouTube Music, sync and more" else "YouTube Music, Spotify and more",
+                style = IosTheme.typography.footnote,
+                color = IosTheme.colors.secondaryLabel,
+                maxLines = 1,
+            )
+        }
+        SymbolIcon(symbol = sf("chevron.right"), contentDescription = null, size = 14.dp, tint = IosTheme.colors.tertiaryLabel)
+    }
+}
+
+/**
+ * The docked search field: an opaque raised pill over a fade of the page colour, so rows
+ * scrolling beneath it never show through. Rides above the keyboard when focused.
+ */
+@Composable
+private fun SearchBar(value: String, onValueChange: (String) -> Unit, modifier: Modifier = Modifier) {
+    val colors = IosTheme.colors
+    val interaction = remember { MutableInteractionSource() }
+    val focused by interaction.collectIsFocusedAsState()
+    val focusManager = LocalFocusManager.current
+    val focusRequester = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    Box(
+        modifier
+            .fillMaxWidth()
+            .background(Brush.verticalGradient(listOf(colors.systemGroupedBackground.copy(alpha = 0f), colors.systemGroupedBackground)))
+            .imePadding()
+            .navigationBarsPadding()
+            .padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Row(Modifier.widthIn(max = 680.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                Modifier
+                    .weight(1f)
+                    .height(52.dp)
+                    .shadow(10.dp, ContinuousCapsule(), clip = false)
+                    .clip(ContinuousCapsule())
+                    .background(colors.secondarySystemGroupedBackground)
+                    // The whole pill focuses the field, not just the line of text inside it.
+                    .clickable(interactionSource = null, indication = null) {
+                        focusRequester.requestFocus()
+                        keyboard?.show()
+                    }
+                    .padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                SymbolIcon(symbol = sf("magnifyingglass"), contentDescription = null, size = 18.dp, tint = colors.secondaryLabel)
+                Spacer(Modifier.width(10.dp))
+                Box(Modifier.weight(1f)) {
+                    if (value.isEmpty()) Text(stringResource(R.string.search), style = IosTheme.typography.body, color = colors.secondaryLabel)
+                    BasicTextField(
+                        value = value,
+                        onValueChange = onValueChange,
+                        singleLine = true,
+                        interactionSource = interaction,
+                        textStyle = IosTheme.typography.body.copy(color = colors.label),
+                        cursorBrush = SolidColor(IosTheme.tint),
+                        modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
                     )
                 }
             }
-        }
-    }
-
-    TopAppBar(
-        title = {},
-        navigationIcon = {
-            IconButton(
-                onClick = navController::navigateUp,
-                onLongClick = navController::backToMain
+            AnimatedVisibility(
+                visible = focused || value.isNotEmpty(),
+                enter = expandHorizontally(expandFrom = Alignment.Start) + fadeIn(),
+                exit = shrinkHorizontally(shrinkTowards = Alignment.Start) + fadeOut(),
             ) {
-                Icon(
-                    painterResource(R.drawable.arrow_back),
-                    contentDescription = null
+                Text(
+                    stringResource(android.R.string.cancel),
+                    style = IosTheme.typography.body,
+                    color = IosTheme.tint,
+                    modifier = Modifier
+                        .padding(start = 14.dp)
+                        .clickable {
+                            onValueChange("")
+                            focusManager.clearFocus()
+                        },
                 )
             }
-        },
-        windowInsets = appTopBarWindowInsets(),
-    )
-}
-
-@Composable
-private fun SettingsSectionHeader(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.labelLarge.copy(
-            fontWeight = FontWeight.SemiBold,
-        ),
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(
-            start = 20.dp,
-            top = 8.dp,
-            bottom = 8.dp,
-        ),
-    )
-}
-
-@Composable
-private fun SettingsSection(
-    modifier: Modifier = Modifier,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-            .clip(RoundedCornerShape(AppleTokens.CardCorner))
-            // Row content (title/icon) already reads MaterialTheme.colorScheme —
-            // a fixed-dark AppleTokens.Card background went black-on-black in
-            // light theme (same root cause as Material3SettingsGroup).
-            .background(MaterialTheme.colorScheme.surfaceContainer),
-        content = content,
-    )
-}
-
-@Composable
-private fun SettingsNavItem(
-    icon: Painter,
-    iconTint: Color,
-    title: String,
-    badge: String? = null,
-    onClick: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 13.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        // Icon in rounded square
-        Box(
-            modifier = Modifier
-                .size(32.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(iconTint.copy(alpha = 0.15f)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                painter = icon,
-                contentDescription = null,
-                tint = iconTint,
-                modifier = Modifier.size(18.dp),
-            )
         }
-
-        Spacer(Modifier.width(16.dp))
-
-        // Title
-        Text(
-            text = title,
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.weight(1f),
-        )
-
-        // Badge or chevron
-        if (badge != null) {
-            Text(
-                text = badge,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.error,
-            )
-            Spacer(Modifier.width(8.dp))
-        }
-
-        Icon(
-            painter = painterResource(R.drawable.chevron_right_px),
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-            modifier = Modifier.size(14.dp),
-        )
     }
-}
-
-@Composable
-private fun SettingsDivider() {
-    HorizontalDivider(
-        modifier = Modifier.padding(start = 64.dp),
-        color = MaterialTheme.colorScheme.outlineVariant,
-        thickness = 0.5.dp,
-    )
 }

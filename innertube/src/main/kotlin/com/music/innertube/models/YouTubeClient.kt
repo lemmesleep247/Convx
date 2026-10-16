@@ -120,8 +120,7 @@ data class YouTubeClient(
 
         /**
          * Video not playable: Paid / Movie / Private / Age-restricted.
-         * Note: The 'Authorization' key must be excluded from the header.
-         * For some reason, PoToken is not required.
+         * Exclude the Authorization header. This client does not require a PoToken.
          */
         val ANDROID_NO_SDK = YouTubeClient(
             clientName = "ANDROID",
@@ -160,6 +159,24 @@ data class YouTubeClient(
             cronetVersion = "132.0.6808.3",
             packageName = "com.google.android.apps.youtube.vr.oculus",
             friendlyName = "Android VR 1.61",
+            loginSupported = false,
+            useSignatureTimestamp = false
+        )
+
+        /** Newer VR build; the reference app ranks it second in its stream fallback chain. */
+        val ANDROID_VR_1_65_10 = YouTubeClient(
+            clientName = "ANDROID_VR",
+            clientVersion = "1.65.10",
+            clientId = "28",
+            userAgent = "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip",
+            osName = "Android",
+            osVersion = "12L",
+            deviceMake = "Oculus",
+            deviceModel = "Quest 3",
+            androidSdkVersion = "32",
+            buildId = "SQ3A.220605.009.A1",
+            packageName = "com.google.android.apps.youtube.vr.oculus",
+            friendlyName = "Android VR 1.65",
             loginSupported = false,
             useSignatureTimestamp = false
         )
@@ -241,6 +258,26 @@ data class YouTubeClient(
             loginSupported = false,
             useSignatureTimestamp = false,
             packageName = "com.google.ios.youtube"
+        )
+
+        val ANDROID_MUSIC = YouTubeClient(
+            clientName = "ANDROID_MUSIC",
+            clientVersion = "6.37.50",
+            clientId = "73",
+            userAgent = "com.google.android.apps.youtube.music/6.37.50 (Linux; U; Android 14) gzip",
+            friendlyName = "Android Music",
+            loginSupported = true,
+            useSignatureTimestamp = true
+        )
+
+        val IOS_MUSIC = YouTubeClient(
+            clientName = "IOS_MUSIC",
+            clientVersion = "6.37.1",
+            clientId = "74",
+            userAgent = "com.google.ios.youtubemusic/6.37.1 (iPhone16,2; U; CPU iOS 18_2 like Mac OS X;)",
+            friendlyName = "iOS Music",
+            loginSupported = true,
+            useSignatureTimestamp = true
         )
     }
 }

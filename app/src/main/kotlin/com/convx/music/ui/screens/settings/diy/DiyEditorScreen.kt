@@ -42,14 +42,14 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.convx.music.ui.ios.compat.AlertDialog
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.Slider
+import com.convx.music.ui.ios.compat.Surface
+import com.convx.music.ui.ios.compat.Switch
+import com.convx.music.ui.ios.compat.Text
+import com.convx.music.ui.ios.compat.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -353,8 +353,6 @@ fun DiyEditorScreen(navController: NavController) {
     }
 }
 
-// ------------------------------------------------------------------------------- canvas
-
 /**
  * The real player at true size (background, artwork, controls — not an approximation), plus
  * an interactive sticker layer over it.
@@ -387,13 +385,7 @@ private fun EditorCanvas(
     val undoPending = remember { mutableStateOf(false) }
 
     Box(modifier = modifier) {
-        // DiyEditorScreen is itself a NavHost destination, inside the root
-        // appBackdrop's capture subtree — so BottomSheetPlayer's own glass base
-        // (Player.kt's Modifier.liquidGlass on the `background` slot) must not
-        // resolve LocalAppBackdrop to that root appBackdrop, or its capture
-        // includes itself (RenderNode::prepareTreeImpl SIGSEGV, see
-        // glass-chrome-rendernode-cycle). Provide an UNATTACHED screen-local
-        // backdrop first, same pattern as AlbumScreen/ArtistScreen/DiyPlayerMockup.
+        // Use a screen-local backdrop so the player glass does not capture itself.
         val editorBackdrop = rememberLayerBackdrop()
         CompositionLocalProvider(LocalAppBackdrop provides editorBackdrop) {
             BottomSheetPlayer(
@@ -407,10 +399,8 @@ private fun EditorCanvas(
             )
         }
 
-        // ponytail: every sticker draws above the real player here regardless of its z —
-        // there's no slot to inject "behind artwork, above background" into a composable
-        // this doesn't own the internal stack of. The saved z still applies correctly once
-        // played for real (showDiyStickers back on, outside the editor). Upgrade path: an
+        // The editor cannot place stickers behind player artwork. Saved z-order is
+        // applied when stickers appear in the actual player.
         // injectable content slot in BottomSheetPlayer at that exact point in its stack.
         DiyDesignCanvas(orientation = orientation, modifier = Modifier.fillMaxSize()) { scale ->
             BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -425,7 +415,7 @@ private fun EditorCanvas(
                             modifier = if (sticker.id == selectedId) {
                                 Modifier.border(
                                     2.dp,
-                                    MaterialTheme.colorScheme.primary,
+                                    AppTheme.colorScheme.primary,
                                     RoundedCornerShape(4.dp),
                                 )
                             } else {
@@ -528,8 +518,6 @@ private fun hitTest(
 
 private const val MIN_TOUCH_HALF_PX = 36f
 
-// ------------------------------------------------------------------------ floating controls
-
 @Composable
 private fun TopControls(
     canUndo: Boolean,
@@ -540,13 +528,7 @@ private fun TopControls(
     onSave: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // Modifier.weight needs a bounded main-axis constraint, which
-    // horizontalScroll below deliberately relaxes to unbounded — so the
-    // left/right pill groups can no longer be split by a weighted Spacer.
-    // Arrangement.SpaceBetween achieves the same "push apart" layout at rest
-    // (it only needs the Row's own resolved width, computed after scroll
-    // content is measured) and degrades to scrollable overflow instead of
-    // clipping when the groups don't both fit.
+    // horizontalScroll makes the row unbounded, so use SpaceBetween instead of a weighted spacer.
     Row(
         modifier = modifier
             .statusBarsPadding()
@@ -612,7 +594,7 @@ private fun BottomControls(
                     selected = editOpen,
                     onClick = onToggleEdit,
                 )
-                PillIcon(R.drawable.delete, tint = MaterialTheme.colorScheme.error, onClick = onDelete)
+                PillIcon(R.drawable.delete, tint = AppTheme.colorScheme.error, onClick = onDelete)
             }
         }
     }
@@ -623,7 +605,7 @@ private fun BottomControls(
 private fun Pill(content: @Composable () -> Unit) {
     Surface(
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.92f),
+        color = AppTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.92f),
         tonalElevation = 3.dp,
         shadowElevation = 6.dp,
     ) {
@@ -639,7 +621,7 @@ private fun Pill(content: @Composable () -> Unit) {
 private fun PillIcon(
     icon: Int,
     enabled: Boolean = true,
-    tint: Color = MaterialTheme.colorScheme.onSurface,
+    tint: Color = AppTheme.colorScheme.onSurface,
     onClick: () -> Unit,
 ) {
     Box(
@@ -667,23 +649,21 @@ private fun PillText(
 ) {
     Surface(
         shape = CircleShape,
-        color = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+        color = if (selected) AppTheme.colorScheme.primary else Color.Transparent,
         modifier = Modifier.clip(CircleShape).clickable(enabled = enabled, onClick = onClick),
     ) {
         Text(
             text = text,
-            style = MaterialTheme.typography.labelLarge,
+            style = AppTheme.typography.labelLarge,
             color = when {
-                selected -> MaterialTheme.colorScheme.onPrimary
-                enabled -> MaterialTheme.colorScheme.onSurface
-                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                selected -> AppTheme.colorScheme.onPrimary
+                enabled -> AppTheme.colorScheme.onSurface
+                else -> AppTheme.colorScheme.onSurfaceVariant
             },
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
         )
     }
 }
-
-// ---------------------------------------------------------------------------- floating popups
 
 /**
  * The popup layer. Drawn last so its panels float above the pills; input-inert when nothing is
@@ -785,7 +765,7 @@ private fun BoxScope.DraggablePanel(
 private fun PopupPanel(content: @Composable () -> Unit) {
     Surface(
         shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.96f),
+        color = AppTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.96f),
         tonalElevation = 4.dp,
         shadowElevation = 12.dp,
     ) {
@@ -810,7 +790,7 @@ private fun GrabHandle() {
                 .width(36.dp)
                 .height(5.dp)
                 .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)),
+                .background(AppTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)),
         )
     }
 }
@@ -822,7 +802,7 @@ private fun EmojiPanel(onPick: (String) -> Unit) {
             columns = GridCells.Fixed(6),
             modifier = Modifier.widthIn(max = 280.dp).height(200.dp).padding(horizontal = 12.dp),
         ) {
-            items(EMOJI_PALETTE) { emoji ->
+            items(EMOJI_PALETTE, key = { it }) { emoji ->
                 Text(
                     text = emoji,
                     fontSize = 26.sp,
@@ -914,8 +894,8 @@ private fun StickerPanel(
                 text = stringResource(
                     if (sticker.z < 0) R.string.diy_behind_artwork else R.string.diy_above_artwork,
                 ),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = AppTheme.typography.labelSmall,
+                color = AppTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = 8.dp),
             )
         }
@@ -930,7 +910,7 @@ private fun MenuSlider(
     onChange: (Float) -> Unit,
 ) {
     Column {
-        Text(label, style = MaterialTheme.typography.labelMedium)
+        Text(label, style = AppTheme.typography.labelMedium)
         Slider(value = value.coerceIn(range), onValueChange = onChange, valueRange = range)
     }
 }
@@ -938,7 +918,7 @@ private fun MenuSlider(
 @Composable
 private fun MenuSwitch(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+        Text(label, Modifier.weight(1f), style = AppTheme.typography.bodyMedium)
         Switch(checked = checked, onCheckedChange = onChange)
     }
 }
@@ -967,8 +947,8 @@ private fun LowResolutionHint(sticker: DiySticker, transform: DiyTransform) {
 
     Text(
         text = stringResource(R.string.diy_low_resolution),
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.error,
+        style = AppTheme.typography.labelSmall,
+        color = AppTheme.colorScheme.error,
         modifier = Modifier.padding(bottom = 4.dp),
     )
 }

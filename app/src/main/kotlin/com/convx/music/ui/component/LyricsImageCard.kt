@@ -21,7 +21,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
+import com.convx.music.ui.ios.compat.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -185,7 +185,6 @@ fun LyricsImageCard(
             .build()
     )
     
-    // Calculate gradient colors if needed
     var gradientBrush by remember { mutableStateOf<Brush?>(null) }
     
     if (backgroundStyle == LyricsBackgroundStyle.GRADIENT) {
@@ -210,7 +209,9 @@ fun LyricsImageCard(
                             tileMode = TileMode.Clamp
                         )
                     }
-                } catch (_: Exception) {}
+                } catch (_: Exception) {
+                    // Keep the default gradient when palette extraction fails.
+                }
             }
         }
     }
@@ -221,7 +222,6 @@ fun LyricsImageCard(
             .fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
-        // Background Layer
         Box(
             modifier = Modifier.fillMaxSize()
         ) {
@@ -236,7 +236,7 @@ fun LyricsImageCard(
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
                             .fillMaxSize()
-                            .blur(50.dp) // High blur for background
+                            .blur(50.dp)
                             .background(Color.Black.copy(alpha = 0.3f)) // Overlay to ensure text readability
                     )
                 }
@@ -254,23 +254,13 @@ fun LyricsImageCard(
             modifier = Modifier
                 .fillMaxSize()
                 .clip(RoundedCornerShape(cardCornerRadius))
-                // For the card itself, we can make it slightly transparent or match the background style
-                // but usually the card IS the background cut out.
-                // Here we simulate the card being transparent so the background shows through,
-                // OR we redraw the background inside the card if we want the "card on background" look.
-                // Based on previous code, the card had its own background.
-                // Let's apply the same background logic to the card box.
         ) {
-             when (backgroundStyle) {
+            // Reuse the full image's background style inside the rounded card.
+            when (backgroundStyle) {
                 LyricsBackgroundStyle.SOLID -> {
                     Box(modifier = Modifier.fillMaxSize().background(backgroundSolidColor))
                 }
                 LyricsBackgroundStyle.BLUR -> {
-                    // For blur, we want the card to be a window to the blurred background?
-                    // Or have its own blurred background?
-                    // Typically "Share Lyrics" looks like a card on a background.
-                    // If we want the card to be seamless with the full image background, we can just use transparent.
-                    // But to ensure it looks like the generated image:
                     Image(
                         painter = painter,
                         contentDescription = null,
@@ -290,7 +280,6 @@ fun LyricsImageCard(
                 }
             }
             
-            // Border
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -303,7 +292,6 @@ fun LyricsImageCard(
                     .padding(padding),
                 verticalArrangement = Arrangement.SpaceBetween
             ) {
-                // Header: Cover + Title/Artist aligned left
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
@@ -395,7 +383,6 @@ fun LyricsImageCard(
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
-                // Footer
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth()

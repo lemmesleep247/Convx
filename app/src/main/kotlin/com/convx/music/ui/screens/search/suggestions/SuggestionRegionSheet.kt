@@ -1,31 +1,36 @@
 package com.convx.music.ui.screens.search.suggestions
 
+import com.convx.music.ui.component.sf
+import com.convx.music.ui.component.SymbolIcon
+import com.convx.music.ui.ios.compat.AppTheme
+
 import androidx.compose.animation.core.animateDpAsState
 import com.convx.music.ui.utils.bounceClick
-import com.convx.music.ui.utils.combinedBounceClick
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.*
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.Text
+import com.convx.music.ui.ios.compat.ListItem
+import com.convx.music.ui.ios.compat.IosSearchField
+import com.convx.music.ui.ios.foundation.IosTheme
+import androidx.compose.foundation.background
+import com.composables.sfsymbols.SfSymbols
+import com.composables.sfsymbols.monochrome.SFCheckmark
+import com.convx.music.ui.ios.compat.ModalBottomSheet
+import com.convx.music.ui.ios.compat.rememberIosModalSheetState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.convx.music.constants.SuggestionRegionSlugToName
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SuggestionRegionSheet(
     currentRegionSlug: String,
@@ -36,13 +41,13 @@ fun SuggestionRegionSheet(
     
     val filteredRegions = remember(searchQuery) {
         SuggestionRegionSlugToName.toList()
-            .filter { it.first != "system" } // Filter out system from the main list
+            .filter { it.first != "system" }
             .filter { it.second.contains(searchQuery, ignoreCase = true) }
     }
 
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
-    val bottomSheetState = rememberModalBottomSheetState()
+    val bottomSheetState = rememberIosModalSheetState()
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -51,33 +56,16 @@ fun SuggestionRegionSheet(
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 text = "Choose Suggestions Region",
-                style = MaterialTheme.typography.labelLarge
+                style = AppTheme.typography.labelLarge
             )
             
-            DockedSearchBar(
-                inputField = {
-                    SearchBarDefaults.InputField(
-                        query = searchQuery,
-                        onQueryChange = { searchQuery = it },
-                        onSearch = {},
-                        expanded = false,
-                        onExpandedChange = {},
-                        placeholder = { Text("Search regions...") },
-                        leadingIcon = {
-                            Icon(
-                                Icons.Default.Search,
-                                contentDescription = "Search"
-                            )
-                        },
-                    )
-                },
-                expanded = false,
-                onExpandedChange = {},
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-            ) {}
-            
+            IosSearchField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = "Search regions...",
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+            )
+
             LazyColumn(
                 state = listState,
                 modifier = Modifier
@@ -85,11 +73,10 @@ fun SuggestionRegionSheet(
                     .padding(horizontal = 16.dp)
                     .clip(RoundedCornerShape(24.dp))
             ) {
-                // System Default Section
                 item {
                     Text(
                         text = "System",
-                        style = MaterialTheme.typography.titleSmall,
+                        style = AppTheme.typography.titleSmall,
                         modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp)
                     )
                 }
@@ -102,11 +89,7 @@ fun SuggestionRegionSheet(
                         index = 0,
                         onClick = {
                             onRegionSelected("system")
-                            scope.launch { bottomSheetState.hide() }.invokeOnCompletion {
-                                if (!bottomSheetState.isVisible) {
-                                    onDismiss()
-                                }
-                            }
+                            scope.launch { bottomSheetState.hide() }
                         }
                     )
                 }
@@ -118,7 +101,7 @@ fun SuggestionRegionSheet(
                 item {
                     Text(
                         text = "Countries & Regions",
-                        style = MaterialTheme.typography.titleSmall,
+                        style = AppTheme.typography.titleSmall,
                         modifier = Modifier.padding(
                             top = 14.dp,
                             bottom = 16.dp,
@@ -137,11 +120,7 @@ fun SuggestionRegionSheet(
                         index = index,
                         onClick = {
                             onRegionSelected(slug)
-                            scope.launch { bottomSheetState.hide() }.invokeOnCompletion {
-                                if (!bottomSheetState.isVisible) {
-                                    onDismiss()
-                                }
-                            }
+                            scope.launch { bottomSheetState.hide() }
                         }
                     )
                     Spacer(Modifier.height(2.dp))
@@ -192,30 +171,23 @@ fun RegionListItem(
     ListItem(
         headlineContent = headlineContent,
         supportingContent = supportingContent,
-        leadingContent = if (selected) {
+        trailingContent = if (selected) {
             {
-                Icon(
-                    Icons.Default.Check,
-                    contentDescription = "Selected"
-                )
+                SymbolIcon(symbol = sf("SFCheckmark"), contentDescription = "Selected", size = 17.dp, tint = IosTheme.tint)
             }
         } else null,
-        colors =
-            if (selected) ListItemDefaults.colors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(
-                    alpha = 0.3f
-                ), leadingIconColor = MaterialTheme.colorScheme.primary
-            )
-            else ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
         modifier = Modifier
             .clip(
-                if (selected) CircleShape
-                else RoundedCornerShape(
+                RoundedCornerShape(
                     topStart = top,
                     topEnd = top,
                     bottomStart = bottom,
-                    bottomEnd = bottom
+                    bottomEnd = bottom,
                 )
+            )
+            .background(
+                if (isPressed) IosTheme.colors.tertiarySystemFill
+                else IosTheme.colors.secondarySystemGroupedBackground
             )
             .bounceClick(
                 onClick = onClick,

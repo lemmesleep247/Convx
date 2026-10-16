@@ -14,7 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
+import com.convx.music.ui.ios.compat.AppTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -59,7 +59,7 @@ fun GridItemPlaceHolder(
                 Modifier.height(gridHeight)
             }.aspectRatio(1f)
                 .clip(thumbnailShape)
-                .background(MaterialTheme.colorScheme.onSurface),
+                .background(AppTheme.colorScheme.onSurface),
         )
 
         Spacer(modifier = Modifier.height(AppleTokens.ItemGap / 2))

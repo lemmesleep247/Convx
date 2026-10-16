@@ -9,12 +9,18 @@ import android.graphics.Bitmap
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
+import com.convx.music.ui.ios.foundation.IosTheme
+import com.convx.music.ui.ios.foundation.darkIosColors
+import com.convx.music.ui.ios.foundation.iosColorScheme
+import com.convx.music.ui.ios.foundation.iosMaterialTypography
+import com.convx.music.ui.ios.foundation.lightIosColors
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.SaverScope
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontFamily
@@ -23,10 +29,8 @@ import com.convx.music.constants.AppFont
 import com.convx.music.constants.AppTextColorKey
 import com.convx.music.constants.SelectedFontKey
 import com.convx.music.utils.rememberPreference
-import com.materialkolor.PaletteStyle
-import com.materialkolor.dynamiccolor.ColorSpec
-import com.materialkolor.rememberDynamicColorScheme
 import com.materialkolor.score.Score
+import com.convx.music.ui.theme.colorengine.ColorEngine
 
 val DefaultThemeColor = AppleTokens.AccentRed
 
@@ -62,39 +66,33 @@ fun accentTextColor(accent: Color, dark: Boolean): Color {
 val LocalAccentTextColor = androidx.compose.runtime.compositionLocalOf { DefaultThemeColor }
 
 @Composable
-fun vivimusicTheme(
+fun ConvxTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    pureBlack: Boolean = true,
+    pureBlack: Boolean = false,
     themeColor: Color = DefaultThemeColor,
     content: @Composable () -> Unit,
 ) {
-    val baseColorScheme = rememberDynamicColorScheme(
-        seedColor = themeColor,
-        isDark = darkTheme,
-        specVersion = ColorSpec.SpecVersion.SPEC_2025,
-        style = PaletteStyle.TonalSpot,
-    )
+    // Keep iOS-style neutrals fixed; the user's theme color controls the accent only.
+    val iosColors = remember(darkTheme, themeColor) {
+        if (darkTheme) darkIosColors(themeColor) else lightIosColors(themeColor)
+    }
+    val baseColorScheme = remember(iosColors) { iosColorScheme(iosColors) }
 
     val (appTextColorInt) = rememberPreference(AppTextColorKey, defaultValue = 0)
 
     val colorScheme = remember(baseColorScheme, pureBlack, darkTheme, themeColor, appTextColorInt) {
-        val withApple = if (darkTheme) baseColorScheme.appleSurfaces() else baseColorScheme
-        val withBlack = if (darkTheme && pureBlack) withApple.pureBlack(true) else withApple
-        val withAccentText = withBlack.accentText(themeColor, darkTheme)
-        // Theme screen's explicit text color, when set, replaces the accent-tinted
-        // text roles everywhere they're read from MaterialTheme.colorScheme — this
-        // is the single root override every screen's default Text() picks up, same
-        // mechanism accentText itself uses. Fill/control roles (primary, onPrimary)
-        // are left alone; only text roles change.
-        if (appTextColorInt != 0) withAccentText.flatText(Color(appTextColorInt)) else withAccentText
+        val withBlack = if (darkTheme && pureBlack) baseColorScheme.pureBlack(true) else baseColorScheme
+        // Keep text roles neutral; the theme accent is for interactive elements. Hero screens
+        // derive their tint from artwork, and the explicit text-color setting still wins.
+        if (appTextColorInt != 0) withBlack.flatText(Color(appTextColorInt)) else withBlack
     }
 
-    val (selectedFont) = rememberPreference(SelectedFontKey, defaultValue = AppFont.SYSTEM.value)
+    val (selectedFont) = rememberPreference(SelectedFontKey, defaultValue = AppFont.PLUS_JAKARTA_SANS.value)
     val customFont = rememberCustomFontFamily()
 
     val appFont = remember(selectedFont, customFont) {
         when (AppFont.fromValue(selectedFont)) {
-            AppFont.SYSTEM -> customFont ?: FontFamily.Default
+            AppFont.SYSTEM -> customFont ?: SfProFontFamily
             AppFont.GOOGLE_SANS -> GoogleSansFontFamily
             AppFont.SANS_FLEX -> SansFlexFontFamily
             AppFont.OUTFIT -> OutfitFontFamily
@@ -104,38 +102,89 @@ fun vivimusicTheme(
 
     androidx.compose.runtime.CompositionLocalProvider(
         LocalAccentColor provides themeColor,
-        // Same override as flatText just above: the user's explicit text color,
-        // when set, wins over the accent-derived one — this is what the shared
-        // top bar (wordmark + every screen's title, including Settings) actually
-        // reads, since it sits outside any screen's own theme scope.
+        // Vibrator-backed: fires even with the system touch-vibration switch off.
+        androidx.compose.ui.platform.LocalHapticFeedback provides rememberAppHaptics(),
+        // The shared top bar sits outside screen themes, so expose the user's text override here.
         LocalAccentTextColor provides (
             if (appTextColorInt != 0) Color(appTextColorInt) else accentTextColor(themeColor, darkTheme)
         ),
     ) {
-        MaterialTheme(
-            colorScheme = colorScheme,
-            typography = remember(appFont) { AppTypography(appFont) },
-            shapes = AppShapes,
-            content = content
-        )
+        IosTheme(
+            darkTheme = darkTheme,
+            accent = themeColor,
+            typography = remember(appFont) { com.convx.music.ui.ios.foundation.iosTypography(appFont) },
+        ) {
+            // Keeps unported screens on the app palette while they still use Material3.
+            MaterialTheme(
+                colorScheme = colorScheme,
+                typography = remember(appFont) { iosMaterialTypography(appFont) },
+                shapes = AppShapes,
+                content = content
+            )
+        }
     }
 }
 
-fun Bitmap.extractThemeColor(): Color {
-    val swatches = Palette.from(this)
-        .maximumColorCount(8)
-        .generate()
-        .swatches
+/**
+ * The three raw colours a hero screen background paints itself from. These favour
+ * the artwork's own most vivid colours — a screen background should look like the
+ * cover, not like a safe seed for the OS to build widgets around.
+ */
+data class HeroPalette(
+    /** The screen's flat tint, from the artwork's dominant/most-vivid swatch. */
+    val background: Color,
+    /** A second, distinct swatch — the mesh wash's highlight blobs. */
+    val accent: Color,
+    /** Mean colour of the artwork's own bottom edge, for a wash that reads as
+     *  a continuation of the artwork rather than a second surface starting. */
+    val wash: Color,
+    /** Titles on [background], from the colour engine's own WCAG-enforced text ladder
+     *  rather than a fixed white. Defaults to the token pair for callers (fallbacks,
+     *  pure-black override) that have no artwork to derive from. */
+    val primaryText: Color = AppleTokens.onColor(background),
+    /** Descriptions, counts and metadata on [background] — the tier that carries the
+     *  artwork's hue without losing legibility. */
+    val secondaryText: Color = AppleTokens.onColorSecondary(background),
+)
 
-    // Material's Score falls back to Google Blue (0xff4285f4) when no swatch is
-    // chromatic enough to seed a scheme — which is exactly what a black and white
-    // cover produces. The result was a blue theme for a greyscale sleeve. Detect
-    // that case up front and seed with the artwork's own grey instead, so a
-    // monochrome cover yields a monochrome theme.
-    if (swatches.isAchromatic()) return neutralSeed(swatches)
+/**
+ * [cacheKey] is the artwork URL — the colour engine caches its analysis by it, so a
+ * second screen showing the same cover pays a map lookup instead of a second run.
+ *
+ * No Material Palette fallback: when the engine declines (an image it cannot
+ * sample, or one that clusters to nothing) this returns null, and
+ * [rememberHeroPalette] already falls back to the user's own theme accent for
+ * that case rather than a second, different extraction method.
+ */
+suspend fun Bitmap.extractHeroPalette(cacheKey: String): HeroPalette? = engineHeroPalette(cacheKey)
 
-    val rankedColors = Score.score(swatches.associate { it.rgb to it.population })
-    return Color(rankedColors.first())
+/** The colour engine's answer for this bitmap, in [HeroPalette] shape. */
+private suspend fun Bitmap.engineHeroPalette(cacheKey: String): HeroPalette? {
+    val result = ColorEngine.analyze(this, cacheKey) ?: return null
+    return HeroPalette(
+        background = result.palette.dominant,
+        accent = result.palette.accent,
+        wash = bottomEdgeMean(),
+    )
+}
+
+/** Flat mean of the artwork's bottom band. */
+private fun Bitmap.bottomEdgeMean(): Color {
+    val band = (height * 0.18f).toInt().coerceIn(1, height)
+    val startY = height - band
+    val pixels = IntArray(width * band)
+    getPixels(pixels, 0, width, 0, startY, width, band)
+
+    var red = 0L
+    var green = 0L
+    var blue = 0L
+    for (pixel in pixels) {
+        red += (pixel shr 16) and 0xFF
+        green += (pixel shr 8) and 0xFF
+        blue += pixel and 0xFF
+    }
+    val n = pixels.size.coerceAtLeast(1)
+    return Color(red = (red / n).toInt(), green = (green / n).toInt(), blue = (blue / n).toInt())
 }
 
 /** True when the artwork carries no usable hue. Shares the tested rule in
@@ -164,49 +213,13 @@ private fun desaturate(argb: Int, value: Float): Color {
     return Color(android.graphics.Color.HSVToColor(hsv))
 }
 
-/**
- * A mid grey taken from the artwork's own dominant tone. Used as a scheme seed for
- * greyscale covers: a pure neutral would give Material nothing to build a tonal
- * palette from, so keep a trace of chroma while staying visually grey.
- */
-private fun neutralSeed(swatches: List<Palette.Swatch>): Color {
-    val dominant = swatches.maxByOrNull { it.population }?.rgb ?: return Color(0xFF6E6E6E)
-    val hsv = FloatArray(3)
-    android.graphics.Color.colorToHSV(dominant, hsv)
-    hsv[1] = 0.04f
-    hsv[2] = hsv[2].coerceIn(0.35f, 0.70f)
-    return Color(android.graphics.Color.HSVToColor(hsv))
-}
-
-/**
- * Grabs one frame from a canvas video URL and runs the same extraction as
- * [Bitmap.extractThemeColor] on it — canvas videos are often more colorful/
- * representative than the still cover art. Best-effort: HLS (.m3u8) frame
- * extraction isn't reliable on every device/Android version, so callers
- * should fall back to the static artwork on a null result. Blocking — call
- * from a background dispatcher.
- */
-fun extractThemeColorFromVideoFrame(videoUrl: String): Color? {
-    val retriever = android.media.MediaMetadataRetriever()
-    return try {
-        retriever.setDataSource(videoUrl, emptyMap())
-        // A second or so in tends to avoid a black/fade-in first frame.
-        val frame = retriever.getFrameAtTime(1_000_000L, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-        frame?.extractThemeColor()
-    } catch (e: Exception) {
-        null
-    } finally {
-        retriever.release()
-    }
-}
-
 fun Bitmap.extractGradientColors(): List<Color> {
     val swatches = Palette.from(this)
         .maximumColorCount(64)
         .generate()
         .swatches
 
-    // Same Google-Blue fallback trap as extractThemeColor: on greyscale artwork
+    // Score's Google-Blue fallback trap: on greyscale artwork
     // Score returns 0xff4285f4 and the gradient comes out blue. Hand back greys
     // drawn from the image instead.
     if (swatches.isAchromatic()) {
@@ -249,6 +262,18 @@ fun ColorScheme.appleSurfaces() = copy(
     onPrimaryContainer = Color.White,
 )
 
+/** Pulls this text color toward white ([light]) or black until it reaches 4.5:1 on [background]; no-op when unspecified. */
+private fun Color.passingOn(background: Color, light: Boolean): Color {
+    if (!background.isSpecified) return this
+    val extreme = if (light) Color.White else Color.Black
+    var result = this
+    var step = 0
+    while (AppleTokens.contrastRatio(result, background) < 4.5f && step++ < 10) {
+        result = androidx.compose.ui.graphics.lerp(result, extreme, 0.2f)
+    }
+    return result
+}
+
 /**
  * Swaps Material's neutral text roles for accent-contrast ones, so every screen
  * picks it up from `MaterialTheme.colorScheme` without being edited.
@@ -258,13 +283,13 @@ fun ColorScheme.appleSurfaces() = copy(
  * M3's washed-out grey. Tune the two lerp amounts to taste; they are the whole
  * calibration.
  */
-fun ColorScheme.accentText(accent: Color, dark: Boolean): ColorScheme {
+fun ColorScheme.accentText(accent: Color, dark: Boolean, background: Color = Color.Unspecified): ColorScheme {
     val body = if (dark) {
         androidx.compose.ui.graphics.lerp(accent, Color.White, 0.86f)
     } else {
         androidx.compose.ui.graphics.lerp(accent, Color.Black, 0.86f)
-    }
-    val secondary = accentTextColor(accent, dark)
+    }.passingOn(background, dark)
+    val secondary = accentTextColor(accent, dark).passingOn(background, dark)
     return copy(
         onSurface = body,
         onBackground = body,
@@ -276,11 +301,7 @@ fun ColorScheme.accentText(accent: Color, dark: Boolean): ColorScheme {
         // The subtitle role: the artist name under a song or album title reads
         // through this everywhere in the app.
         secondary = secondary,
-        // `primary` is the app's second-largest text/icon role after
-        // onSurfaceVariant — links, selected states, section actions. appleSurfaces
-        // had pinned it to flat white in dark mode, which is most of what still
-        // read as untinted Material. It doubles as a fill (buttons, sliders), so
-        // onPrimary flips to the opposite extreme to keep those legible.
+        // Use the secondary color for links and selections; keep filled controls legible with onPrimary.
         primary = secondary,
         onPrimary = if (dark) Color.Black else Color.White,
     )

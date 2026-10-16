@@ -3,7 +3,7 @@ package com.music.spotify
 import com.music.spotify.models.*
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
-import io.ktor.client.engine.okhttp.OkHttp
+import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.request.header
@@ -16,12 +16,14 @@ import io.ktor.http.content.TextContent
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.*
+import java.util.UUID
 
 object Spotify {
     @Volatile
     var accessToken: String? = null
 
     private const val GQL_URL = "https://api-partner.spotify.com/pathfinder/v2/query"
+    private val homeVisitorId = UUID.randomUUID().toString().replace("-", "")
 
     private fun randomUserAgent(): String {
         val osOptions = arrayOf(
@@ -44,13 +46,9 @@ object Spotify {
     }
 
     private val gqlClient by lazy {
-        HttpClient(OkHttp) {
+        HttpClient(CIO) {
             engine {
-                config {
-                    connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-                    readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-                    writeTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-                }
+                requestTimeout = 30000
             }
             defaultRequest {
                 header("User-Agent", randomUserAgent())
@@ -85,11 +83,12 @@ object Spotify {
     private suspend fun graphqlPost(
         operationName: String,
         variables: JsonObject = buildJsonObject {},
+        extraHeaders: Map<String, String> = emptyMap(),
     ): JsonObject {
         val token = accessToken ?: throw SpotifyException(401, "Not authenticated")
         val sha256Hash = SpotifyHashProvider.getHash(operationName)
         val body = buildGqlBody(operationName, sha256Hash, variables)
-        return executeGqlWithRetries(operationName, token, body)
+        return executeGqlWithRetries(operationName, token, body, extraHeaders)
     }
 
     private fun buildGqlBody(
@@ -112,11 +111,13 @@ object Spotify {
         operationName: String,
         token: String,
         body: JsonObject,
+        extraHeaders: Map<String, String>,
     ): JsonObject {
-        val maxRetries = 3
-        for (attempt in 0 until maxRetries) {
+        val maxAttempts = 3
+        for (attempt in 0 until maxAttempts) {
             val response = gqlClient.post(GQL_URL) {
                 header("Authorization", "Bearer $token")
+                extraHeaders.forEach { (name, value) -> header(name, value) }
                 setBody(
                     TextContent(
                         body.toString(),
@@ -130,7 +131,7 @@ object Spotify {
             }
             if (response.status == HttpStatusCode.TooManyRequests) {
                 val retryAfter = response.headers["Retry-After"]?.toLongOrNull() ?: (2L * (attempt + 1))
-                if (attempt < maxRetries - 1) {
+                if (attempt < maxAttempts - 1) {
                     delay(retryAfter * 1000)
                     continue
                 }
@@ -152,7 +153,7 @@ object Spotify {
             return responseJson
         }
 
-        throw SpotifyException(429, "Rate limited after $maxRetries retries")
+        throw SpotifyException(429, "Rate limited after $maxAttempts attempts")
     }
 
     private fun parseGqlImage(source: JsonObject): SpotifyImage? {
@@ -230,6 +231,32 @@ object Spotify {
             displayName = profile.str("name"),
             images = parseGqlImages(profile.obj("avatar")?.arr("sources")),
         )
+    }
+
+    suspend fun homeFeed(
+        clientId: String,
+        timeZone: String,
+        language: String,
+    ): Result<List<SpotifyHomeShelf>> = runCatching {
+        val authorization = SpotifyCanvas.pathfinderAuthorization(clientId)
+        val variables = buildJsonObject {
+            put("homeEndUserIntegration", "INTEGRATION_WEB_PLAYER")
+            put("timeZone", timeZone.ifBlank { "UTC" })
+            put("sp_t", homeVisitorId)
+            put("facet", "")
+            put("sectionItemsLimit", 10)
+            put("includeEpisodeContentRatingsV2", true)
+        }
+        val response = graphqlPost(
+            operationName = "home",
+            variables = variables,
+            extraHeaders = mapOf(
+                "client-token" to authorization.token,
+                "spotify-app-version" to authorization.clientVersion,
+                "accept-language" to language.ifBlank { "en" },
+            ),
+        )
+        SpotifyHomeFeed.parse(response.toString())
     }
 
     suspend fun myPlaylists(

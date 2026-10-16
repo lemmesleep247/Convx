@@ -15,11 +15,16 @@ import androidx.webkit.WebViewFeature
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.Text
+import com.convx.music.ui.ios.compat.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -41,6 +46,8 @@ import com.convx.music.constants.SavedAccount
 import com.convx.music.constants.VisitorDataKey
 import com.convx.music.ui.component.IconButton
 import com.convx.music.ui.utils.backToMain
+import com.convx.music.ui.component.FrostedTopBar
+import com.convx.music.ui.ios.compat.AppTheme
 import com.convx.music.utils.rememberPreference
 import com.convx.music.utils.reportException
 import com.convx.music.viewmodels.AccountSettingsViewModel
@@ -78,27 +85,31 @@ fun LoginScreen(
     var hasCompletedLogin by remember { mutableStateOf(false) }
     val accountSettingsViewModel: AccountSettingsViewModel = hiltViewModel()
 
-    // The JS bridge values land here synchronously. The DataStore-backed prefs
-    // above only settle after an async write plus a flow emission, so reading
-    // them straight after login raced and could hand YouTube a blank
-    // visitorData / dataSyncId — which then breaks search and playback for the
-    // whole session, and stays broken because the blanks get persisted.
+    // Read bridge values directly; DataStore may still return blank visitorData or dataSyncId
+    // immediately after login.
     val liveVisitorData = remember { AtomicReference("") }
     val liveDataSyncId = remember { AtomicReference("") }
 
     val webViewRef = remember { mutableStateOf<WebView?>(null) }
-    // Caps the reload-and-retry below so a persistent failure (e.g. an account with
-    // no YouTube channel at all) can't hammer the network forever instead of just
-    // leaving the user to back out.
+    // Bound retries so accounts without a YouTube channel cannot trigger endless requests.
     val validationAttempts = remember { AtomicInteger(0) }
 
-    Box(
-        modifier = Modifier.fillMaxSize()
+    // Keep Chromium's hardware surface out of Haze captures; repeated capture can blank or
+    // flicker the sign-in page.
+    Column(
+        modifier = Modifier.fillMaxSize().background(AppTheme.colorScheme.background),
     ) {
+        FrostedTopBar(
+            title = stringResource(R.string.login),
+            titleAlpha = 1f,
+            onBack = navController::navigateUp,
+            onBackLongClick = navController::backToMain,
+        )
         AndroidView(
             modifier = Modifier
-                .windowInsetsPadding(LocalPlayerAwareWindowInsets.current)
-                .fillMaxSize(),
+                .fillMaxWidth()
+                .weight(1f)
+                .windowInsetsPadding(LocalPlayerAwareWindowInsets.current.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal)),
             factory = { webViewContext ->
                 WebView(webViewContext).apply {
                     webViewClient = object : WebViewClient() {
@@ -107,14 +118,13 @@ fun LoginScreen(
                             loadUrl("javascript:Android.onRetrieveDataSyncId(window.yt.config_.DATASYNC_ID)")
 
                             if (url?.startsWith("https://music.youtube.com") == true && !hasCompletedLogin) {
-                                val cookie = CookieManager.getInstance().getCookie(url)
-                                if (cookie.isNullOrBlank()) return  // not signed in yet; wait for the next page
-                                innerTubeCookie = cookie
+                                val cookie = CookieManager.getInstance().getCookie(url) ?: return
+                                // Guest pages can set visitor cookies, so require an authenticated account.
+                                if (!cookie.hasYouTubeAccountSession()) return
                                 hasCompletedLogin = true
 
                                 coroutineScope.launch {
-                                    // Wait for the async JS bridge instead of guessing with a
-                                    // fixed delay — a blank visitorData poisons every later request.
+                                    // Wait for bridge values instead of a fixed delay; missing values break later requests.
                                     var waitedMs = 0
                                     while (liveVisitorData.get().isBlank() && waitedMs < 5000) {
                                         delay(100)
@@ -127,23 +137,16 @@ fun LoginScreen(
                                         return@launch
                                     }
 
-                                    // Initialize YouTube object with new authentication data
+                                    innerTubeCookie = cookie
+
                                     YouTube.cookie = cookie
                                     YouTube.dataSyncId = liveDataSyncId.get().ifBlank { null }
                                     YouTube.visitorData = newVisitorData
 
                                     Timber.d("Login: YouTube object initialized, validating...")
 
-                                    // Validate via getAccountChannels, not accountInfo — its result
-                                    // was never used below anyway (only success/failure mattered),
-                                    // and it requires activeAccountHeaderRenderer, a field Google
-                                    // omits for some accounts (multi-channel/brand accounts — same
-                                    // failure class reported in sibling YouTube Music clients).
-                                    // getAccountChannels hits a different endpoint that doesn't
-                                    // depend on that field and is what actually gets used below.
-                                    // An EMPTY list is a legitimate result here (a single-channel
-                                    // account has nothing to switch to) — only a thrown exception
-                                    // (a real network/parse failure) counts as login failing.
+                                    // Use channel lookup because some accounts lack accountInfo's required renderer.
+                                    // An empty channel list is valid; only a request or parse failure rejects login.
                                     YouTube.getAccountChannels().mapCatching { raw ->
                                         raw.mapNotNull { c ->
                                             c.dataSyncId?.let { id ->
@@ -151,7 +154,6 @@ fun LoginScreen(
                                             }
                                         }
                                     }.onSuccess { channels ->
-                                        // Clean up WebView
                                         webViewRef.value?.apply {
                                             stopLoading()
                                             clearHistory()
@@ -169,14 +171,7 @@ fun LoginScreen(
                                             }
                                         } else {
                                             Timber.d("Login: single channel, restarting app...")
-                                            // No picker shown means nothing needs disambiguating —
-                                            // liveDataSyncId (straight from the page's own
-                                            // window.yt.config_.DATASYNC_ID) IS the active identity
-                                            // already. Preferring the channel-list-endpoint's parsed
-                                            // value here was an unnecessary swap to a value sourced
-                                            // from a completely different response shape, for no
-                                            // benefit — only fall back to it if the bridge somehow
-                                            // never fired.
+                                            // Prefer the login-page identity; use endpoint data only if it is blank.
                                             accountSettingsViewModel.applyChannelAndRestart(
                                                 context = context,
                                                 cookie = cookie,
@@ -190,11 +185,7 @@ fun LoginScreen(
                                         Timber.e(it, "Login: Authentication validation failed")
                                         hasCompletedLogin = false // Allow retry
                                         reportException(it)
-                                        // "Allow retry" above did nothing on its own — the WebView
-                                        // just sat on the already-loaded page with hasCompletedLogin
-                                        // reset, so onPageFinished never refired and the app never
-                                        // moved past the login screen. Reload so it does, up to a
-                                        // few times in case this is a persistent failure.
+                                        // Resetting this flag won't rerun onPageFinished; reload to retry validation.
                                         val attempt = validationAttempts.incrementAndGet()
                                         if (attempt <= 3) {
                                             android.widget.Toast.makeText(
@@ -217,15 +208,11 @@ fun LoginScreen(
                     }
                     settings.apply {
                         javaScriptEnabled = true
+                        domStorageEnabled = true
                         setSupportZoom(true)
                         builtInZoomControls = true
                         displayZoomControls = false
-                        // Google's sign-in flow can detect and block an embedded WebView via
-                        // two signals: the "wv" token Android stamps into the default WebView
-                        // user agent, and the X-Requested-With header WebView sends with every
-                        // request (identifies the calling app package). Clearing both is the
-                        // standard fix for the "this browser or app may not be secure" block —
-                        // androidx.webkit added setRequestedWithHeaderMode specifically for it.
+                        // Remove WebView identifiers used by Google sign-in checks.
                         userAgentString = userAgentString.replace("; wv", "")
                     }
                     if (WebViewFeature.isFeatureSupported(WebViewFeature.REQUESTED_WITH_HEADER_ALLOW_LIST)) {
@@ -237,13 +224,7 @@ fun LoginScreen(
                         @JavascriptInterface
                         fun onRetrieveVisitorData(newVisitorData: String?) {
                             if (!newVisitorData.isNullOrBlank() && newVisitorData != "null") {
-                                // The WebView's JS-to-native bridge can hand this string back
-                                // still percent-encoded (seen with trailing "%3D%3D" instead of
-                                // the raw "==" base64 padding) — a WebView/Chromium marshaling
-                                // quirk, not something YouTube's own page JS does. Sent as-is,
-                                // that corrupts the X-Goog-Visitor-Id header on every single
-                                // authenticated request. android.net.Uri.decode is a no-op on an
-                                // already-clean string, so this is safe either way.
+                                // Decode bridge values before sending them in authenticated requests.
                                 val decoded = android.net.Uri.decode(newVisitorData)
                                 liveVisitorData.set(decoded)
                                 visitorData = decoded
@@ -251,11 +232,7 @@ fun LoginScreen(
                         }
                         @JavascriptInterface
                         fun onRetrieveDataSyncId(newDataSyncId: String?) {
-                            // Kept whole, not truncated at "||" — that suffix is
-                            // what distinguishes a brand/second channel from the
-                            // account's primary identity. Stripping it meant the
-                            // app could only ever authenticate as the primary
-                            // channel no matter which one was active.
+                            // Preserve the `||` suffix because it identifies alternate channels.
                             if (!newDataSyncId.isNullOrBlank() && newDataSyncId != "null") {
                                 val decoded = android.net.Uri.decode(newDataSyncId)
                                 liveDataSyncId.set(decoded)
@@ -269,23 +246,27 @@ fun LoginScreen(
             }
         )
 
-        TopAppBar(
-            title = { Text(stringResource(R.string.login)) },
-            navigationIcon = {
-                IconButton(
-                    onClick = navController::navigateUp,
-                    onLongClick = navController::backToMain
-                ) {
-                    Icon(
-                        painterResource(R.drawable.arrow_back),
-                        contentDescription = null
-                    )
-                }
-            }
-        )
     }
 
     BackHandler(enabled = webViewRef.value?.canGoBack() == true) {
         webViewRef.value?.goBack()
+    }
+}
+
+private fun String.hasYouTubeAccountSession(): Boolean {
+    if (isBlank()) return false
+    val authenticatedCookieNames = setOf(
+        "SID",
+        "HSID",
+        "SSID",
+        "APISID",
+        "SAPISID",
+        "__Secure-1PSID",
+        "__Secure-3PSID",
+        "__Secure-1PAPISID",
+        "__Secure-3PAPISID",
+    )
+    return split(';').any { part ->
+        part.trim().substringBefore('=') in authenticatedCookieNames
     }
 }

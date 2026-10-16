@@ -6,116 +6,66 @@
 package com.convx.music.ui.screens.artist
 
 import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.activity.compose.BackHandler
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.ExperimentalFoundationApi
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.Box
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.Row
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.Spacer
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.padding
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.windowInsetsPadding
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.lazy.grid.GridCells
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.lazy.grid.GridItemSpan
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.lazy.grid.items
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.material3.ExperimentalMaterial3Api
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.Icon
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.MaterialTheme
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.SnackbarHost
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.Text
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.TopAppBar
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import com.convx.music.ui.ios.compat.Text
+import com.convx.music.ui.ios.compat.TopAppBar
 import androidx.compose.material3.TopAppBarScrollBehavior
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.Composable
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.collectAsState
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.getValue
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.mutableStateListOf
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.mutableStateOf
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.remember
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.rememberCoroutineScope
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.saveable.listSaver
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.saveable.rememberSaveable
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.setValue
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.toMutableStateList
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.Alignment
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.Modifier
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.res.painterResource
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.res.pluralStringResource
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.unit.dp
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.navigation.NavController
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.LocalPlayerAwareWindowInsets
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.LocalPlayerConnection
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.R
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.utils.rememberGridColumns
 import com.convx.music.constants.CONTENT_TYPE_ALBUM
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.CONTENT_TYPE_HEADER
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.GridItemSize
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.GridItemsSizeKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.GridThumbnailHeight
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.component.ListScrollRail
 import com.convx.music.ui.component.IconButton
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.component.LibraryAlbumGridItem
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.component.LocalMenuState
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.utils.backToMain
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.utils.rememberEnumPreference
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.viewmodels.ArtistAlbumsViewModel
+import com.convx.music.ui.component.ScreenLargeTitle
+import com.convx.music.ui.component.ScreenScaffold
+import com.convx.music.ui.component.rememberTitleCollapseProgressState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -126,11 +76,11 @@ fun ArtistAlbumsScreen(
 ) {
     val menuState = LocalMenuState.current
     val playerConnection = LocalPlayerConnection.current ?: return
-    val isPlaying by playerConnection.isEffectivelyPlaying.collectAsState()
-    val mediaMetadata by playerConnection.mediaMetadata.collectAsState()
+    val isPlaying by playerConnection.isEffectivelyPlaying.collectAsStateWithLifecycle()
+    val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
 
-    val artist by viewModel.artist.collectAsState()
-    val albums by viewModel.albums.collectAsState()
+    val artist by viewModel.artist.collectAsStateWithLifecycle()
+    val albums by viewModel.albums.collectAsStateWithLifecycle()
 
     val coroutineScope = rememberCoroutineScope()
     val lazyGridState = rememberLazyGridState()
@@ -154,15 +104,30 @@ fun ArtistAlbumsScreen(
     val snackbarHostState = remember { SnackbarHostState() }
 
     val visibleAlbums = remember(albums) { albums.distinctBy { it.id } }
+    val artistAlbumsTitleProgress = rememberTitleCollapseProgressState(lazyGridState)
 
-    Box(
-        modifier = Modifier.fillMaxSize()
-    ) {
+    ScreenScaffold(
+        title = artist?.artist?.name.orEmpty(),
+        // A grid has no title item to measure against, so this rides the grid's
+        // own scroll offset — see the LazyGridState overload.
+        titleAlpha = 0f,
+        titleAlphaProvider = { artistAlbumsTitleProgress.value },
+        onBack = navController::navigateUp,
+        onBackLongClick = navController::backToMain,
+    ) { chrome ->
         LazyVerticalGrid(
             state = lazyGridState,
             columns = rememberGridColumns(),
+            modifier = chrome.contentModifier(),
             contentPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues()
         ) {
+            item(
+                key = "title",
+                span = { GridItemSpan(maxLineSpan) },
+            ) {
+                ScreenLargeTitle(artist?.artist?.name.orEmpty())
+            }
+
             item(
                 key = "header",
                 span = { GridItemSpan(maxLineSpan) },
@@ -176,8 +141,8 @@ fun ArtistAlbumsScreen(
 
                     Text(
                         text = pluralStringResource(R.plurals.n_album, albums.size, albums.size),
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.secondary
+                        style = AppTheme.typography.titleSmall,
+                        color = AppTheme.colorScheme.secondary
                     )
                 }
             }
@@ -205,23 +170,6 @@ fun ArtistAlbumsScreen(
             lazyGridState = lazyGridState,
             itemCount = visibleAlbums.size,
             sectionIndexMap = null,
-        )
-
-        TopAppBar(
-            windowInsets = appTopBarWindowInsets(),
-            title = { Text(artist?.artist?.name.orEmpty()) },
-            navigationIcon = {
-                IconButton(
-                    onClick = navController::navigateUp,
-                    onLongClick = navController::backToMain
-                ) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.arrow_back),
-                        contentDescription = null
-                    )
-                }
-            },
-            scrollBehavior = scrollBehavior
         )
 
         SnackbarHost(

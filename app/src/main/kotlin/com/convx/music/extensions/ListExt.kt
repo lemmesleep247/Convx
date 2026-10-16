@@ -42,7 +42,6 @@ fun <T : Any> List<T>.mergeNearbyElements(
     return mergedList
 }
 
-// Extension function to filter explicit content for local Song entities
 fun List<Song>.filterExplicit(enabled: Boolean = true) =
     if (enabled) {
         filter { !it.song.explicit }
@@ -50,7 +49,6 @@ fun List<Song>.filterExplicit(enabled: Boolean = true) =
         this
     }
 
-// Extension function to filter video songs for local Song entities
 fun List<Song>.filterVideoSongs(enabled: Boolean = true) =
     if (enabled) {
         filter { !it.song.isVideo }
@@ -58,7 +56,6 @@ fun List<Song>.filterVideoSongs(enabled: Boolean = true) =
         this
     }
 
-// Extension function to filter explicit content for local Album entities
 fun List<Album>.filterExplicitAlbums(enabled: Boolean = true) =
     if (enabled) {
         filter { !it.album.explicit }
@@ -66,7 +63,6 @@ fun List<Album>.filterExplicitAlbums(enabled: Boolean = true) =
         this
     }
 
-// Extension function to filter YouTube Shorts playlist
 fun List<Playlist>.filterYoutubeShorts(enabled: Boolean = false) =
     if (enabled) {
         filterNot { it.playlist.browseId?.startsWith("SS") == true }

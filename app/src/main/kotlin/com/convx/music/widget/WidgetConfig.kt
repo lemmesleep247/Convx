@@ -6,6 +6,7 @@
 package com.convx.music.widget
 
 import android.content.Context
+import com.tencent.mmkv.MMKV
 
 /** How a widget instance paints its card behind the content. */
 enum class WidgetBackground {
@@ -22,8 +23,8 @@ enum class WidgetBackground {
  *
  * Deliberately NOT in DataStore: these are keyed by appWidgetId rather than being
  * app-wide, and they have to be readable synchronously from AppWidgetProvider /
- * the widget manager, which is not a coroutine context. A small SharedPreferences
- * file keyed by widget id is the right size for that.
+ * the widget manager, which is not a coroutine context. MMKV gives the same
+ * synchronous access with mmap-backed writes (migrated from SharedPreferences).
  */
 data class WidgetConfig(
     val background: WidgetBackground = WidgetBackground.ALBUM_TINT,
@@ -43,44 +44,41 @@ data class WidgetConfig(
 
         private fun keyOf(widgetId: Int, name: String) = "w${widgetId}_$name"
 
-        private fun prefs(context: Context) =
-            context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        private fun prefs(context: Context) = MMKV.mmkvWithID(FILE)
 
         fun load(context: Context, widgetId: Int): WidgetConfig {
             val p = prefs(context)
             val default = WidgetConfig()
-            val backgroundName = p.getString(keyOf(widgetId, "bg"), null)
+            val backgroundName = p.decodeString(keyOf(widgetId, "bg"))
             return WidgetConfig(
                 background = backgroundName
                     ?.let { name -> WidgetBackground.entries.firstOrNull { it.name == name } }
                     ?: default.background,
-                imageUri = p.getString(keyOf(widgetId, "image"), null),
-                showArtwork = p.getBoolean(keyOf(widgetId, "art"), default.showArtwork),
-                showPrevNext = p.getBoolean(keyOf(widgetId, "prevnext"), default.showPrevNext),
-                showLike = p.getBoolean(keyOf(widgetId, "like"), default.showLike),
-                playlistId = p.getString(keyOf(widgetId, "playlist"), null),
+                imageUri = p.decodeString(keyOf(widgetId, "image")),
+                showArtwork = p.decodeBool(keyOf(widgetId, "art"), default.showArtwork),
+                showPrevNext = p.decodeBool(keyOf(widgetId, "prevnext"), default.showPrevNext),
+                showLike = p.decodeBool(keyOf(widgetId, "like"), default.showLike),
+                playlistId = p.decodeString(keyOf(widgetId, "playlist")),
             )
         }
 
         fun save(context: Context, widgetId: Int, config: WidgetConfig) {
-            prefs(context).edit().apply {
-                putString(keyOf(widgetId, "bg"), config.background.name)
-                putString(keyOf(widgetId, "image"), config.imageUri)
-                putBoolean(keyOf(widgetId, "art"), config.showArtwork)
-                putBoolean(keyOf(widgetId, "prevnext"), config.showPrevNext)
-                putBoolean(keyOf(widgetId, "like"), config.showLike)
-                putString(keyOf(widgetId, "playlist"), config.playlistId)
-            }.apply()
+            val p = prefs(context)
+            p.encode(keyOf(widgetId, "bg"), config.background.name)
+            p.encode(keyOf(widgetId, "image"), config.imageUri)
+            p.encode(keyOf(widgetId, "art"), config.showArtwork)
+            p.encode(keyOf(widgetId, "prevnext"), config.showPrevNext)
+            p.encode(keyOf(widgetId, "like"), config.showLike)
+            p.encode(keyOf(widgetId, "playlist"), config.playlistId)
         }
 
         /** Called from onDeleted so removed widgets don't leak their settings forever. */
         fun delete(context: Context, widgetIds: IntArray) {
-            prefs(context).edit().apply {
-                widgetIds.forEach { id ->
-                    listOf("bg", "image", "art", "prevnext", "like", "playlist")
-                        .forEach { remove(keyOf(id, it)) }
-                }
-            }.apply()
+            val p = prefs(context)
+            widgetIds.forEach { id ->
+                listOf("bg", "image", "art", "prevnext", "like", "playlist")
+                    .forEach { p.removeValueForKey(keyOf(id, it)) }
+            }
         }
     }
 }

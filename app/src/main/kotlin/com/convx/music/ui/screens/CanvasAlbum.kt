@@ -12,12 +12,13 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import com.convx.music.applecanvas.AppleMusicCanvasProvider
 import com.convx.music.canvas.CanvasArtwork
 import com.convx.music.canvas.TidalCanvasProvider
 import com.convx.music.ui.player.CanvasArtworkPlaybackCache
-import com.convx.music.vivimusiccanvas.EchoMusicCanvasProvider
-import com.convx.music.vivimusiccanvas.ViviMusicCanvasProvider
+import com.convx.music.utils.SpotifyCanvasLookup
+import com.convx.music.convxcanvas.ConvxCanvasProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Locale
@@ -34,7 +35,7 @@ class AlbumCanvasState(
 
 /**
  * Album hero canvas, same priority order and dead-link fallback as the full
- * player background (see Player.kt): Echo/Vivi are song-keyed so they're
+ * player background (see Player.kt): Echo/Convx are song-keyed so they're
  * queried with [firstSongTitle] and validated by artist only (they don't
  * report an album name); Apple/Tidal are queried by album and validated
  * strictly on both artist and album.
@@ -54,6 +55,7 @@ fun rememberAlbumCanvas(
     }
     var candidateIndex by remember(cacheKey) { mutableIntStateOf(0) }
 
+    val context = LocalContext.current
     val storefront = remember {
         val country = Locale.getDefault().country
         if (country.length == 2) country.lowercase(Locale.ROOT) else "us"
@@ -66,11 +68,10 @@ fun rememberAlbumCanvas(
         val fetched = withContext(Dispatchers.IO) {
             val songQuery = firstSongTitle?.takeIf { it.isNotBlank() } ?: albumTitle
 
-            val echo = EchoMusicCanvasProvider.getBySongArtist(songQuery, artistName)
-                ?.takeIf { !it.preferredAnimationUrl.isNullOrBlank() }
-                ?.takeIf { artistOnlyMatches(it.artist, artistName) }
+            val spotify = firstSongTitle?.takeIf { it.isNotBlank() }
+                ?.let { SpotifyCanvasLookup.getBySongArtist(context, it, artistName) }
 
-            val vivi = ViviMusicCanvasProvider.getBySongArtist(songQuery, artistName)
+            val convx = ConvxCanvasProvider.getBySongArtist(songQuery, artistName)
                 ?.takeIf { !it.preferredAnimationUrl.isNullOrBlank() }
                 ?.takeIf { artistOnlyMatches(it.artist, artistName) }
 
@@ -87,7 +88,7 @@ fun rememberAlbumCanvas(
             )?.takeIf { !it.preferredAnimationUrl.isNullOrBlank() }
                 ?.takeIf { artistAndAlbumMatch(it, albumTitle, artistName) }
 
-            listOfNotNull(echo, apple, vivi, tidal)
+            listOfNotNull(spotify, apple, convx, tidal)
         }
 
         candidates = fetched

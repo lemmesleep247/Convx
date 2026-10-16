@@ -2,7 +2,7 @@
  * Convx Project (C) 2026
  * Licensed under GPL-3.0 | See git history for contributors
  */
-// Apple Music player UI ported from vivizzz007/vivi-music (https://github.com/vivizzz007/vivi-music), GPL-3.0.
+// Apple Music player UI adapted from an open-source (GPL-3.0) base.
 
 package com.convx.music.ui.player
 
@@ -59,16 +59,11 @@ fun CanvasArtworkPlayer(
     onReady: () -> Unit = {},
 ) {
     val context = LocalContext.current
-    val downloadUtil = LocalDownloadUtil.current
     val primary = primaryUrl?.takeIf { it.isNotBlank() }
     val fallback = fallbackUrl?.takeIf { it.isNotBlank() }
     val initial = primary ?: fallback ?: return
 
-    // A canvas loop is decorative, so it must never outlive the user looking at it.
-    // Gated here rather than at each call site: this composable stays composed while
-    // the app is in the background, and AlbumScreen passes isPlaying = true
-    // unconditionally, so a hardware video decoder kept running at the forced highest
-    // bitrate with the screen off — battery and heat, not just frames.
+    // Stop the decorative video when the app is backgrounded to save battery and heat.
     val lifecycleOwner = LocalLifecycleOwner.current
     var inForeground by remember(lifecycleOwner) {
         mutableStateOf(lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED))
@@ -90,68 +85,7 @@ fun CanvasArtworkPlayer(
     val currentOnExhausted by rememberUpdatedState(onExhausted)
     val currentOnReady by rememberUpdatedState(onReady)
 
-    val okHttpClient =
-        remember {
-            OkHttpClient
-                .Builder()
-                .proxy(YouTube.proxy)
-                .addInterceptor { chain ->
-                    val request = chain.request()
-                    val host = request.url.host
-                    val isYouTubeMediaHost =
-                        host.endsWith("googlevideo.com") ||
-                            host.endsWith("googleusercontent.com") ||
-                            host.endsWith("youtube.com") ||
-                            host.endsWith("youtube-nocookie.com") ||
-                            host.endsWith("ytimg.com")
-
-                    if (!isYouTubeMediaHost) return@addInterceptor chain.proceed(request)
-
-                    val clientParam = request.url.queryParameter("c")?.trim().orEmpty()
-                    val isWeb =
-                        clientParam.startsWith("WEB", ignoreCase = true) ||
-                            clientParam.startsWith("WEB_REMIX", ignoreCase = true) ||
-                            request.url.toString().contains("c=WEB", ignoreCase = true)
-
-                    val userAgent =
-                        when {
-                            clientParam.startsWith("WEB", ignoreCase = true) ||
-                                clientParam.startsWith("WEB_REMIX", ignoreCase = true) -> YouTubeClient.USER_AGENT_WEB
-
-                            clientParam.startsWith("IOS", ignoreCase = true) -> YouTubeClient.IOS.userAgent
-
-                            clientParam.startsWith("ANDROID_VR", ignoreCase = true) -> YouTubeClient.ANDROID_VR_NO_AUTH.userAgent
-
-                            clientParam.startsWith("ANDROID", ignoreCase = true) -> YouTubeClient.MOBILE.userAgent
-
-                            else -> YouTubeClient.USER_AGENT_WEB
-                        }
-
-                    val builder = request.newBuilder().header("User-Agent", userAgent)
-                    if (isWeb) {
-                        builder.header("Origin", YouTubeClient.ORIGIN_YOUTUBE_MUSIC)
-                        builder.header("Referer", YouTubeClient.REFERER_YOUTUBE_MUSIC)
-                    }
-
-                    chain.proceed(builder.build())
-                }
-                .build()
-        }
-    val mediaSourceFactory =
-        remember(okHttpClient, downloadUtil) {
-            DefaultMediaSourceFactory(
-                CacheDataSource.Factory()
-                    .setCache(downloadUtil.downloadCache)
-                    .setUpstreamDataSourceFactory(
-                        DefaultDataSource.Factory(
-                            context,
-                            OkHttpDataSource.Factory(okHttpClient),
-                        ),
-                    )
-                    .setCacheWriteDataSinkFactory(null)
-                    .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR),
-            )
-        }
+    val mediaSourceFactory = rememberCanvasMediaSourceFactory()
     val exoPlayer =
         remember(initial) {
             ExoPlayer.Builder(context)
@@ -214,23 +148,7 @@ fun CanvasArtworkPlayer(
 
     LaunchedEffect(currentUrl, exoPlayer) {
         val normalized = currentUrl.trim()
-        val mimeType =
-            when {
-                normalized.contains(".m3u8", ignoreCase = true) || 
-                normalized.lowercase(Locale.ROOT).split('?').first().endsWith(".m3u8") -> MimeTypes.APPLICATION_M3U8
-                normalized.lowercase(Locale.ROOT).contains(".mp4") -> MimeTypes.VIDEO_MP4
-                primary != null && currentUrl == primary -> {
-                    // Fallback: if it's the primary URL and we can't tell from extension,
-                    // check if its a known HLS provider or default to HLS for Apple Music compatibility
-                    if (normalized.contains("apple.com") || normalized.contains("music.apple") || !normalized.contains(".mp4")) {
-                        MimeTypes.APPLICATION_M3U8
-                    } else {
-                        MimeTypes.VIDEO_MP4
-                    }
-                }
-                fallback != null && currentUrl == fallback -> MimeTypes.VIDEO_MP4
-                else -> MimeTypes.APPLICATION_M3U8
-            }
+        val mimeType = canvasMimeType(normalized, primary, fallback)
 
         val mediaItem =
             MediaItem.Builder()
@@ -259,7 +177,8 @@ fun CanvasArtworkPlayer(
 
     val alpha by animateFloatAsState(
         targetValue = if (isVideoReady) 1f else 0f,
-        animationSpec = tween(durationMillis = 300),
+        // Use a longer fade to blend the loop into the still.
+        animationSpec = tween(durationMillis = 650, easing = SeamlessEasing),
         label = "canvasAlpha"
     )
 
@@ -283,3 +202,88 @@ fun CanvasArtworkPlayer(
         modifier = modifier.graphicsLayer { this.alpha = alpha },
     )
 }
+
+
+/** Canvas loops are served by several CDNs; YouTube-hosted ones need the client UA. */
+@Composable
+internal fun rememberCanvasMediaSourceFactory(): DefaultMediaSourceFactory {
+    val context = LocalContext.current
+    val downloadUtil = LocalDownloadUtil.current.get()
+    val okHttpClient =
+        remember {
+            OkHttpClient
+                .Builder()
+                .proxy(YouTube.proxy)
+                .addInterceptor { chain ->
+                    val request = chain.request()
+                    val host = request.url.host
+                    val isYouTubeMediaHost =
+                        host.endsWith("googlevideo.com") ||
+                            host.endsWith("googleusercontent.com") ||
+                            host.endsWith("youtube.com") ||
+                            host.endsWith("youtube-nocookie.com") ||
+                            host.endsWith("ytimg.com")
+
+                    if (!isYouTubeMediaHost) return@addInterceptor chain.proceed(request)
+
+                    val clientParam = request.url.queryParameter("c")?.trim().orEmpty()
+                    val isWeb =
+                        clientParam.startsWith("WEB", ignoreCase = true) ||
+                            clientParam.startsWith("WEB_REMIX", ignoreCase = true) ||
+                            request.url.toString().contains("c=WEB", ignoreCase = true)
+
+                    val userAgent =
+                        when {
+                            clientParam.startsWith("WEB", ignoreCase = true) ||
+                                clientParam.startsWith("WEB_REMIX", ignoreCase = true) -> YouTubeClient.USER_AGENT_WEB
+
+                            clientParam.startsWith("IOS", ignoreCase = true) -> YouTubeClient.IOS.userAgent
+
+                            clientParam.startsWith("ANDROID_VR", ignoreCase = true) -> YouTubeClient.ANDROID_VR_NO_AUTH.userAgent
+
+                            clientParam.startsWith("ANDROID", ignoreCase = true) -> YouTubeClient.MOBILE.userAgent
+
+                            else -> YouTubeClient.USER_AGENT_WEB
+                        }
+
+                    val builder = request.newBuilder().header("User-Agent", userAgent)
+                    if (isWeb) {
+                        builder.header("Origin", YouTubeClient.ORIGIN_YOUTUBE_MUSIC)
+                        builder.header("Referer", YouTubeClient.REFERER_YOUTUBE_MUSIC)
+                    }
+
+                    chain.proceed(builder.build())
+                }
+                .build()
+        }
+    return remember(okHttpClient, downloadUtil) {
+            DefaultMediaSourceFactory(
+                CacheDataSource.Factory()
+                    .setCache(downloadUtil.downloadCache)
+                    .setUpstreamDataSourceFactory(
+                        DefaultDataSource.Factory(
+                            context,
+                            OkHttpDataSource.Factory(okHttpClient),
+                        ),
+                    )
+                    .setCacheWriteDataSinkFactory(null)
+                    .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR),
+            )
+        }
+}
+
+/** HLS vs MP4 for a canvas URL; unknown extensions on the primary default to HLS (Apple). */
+internal fun canvasMimeType(normalized: String, primary: String?, fallback: String?): String =
+    when {
+        normalized.contains(".m3u8", ignoreCase = true) ||
+            normalized.lowercase(Locale.ROOT).split('?').first().endsWith(".m3u8") -> MimeTypes.APPLICATION_M3U8
+        normalized.lowercase(Locale.ROOT).contains(".mp4") -> MimeTypes.VIDEO_MP4
+        primary != null && normalized == primary.trim() ->
+            if (normalized.contains("apple.com") || normalized.contains("music.apple") || !normalized.contains(".mp4")) {
+                MimeTypes.APPLICATION_M3U8
+            } else {
+                MimeTypes.VIDEO_MP4
+            }
+        fallback != null && normalized == fallback.trim() -> MimeTypes.VIDEO_MP4
+        else -> MimeTypes.APPLICATION_M3U8
+    }

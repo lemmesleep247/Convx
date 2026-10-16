@@ -10,6 +10,7 @@ import com.music.innertube.YouTube
 import com.music.innertube.models.SongItem
 import com.convx.music.extensions.toMediaItem
 import com.convx.music.models.MediaMetadata
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.withContext
 
@@ -58,6 +59,8 @@ class YouTubePlaylistQueue(
                     continuation = continuationPage.continuation
                     retryCount = 0
                     return@withContext continuationPage.songs.map { it.toMediaItem() }
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     lastException = e
                     retryCount++

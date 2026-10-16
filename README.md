@@ -11,6 +11,10 @@
     <b><a href="https://github.com/cosmictaserdev-creator/Convx/releases/tag/v1.5.2">⬇️ DOWNLOAD CONVX 1.5.2</a></b>
     — Latest release. Works on Android 8.0+.
   </p>
+  <p>
+    <b><a href="https://github.com/cosmictaserdev-creator/Convx/releases/tag/2.0.0-nightly">⬇️ DOWNLOAD CONVX 2.0.0 NIGHTLY</a></b>
+    — Pre-release, rebuilt every night from <code>main</code>. May be unstable. Works on Android 8.0+.
+  </p>
 
   <h3>📸 Screenshots</h3>
   <div>
@@ -72,7 +76,7 @@
 
 <p><b>Convx</b> is a free, open-source music player for Android that streams from YouTube Music, built with <b>Jetpack Compose</b> on a <b>Media3</b> ExoPlayer core. The UI is a custom <b>Liquid Glass</b> design system — frosted, refractive surfaces, iOS-style bouncy scrolling, and progressive blur chrome — instead of stock Material widgets.</p>
 
-<p>Convx started as a fork of <a href="https://github.com/vivizzz007/vivi-music">vivi-music</a>; see <a href="#-credits">Credits</a> below.</p>
+<p>Convx was built on an open-source (GPL-3.0) music player base and has since diverged completely; see <a href="#-credits">Credits</a> below.</p>
 
 <hr>
 
@@ -120,7 +124,7 @@
 
 <h2>🏗️ Architecture</h2>
 
-<p>Quick map for contributors — see <a href="CONTRIBUTING.md">CONTRIBUTING.md</a> for the full guide.</p>
+<p>Quick map for contributors — see <a href=".github/CONTRIBUTING.md">CONTRIBUTING.md</a> for the full guide.</p>
 
 <ul>
   <li><b>UI:</b> Jetpack Compose, MVVM (<code>ui/screens</code> + <code>viewmodels</code>), navigated via <code>ui/screens/NavigationBuilder.kt</code>.</li>
@@ -128,7 +132,7 @@
   <li><b>Playback:</b> Media3 <code>ExoPlayer</code> service in <code>playback/MusicService.kt</code>.</li>
   <li><b>Data:</b> Room database (<code>db/</code>) for the local library, DataStore for preferences (<code>utils/DataStore.kt</code>, <code>constants/PreferenceKeys.kt</code>).</li>
   <li><b>YouTube Music access:</b> the <code>innertube</code> module — an unofficial InnerTube API client, kept separate from the app module.</li>
-  <li><b>Updater:</b> <code>vivimusic/updater/</code> checks GitHub Releases for new versions and handles in-app APK download/install (FOSS/GMS build flavors behave slightly differently — see <code>BuildConfig.CAST_AVAILABLE</code>).</li>
+  <li><b>Updater:</b> <code>core/updater/</code> checks GitHub Releases for new versions and handles in-app APK download/install (FOSS/GMS build flavors behave slightly differently — see <code>BuildConfig.CAST_AVAILABLE</code>).</li>
 </ul>
 
 <hr>
@@ -151,15 +155,16 @@
 
 <h2>🤝 Contributing</h2>
 
-<p>Contributions are welcome — bug reports, feature requests, and code. Start with <a href="CONTRIBUTING.md">CONTRIBUTING.md</a> for the project layout, build setup, and PR checklist. Short version:</p>
+<p>Contributions are welcome — bug reports, feature requests, and code. Start with <a href=".github/CONTRIBUTING.md">CONTRIBUTING.md</a> for the project layout, build setup, and PR checklist. Short version:</p>
 
 <ol>
   <li>Fork the repository</li>
-  <li>Create your feature branch (<code>git checkout -b feature/AmazingFeature</code>)</li>
-  <li>Commit your changes (<code>git commit -m 'Add some AmazingFeature'</code>)</li>
-  <li>Push to the branch (<code>git push origin feature/AmazingFeature</code>)</li>
-  <li>Open a Pull Request</li>
+  <li>Create a branch (<code>git checkout -b fix/short-description</code>)</li>
+  <li>Commit your changes (<code>git commit -m "fix: short description"</code>)</li>
+  <li>Push the branch and open a Pull Request against <code>main</code></li>
 </ol>
+
+<p>Found a bug? Please try the latest <a href="https://github.com/cosmictaserdev-creator/Convx/releases/tag/2.0.0-nightly">nightly build</a> first, then open an <a href="https://github.com/cosmictaserdev-creator/Convx/issues/new/choose">issue</a>. Please also read our <a href="CODE_OF_CONDUCT.md">Code of Conduct</a> and <a href="SECURITY.md">Security Policy</a>.</p>
 
 <hr>
 
@@ -224,8 +229,8 @@
       <td width="40%" align="left">
         <b>💡 Built On</b>
         <ul>
-          <li><strong><a href="https://github.com/vivizzz007/vivi-music">vivi-music</a></strong> by <strong>Vividh P Ashokan</strong> — the project Convx was forked from.</li>
-          <li>The <strong>Apple Music Player V17</strong> full-screen player style (Settings → Player Theme) is ported from <a href="https://github.com/vivizzz007/vivi-music">vivi-music</a>'s Apple Music player UI, GPL-3.0.</li>
+          <li>An open-source (GPL-3.0) music player — the base Convx was originally built on.</li>
+          <li>The <strong>Apple Music Player V17</strong> full-screen player style (Settings → Player Theme) is adapted from the same open-source base, GPL-3.0.</li>
         </ul>
       </td>
       <td width="60%" align="left">

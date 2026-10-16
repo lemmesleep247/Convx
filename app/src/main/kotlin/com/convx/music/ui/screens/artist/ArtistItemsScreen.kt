@@ -5,6 +5,8 @@
 
 package com.convx.music.ui.screens.artist
 
+import com.convx.music.ui.component.sf
+import com.convx.music.ui.component.SymbolIcon
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -23,10 +25,10 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.IconButton
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.Text
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -34,6 +36,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import dev.chrisbanes.haze.hazeSource
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -43,12 +46,13 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavController
+import com.composables.sfsymbols.SfSymbols
+import androidx.compose.ui.res.painterResource
 import com.convx.music.LocalPlayerAwareWindowInsets
 import com.convx.music.LocalPlayerConnection
 import com.convx.music.R
@@ -83,6 +87,9 @@ import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.utils.backToMain
 import com.convx.music.ui.utils.bounceClick
 import com.convx.music.ui.utils.combinedBounceClick
+import com.convx.music.ui.utils.albumRoute
+import com.convx.music.ui.utils.artistRoute
+import com.convx.music.ui.utils.onlinePlaylistRoute
 import com.convx.music.ui.utils.heroPullZoom
 import com.convx.music.ui.utils.listOverscroll
 import com.convx.music.ui.utils.rememberHeroZoom
@@ -94,6 +101,7 @@ import com.music.innertube.models.ArtistItem
 import com.music.innertube.models.PlaylistItem
 import com.music.innertube.models.SongItem
 import com.music.innertube.models.WatchEndpoint
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -105,20 +113,18 @@ fun ArtistItemsScreen(
     val menuState = LocalMenuState.current
     val haptic = LocalHapticFeedback.current
     val playerConnection = LocalPlayerConnection.current ?: return
-    val isPlaying by playerConnection.isEffectivelyPlaying.collectAsState()
-    val mediaMetadata by playerConnection.mediaMetadata.collectAsState()
+    val isPlaying by playerConnection.isEffectivelyPlaying.collectAsStateWithLifecycle()
+    val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
 
     val lazyListState = rememberLazyListState()
     val lazyGridState = rememberLazyGridState()
     val coroutineScope = rememberCoroutineScope()
     val gridItemSize by rememberEnumPreference(GridItemsSizeKey, GridItemSize.BIG)
 
-    val title by viewModel.title.collectAsState()
-    val itemsPage by viewModel.itemsPage.collectAsState()
+    val title by viewModel.title.collectAsStateWithLifecycle()
+    val itemsPage by viewModel.itemsPage.collectAsStateWithLifecycle()
 
-    // Same hero treatment as MoodAndGenresScreen: this used to be a bare
-    // Material TopAppBar over a plain surface, which is why the app's glass
-    // stopped at the edge of this screen.
+    // Match the shared glass hero treatment used by other browse screens.
     val tint = Color.Black
     val onTint = AppleTokens.onColor(tint)
 
@@ -162,34 +168,21 @@ fun ArtistItemsScreen(
         modifier = Modifier.fillMaxSize(),
     ) {
       HeroTintedContent(tint = tint, backdrop = heroBackdrop) {
-        // Was recomputed once for `items =` and then AGAIN inside every item's
-        // listItemShape(...) call — a full distinctBy pass per row, i.e. O(n²)
-        // plus a list allocation each time, on every frame of a scroll. Hoisted out
-        // of the captured Box too, so the scroll rail can read its count without
-        // being drawn into the backdrop layer.
+        // Deduplicate once; doing this inside each row would repeat a full scan.
         val distinctItems = remember(itemsPage) {
             itemsPage?.items.orEmpty().distinctBy { it.id }
         }
+        val hazeState = remember { dev.chrisbanes.haze.HazeState() }
         Box(modifier = Modifier.fillMaxSize()) {
-            // Capture from a plain Box wrapping the lists, not the lists
-            // themselves: they promote items to their own RenderNodes for
-            // recycling, which a capture attached directly doesn't flatten.
+            // Keep backdrop capture in a plain Box; recycled list item layers do not flatten reliably.
             Box(modifier = Modifier
             .nestedScroll(backdropFreeze.connection)
 
-            // OUTER layer, and it must come BEFORE layerBackdrop: the layer has to
-            // enclose the backdrop node, or that node's draw re-runs whenever anything
-            // else in the window redraws. The mini player, the playing indicator and
-            // the position poll are all siblings that tick on their own schedule, and
-            // each tick was re-recording this entire list. MainActivity pairs an outer
-            // and inner layer for exactly this; the screen-local backdrops were left
-            // with only the inner half.
+            // Cache the list layer so sibling redraws do not recapture the backdrop.
             .graphicsLayer()
             .layerBackdrop(listBackdrop, frozen = backdropFreeze.frozen)
-            // Content becomes ONE cached RenderNode, so the backdrop's
-            // layer.record { drawContent() } records a single drawRenderNode
-            // instead of re-issuing every op in the list.
-            .graphicsLayer()) {
+            .graphicsLayer()
+            .hazeSource(hazeState)) {
                 if (itemsPage == null) {
                     ShimmerHost(
                         modifier = Modifier.windowInsetsPadding(LocalPlayerAwareWindowInsets.current),
@@ -203,7 +196,6 @@ fun ArtistItemsScreen(
                 if (itemsPage?.items?.firstOrNull() is SongItem) {
                     LazyColumn(
                         state = lazyListState,
-                        // No bounce here: the top pull drives the hero zoom instead.
                         overscrollEffect = heroZoom.listOverscroll(),
                         modifier = Modifier.heroPullZoom(heroZoom),
                         contentPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues(),
@@ -257,10 +249,7 @@ fun ArtistItemsScreen(
                                             }
                                         },
                                     ) {
-                                        Icon(
-                                            painter = painterResource(R.drawable.more_vert),
-                                            contentDescription = null,
-                                        )
+                                        SymbolIcon(symbol = sf("ellipsis"), contentDescription = null)
                                     }
                                 },
                                 modifier =
@@ -280,9 +269,9 @@ fun ArtistItemsScreen(
                                                 }
                                             }
 
-                                            is AlbumItem -> navController.navigate("album/${item.id}")
-                                            is ArtistItem -> navController.navigate("artist/${item.id}")
-                                            is PlaylistItem -> navController.navigate("online_playlist/${item.id}")
+                                            is AlbumItem -> navController.navigate(albumRoute(item.id, item.thumbnail))
+                                            is ArtistItem -> navController.navigate(artistRoute(item.id, item.thumbnail))
+                                            is PlaylistItem -> navController.navigate(onlinePlaylistRoute(item.id, item.title, item.thumbnail))
                                         }
                                     },
                             )
@@ -302,7 +291,6 @@ fun ArtistItemsScreen(
                     LazyVerticalGrid(
                         state = lazyGridState,
                         columns = rememberGridColumns(),
-                        // No bounce here: the top pull drives the hero zoom instead.
                         overscrollEffect = heroZoom.listOverscroll(),
                         modifier = Modifier.heroPullZoom(heroZoom),
                         contentPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues()
@@ -332,9 +320,9 @@ fun ArtistItemsScreen(
                                                     )
                                                 )
 
-                                                is AlbumItem -> navController.navigate("album/${item.id}")
-                                                is ArtistItem -> navController.navigate("artist/${item.id}")
-                                                is PlaylistItem -> navController.navigate("online_playlist/${item.id}")
+                                                is AlbumItem -> navController.navigate(albumRoute(item.id, item.thumbnail))
+                                                is ArtistItem -> navController.navigate(artistRoute(item.id, item.thumbnail))
+                                                is PlaylistItem -> navController.navigate(onlinePlaylistRoute(item.id, item.title, item.thumbnail))
                                             }
                                         },
                                         onLongClick = {
@@ -392,6 +380,11 @@ fun ArtistItemsScreen(
                 sectionIndexMap = null,
             )
 
+            com.convx.music.ui.component.TopFadeBlur(
+                hazeState = hazeState,
+                pageColor = tint,
+                modifier = Modifier.align(Alignment.TopCenter),
+            )
             // `align` is resolved here, in BoxScope, because the provider
             // lambda below is not a BoxScope.
             val chromeRowModifier = Modifier
@@ -412,17 +405,14 @@ fun ArtistItemsScreen(
                         onClick = navController::navigateUp,
                         onLongClick = navController::backToMain,
                     ) {
-                        Icon(
-                            painterResource(R.drawable.arrow_back),
-                            contentDescription = null,
-                        )
+                        SymbolIcon(symbol = sf("chevron.left"), contentDescription = null)
                     }
 
                     Spacer(Modifier.width(12.dp))
 
                     Text(
                         text = title,
-                        style = MaterialTheme.typography.titleLarge,
+                        style = AppTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = onTint,
                         maxLines = 1,

@@ -31,8 +31,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -74,22 +74,8 @@ private val RailWidth = 28.dp
 private const val ScrollTopSection = "↑"
 
 /**
- * Fast-scrub rail pinned to the trailing edge of a long list: drag a finger down it and
- * the list jumps section by section, with a bubble showing the section under the finger.
- *
- * Two details make it feel like a native fast-scroller rather than a row of small
- * buttons:
- *
- * - The rail divides whatever height it is given by the number of sections, so the first
- *   and last targets stay pinned to the ends and only the spacing between them changes.
- *   Letters shrink to 4sp on a short window rather than the rail scrolling or clipping.
- * - Selection updates on drag position, not on per-letter hit testing, so a fast scrub
- *   never drops a section between two sampled pointer events.
- *
- * [sectionIndexMap] maps a section key to the list index where it starts. Sections with
- * no items are not skipped in the rail — they resolve to the next populated section
- * downward (see [findAlphabetTargetIndex]), which keeps the letters at fixed positions
- * so muscle memory survives a re-sort.
+ * Fast-scrub rail that maps drag position to a list section and shows its label.
+ * Empty sections remain in place and resolve to the next populated section.
  */
 @Composable
 fun AlphabetScrollBar(
@@ -205,7 +191,7 @@ fun AlphabetScrollBar(
                     // only appears while a scrub is in progress so a resting list stays
                     // clean.
                     .background(
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(
+                        color = AppTheme.colorScheme.surfaceVariant.copy(
                             alpha = trackAlpha,
                         ),
                         shape = ContinuousRoundedRectangle(RailWidth / 2),
@@ -439,15 +425,15 @@ private fun AlphabetIndicator(section: String?, visible: Boolean) {
             modifier = Modifier
                 .size(64.dp)
                 .background(
-                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.92f),
+                    color = AppTheme.colorScheme.secondaryContainer.copy(alpha = 0.92f),
                     shape = ContinuousRoundedRectangle(32.dp),
                 ),
             contentAlignment = Alignment.Center,
         ) {
             Text(
                 text = section.orEmpty(),
-                style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.primary,
+                style = AppTheme.typography.headlineSmall,
+                color = AppTheme.colorScheme.primary,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center,
                 maxLines = 1,
@@ -476,11 +462,11 @@ private fun AlphabetCell(section: String, selected: Boolean, size: Dp) {
     ) {
         Text(
             text = section,
-            style = MaterialTheme.typography.labelSmall.copy(fontSize = fontSize),
+            style = AppTheme.typography.labelSmall.copy(fontSize = fontSize),
             color = if (selected) {
-                MaterialTheme.colorScheme.onSurface
+                AppTheme.colorScheme.onSurface
             } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
+                AppTheme.colorScheme.onSurfaceVariant
             },
             fontWeight = FontWeight.SemiBold,
             textAlign = TextAlign.Center,

@@ -6,8 +6,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.music.spotify.Spotify
 import com.music.spotify.SpotifyAuth
+import com.music.spotify.SpotifyHomeItem
+import com.music.spotify.SpotifyHomeItemType
+import com.music.spotify.SpotifyHomeShelf
 import com.music.spotify.SpotifyMapper
 import com.music.spotify.models.SpotifyPlaylist
+import com.music.spotify.models.SpotifyImage
 import com.music.spotify.models.SpotifyTrack
 import com.convx.music.constants.SpotifySessionKey
 import com.convx.music.db.MusicDatabase
@@ -18,6 +22,7 @@ import com.convx.music.db.entities.Song
 import com.convx.music.db.entities.SongEntity
 import com.convx.music.models.MediaMetadata
 import com.convx.music.models.toMediaMetadata
+import com.music.innertube.SearchFilter
 import com.music.innertube.YouTube
 import com.music.innertube.models.SongItem
 import com.convx.music.utils.dataStore
@@ -29,6 +34,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -36,12 +42,16 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.time.LocalDateTime
+import java.time.ZoneId
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 
@@ -51,6 +61,7 @@ data class SpotifySession(
     val spKey: String? = null,
     val accessToken: String? = null,
     val expiresAt: Long = 0,
+    val clientId: String? = null,
     val accountName: String? = null,
     val accountAvatarUrl: String? = null,
 )
@@ -63,6 +74,9 @@ data class SpotifyImportUiState(
     val likedSongsCount: Int = 0,
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
+    val homeShelves: List<SpotifyHomeShelf> = emptyList(),
+    val isHomeFeedLoading: Boolean = false,
+    val homeFeedErrorMessage: String? = null,
 )
 
 data class SpotifyImportProgress(
@@ -93,6 +107,8 @@ class SpotifyImportViewModel @Inject constructor(
     val importProgress: StateFlow<SpotifyImportProgress?> = _importProgress.asStateFlow()
 
     private var importJob: Job? = null
+    private var homeFeedJob: Job? = null
+    private val authMutex = Mutex()
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -118,40 +134,44 @@ class SpotifyImportViewModel @Inject constructor(
         }
     }
 
-    private suspend fun ensureAuthenticated(): SpotifySession {
+    private suspend fun ensureAuthenticated(): SpotifySession = authMutex.withLock {
         val session = getSession() ?: throw IllegalStateException("Not connected to Spotify")
         if (session.accessToken != null && session.expiresAt > System.currentTimeMillis() + 60_000L) {
             Spotify.accessToken = session.accessToken
-            return session
+            session
+        } else {
+            refreshSession(session.spDc, session.spKey.orEmpty())
         }
-        return refreshWithCookies(session.spDc, session.spKey.orEmpty())
     }
 
     private suspend fun refreshWithCookies(spDc: String, spKey: String): SpotifySession =
-        withContext(Dispatchers.IO) {
-            val token = SpotifyAuth.fetchAccessToken(spDc, spKey).getOrThrow()
-            Spotify.accessToken = token.accessToken
-            val profile = Spotify.me().getOrNull()
+        authMutex.withLock { refreshSession(spDc, spKey) }
 
-            val newSession = SpotifySession(
-                spDc = spDc,
-                spKey = spKey,
-                accessToken = token.accessToken,
-                expiresAt = token.accessTokenExpirationTimestampMs,
-                accountName = profile?.displayName,
-                accountAvatarUrl = profile?.images?.firstOrNull()?.url
+    private suspend fun refreshSession(spDc: String, spKey: String): SpotifySession = withContext(Dispatchers.IO) {
+        val token = SpotifyAuth.fetchAccessToken(spDc, spKey).getOrThrow()
+        Spotify.accessToken = token.accessToken
+        val profile = Spotify.me().getOrThrow()
+
+        val newSession = SpotifySession(
+            spDc = spDc,
+            spKey = spKey,
+            accessToken = token.accessToken,
+            expiresAt = token.accessTokenExpirationTimestampMs,
+            clientId = token.clientId,
+            accountName = profile.displayName,
+            accountAvatarUrl = profile.images.firstOrNull()?.url
+        )
+        saveSession(newSession)
+        _uiState.update {
+            it.copy(
+                isAuthenticated = true,
+                accountName = newSession.accountName.orEmpty(),
+                accountAvatarUrl = newSession.accountAvatarUrl,
+                isLoading = false
             )
-            saveSession(newSession)
-            _uiState.update {
-                it.copy(
-                    isAuthenticated = true,
-                    accountName = newSession.accountName.orEmpty(),
-                    accountAvatarUrl = newSession.accountAvatarUrl,
-                    isLoading = false
-                )
-            }
-            newSession
         }
+        newSession
+    }
 
     fun restoreSession() {
         viewModelScope.launch(Dispatchers.IO) {
@@ -172,9 +192,13 @@ class SpotifyImportViewModel @Inject constructor(
                         )
                     }
                     loadSources()
+                    loadHomeFeed()
                 } else {
                     runCatching { refreshWithCookies(session.spDc, session.spKey.orEmpty()) }
-                        .onSuccess { loadSources() }
+                        .onSuccess {
+                            loadSources()
+                            loadHomeFeed()
+                        }
                         .onFailure { error ->
                             logout()
                             _uiState.update {
@@ -200,10 +224,15 @@ class SpotifyImportViewModel @Inject constructor(
 
     fun connectWithCookies(spDc: String, spKey: String) {
         if (spDc.isBlank()) return
+        homeFeedJob?.cancel()
+        homeFeedJob = null
+        _uiState.update { SpotifyImportUiState(isLoading = true) }
         viewModelScope.launch(Dispatchers.IO) {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
             runCatching { refreshWithCookies(spDc, spKey) }
-                .onSuccess { loadSources() }
+                .onSuccess {
+                    loadSources()
+                    loadHomeFeed()
+                }
                 .onFailure { error ->
                     _uiState.update {
                         it.copy(
@@ -257,7 +286,66 @@ class SpotifyImportViewModel @Inject constructor(
         }
     }
 
+    fun loadHomeFeed() {
+        if (homeFeedJob?.isActive == true) return
+        homeFeedJob = viewModelScope.launch(Dispatchers.IO) {
+            _uiState.update { it.copy(isHomeFeedLoading = true, homeFeedErrorMessage = null) }
+            try {
+                var session = ensureAuthenticated()
+                if (session.clientId.isNullOrBlank()) {
+                    session = refreshWithCookies(session.spDc, session.spKey.orEmpty())
+                }
+
+                val language = Locale.getDefault().toLanguageTag().ifBlank { "en" }
+                val shelves = try {
+                    Spotify.homeFeed(
+                        clientId = session.clientId.orEmpty(),
+                        timeZone = ZoneId.systemDefault().id,
+                        language = language,
+                    ).getOrThrow()
+                } catch (error: Exception) {
+                    if ((error as? Spotify.SpotifyException)?.statusCode != 401) throw error
+                    session = refreshWithCookies(session.spDc, session.spKey.orEmpty())
+                    Spotify.homeFeed(
+                        clientId = session.clientId.orEmpty(),
+                        timeZone = ZoneId.systemDefault().id,
+                        language = language,
+                    ).getOrThrow()
+                }
+
+                val playlistShelves = shelves.mapNotNull { shelf ->
+                    val playlists = shelf.items.filter { it.type == SpotifyHomeItemType.PLAYLIST }
+                    shelf.copy(items = playlists).takeIf { playlists.isNotEmpty() }
+                }
+                _uiState.update {
+                    it.copy(
+                        homeShelves = playlistShelves,
+                        isHomeFeedLoading = false,
+                        homeFeedErrorMessage = null,
+                    )
+                }
+            } catch (e: Exception) {
+                if (e !is kotlinx.coroutines.CancellationException) {
+                    reportException(e)
+                    _uiState.update {
+                        it.copy(
+                            isHomeFeedLoading = false,
+                            homeFeedErrorMessage = e.message ?: "Failed to load Spotify recommendations",
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    fun importHomePlaylist(item: SpotifyHomeItem) {
+        val playlistId = item.playlistId ?: return
+        startImport(listOf(playlistId))
+    }
+
     fun logout() {
+        homeFeedJob?.cancel()
+        homeFeedJob = null
         viewModelScope.launch(Dispatchers.IO) {
             context.dataStore.edit { prefs ->
                 prefs.remove(SpotifySessionKey)
@@ -336,56 +424,96 @@ class SpotifyImportViewModel @Inject constructor(
         }
     }
 
+    private suspend fun loadImportData(id: String): PlaylistImportData? {
+        if (id == "liked_songs") {
+            return PlaylistImportData(
+                title = context.getString(R.string.spotify_liked_songs),
+                songs = fetchLikedSongsTracks(),
+                localPlaylistId = "SPOTIFY_LIKED_SONGS",
+                thumbnailUrl = null,
+            )
+        }
+
+        val playlist = _uiState.value.playlists.firstOrNull { it.id == id }
+            ?: _uiState.value.homeShelves.asSequence()
+                .flatMap { it.items.asSequence() }
+                .firstOrNull { it.playlistId == id }
+                ?.asSpotifyPlaylist()
+            ?: return null
+        return PlaylistImportData(
+            title = playlist.name,
+            songs = fetchPlaylistTracks(playlist.id),
+            localPlaylistId = "SPOTIFY_PLAYLIST_${playlist.id}",
+            thumbnailUrl = SpotifyMapper.getPlaylistThumbnail(playlist),
+        )
+    }
+
+    private suspend fun matchSongs(
+        importData: PlaylistImportData,
+        totalSongs: Int,
+    ): List<MediaMetadata> = coroutineScope {
+        val completedCount = AtomicInteger(0)
+        val semaphore = Semaphore(4)
+
+        importData.songs.map { song ->
+            async {
+                semaphore.withPermit {
+                    var matchedSong: MediaMetadata? = null
+                    try {
+                        val artist = song.artists.firstOrNull()?.name.orEmpty()
+                        val query = if (artist.isEmpty()) song.title else "$artist ${song.title}"
+                        val searchResult = YouTube.search(
+                            query = query,
+                            filter = SearchFilter.FILTER_SONG,
+                        ).getOrNull()
+                        val candidates = searchResult?.items
+                            ?.filterIsInstance<SongItem>()
+                            ?.distinctBy { it.id }
+                            .orEmpty()
+                        val bestMatch = candidates.maxByOrNull { candidate ->
+                            SpotifyMapper.matchScore(
+                                spotifyTitle = song.title,
+                                spotifyArtist = song.artists.joinToString(" ") { it.name },
+                                spotifyDurationMs = song.song.duration * 1000,
+                                candidateTitle = candidate.title,
+                                candidateArtist = candidate.artists.joinToString(" ") { it.name },
+                                candidateDurationSec = candidate.duration,
+                            )
+                        }
+                        matchedSong = bestMatch?.toMediaMetadata()
+                    } catch (e: Exception) {
+                        reportException(e)
+                    } finally {
+                        val completed = completedCount.incrementAndGet()
+                        _importProgress.update {
+                            SpotifyImportProgress(
+                                playlistName = importData.title,
+                                currentSongIndex = completed,
+                                totalSongs = totalSongs,
+                                percent = completed.toFloat() / totalSongs,
+                            )
+                        }
+                    }
+                    matchedSong
+                }
+            }
+        }.awaitAll().filterNotNull()
+    }
+
     fun startImport(selectedIds: List<String>) {
         importJob?.cancel()
         importJob = viewModelScope.launch(Dispatchers.IO) {
             _importProgress.update { null }
 
             try {
-                selectedIds.forEachIndexed { playlistIndex, id ->
-                    val importData = if (id == "liked_songs") {
-                        val songs = fetchLikedSongsTracks()
-                        PlaylistImportData(
-                            title = context.getString(R.string.spotify_liked_songs),
-                            songs = songs,
-                            localPlaylistId = "SPOTIFY_LIKED_SONGS",
-                            thumbnailUrl = null
-                        )
-                    } else {
-                        val playlist = _uiState.value.playlists.firstOrNull { it.id == id }
-                        if (playlist != null) {
-                            val songs = fetchPlaylistTracks(playlist.id)
-                            PlaylistImportData(
-                                title = playlist.name,
-                                songs = songs,
-                                localPlaylistId = "SPOTIFY_PLAYLIST_${playlist.id}",
-                                thumbnailUrl = SpotifyMapper.getPlaylistThumbnail(playlist)
-                            )
-                        } else {
-                            null
-                        }
-                    } ?: return@forEachIndexed
+                for (id in selectedIds) {
+                    val importData = loadImportData(id) ?: continue
 
                     val totalSongs = importData.songs.size
                     if (totalSongs == 0) {
                         database.withTransaction {
-                            val existing = playlist(importData.localPlaylistId).first()
                             val now = LocalDateTime.now()
-                            val entity = existing?.playlist?.copy(
-                                name = importData.title,
-                                bookmarkedAt = existing.playlist.bookmarkedAt ?: now,
-                                lastUpdateTime = now,
-                                thumbnailUrl = importData.thumbnailUrl,
-                                isEditable = true,
-                            ) ?: PlaylistEntity(
-                                id = importData.localPlaylistId,
-                                name = importData.title,
-                                bookmarkedAt = now,
-                                lastUpdateTime = now,
-                                thumbnailUrl = importData.thumbnailUrl,
-                                isEditable = true,
-                            )
-                            if (existing == null) insert(entity) else update(entity)
+                            saveImportedPlaylistHeader(importData, now)
                             clearPlaylist(importData.localPlaylistId)
                         }
 
@@ -397,7 +525,7 @@ class SpotifyImportViewModel @Inject constructor(
                                 percent = 1.0f
                             )
                         }
-                        return@forEachIndexed
+                        continue
                     }
 
                     _importProgress.update {
@@ -409,83 +537,11 @@ class SpotifyImportViewModel @Inject constructor(
                         )
                     }
 
-                    val completedCount = AtomicInteger(0)
-                    val semaphore = Semaphore(4)
-
-                    val matchedMedia = importData.songs.mapIndexed { _, song ->
-                        async {
-                            semaphore.withPermit {
-                                var resultMedia: MediaMetadata? = null
-                                try {
-                                    val artist = song.artists.firstOrNull()?.name.orEmpty()
-                                    val songTitle = song.title
-                                    val query = if (artist.isEmpty()) songTitle else "$artist $songTitle"
-
-                                    val searchResult = YouTube.search(
-                                        query = query,
-                                        filter = YouTube.SearchFilter.FILTER_SONG,
-                                    ).getOrNull()
-
-                                    val candidates = searchResult?.items
-                                        ?.filterIsInstance<SongItem>()
-                                        ?.distinctBy { it.id }
-                                        .orEmpty()
-
-                                    val best = candidates.maxByOrNull { candidate ->
-                                        SpotifyMapper.matchScore(
-                                            spotifyTitle = song.title,
-                                            spotifyArtist = song.artists.joinToString(" ") { it.name },
-                                            spotifyDurationMs = song.song.duration * 1000,
-                                            candidateTitle = candidate.title,
-                                            candidateArtist = candidate.artists.joinToString(" ") { it.name },
-                                            candidateDurationSec = candidate.duration,
-                                        )
-                                    }
-
-                                    if (best != null) {
-                                        resultMedia = best.toMediaMetadata()
-                                    }
-                                } catch (e: Exception) {
-                                    reportException(e)
-                                } finally {
-                                    val done = completedCount.incrementAndGet()
-                                    _importProgress.update {
-                                        SpotifyImportProgress(
-                                            playlistName = importData.title,
-                                            currentSongIndex = done,
-                                            totalSongs = totalSongs,
-                                            percent = done.toFloat() / totalSongs
-                                        )
-                                    }
-                                }
-                                resultMedia
-                            }
-                        }
-                    }.awaitAll().filterNotNull()
+                    val matchedMedia = matchSongs(importData, totalSongs)
 
                     database.withTransaction {
-                        val existing = playlist(importData.localPlaylistId).first()
                         val now = LocalDateTime.now()
-                        val entity = existing?.playlist?.copy(
-                            name = importData.title,
-                            bookmarkedAt = existing.playlist.bookmarkedAt ?: now,
-                            lastUpdateTime = now,
-                            thumbnailUrl = importData.thumbnailUrl,
-                            isEditable = true,
-                        ) ?: PlaylistEntity(
-                            id = importData.localPlaylistId,
-                            name = importData.title,
-                            bookmarkedAt = now,
-                            lastUpdateTime = now,
-                            thumbnailUrl = importData.thumbnailUrl,
-                            isEditable = true,
-                        )
-
-                        if (existing == null) {
-                            insert(entity)
-                        } else {
-                            update(entity)
-                        }
+                        val entity = saveImportedPlaylistHeader(importData, now)
 
                         matchedMedia.forEach { metadata ->
                             insert(metadata)
@@ -540,4 +596,35 @@ class SpotifyImportViewModel @Inject constructor(
     fun dismissError() {
         _uiState.update { it.copy(errorMessage = null) }
     }
+}
+
+private fun SpotifyHomeItem.asSpotifyPlaylist(): SpotifyPlaylist = SpotifyPlaylist(
+    id = playlistId.orEmpty(),
+    name = title,
+    images = artworkUrl?.let { listOf(SpotifyImage(url = it)) }.orEmpty(),
+    uri = uri,
+)
+
+private suspend fun MusicDatabase.saveImportedPlaylistHeader(
+    importData: PlaylistImportData,
+    updatedAt: LocalDateTime,
+): PlaylistEntity {
+    val existing = playlist(importData.localPlaylistId).first()
+    val entity = existing?.playlist?.copy(
+        name = importData.title,
+        bookmarkedAt = existing.playlist.bookmarkedAt ?: updatedAt,
+        lastUpdateTime = updatedAt,
+        thumbnailUrl = importData.thumbnailUrl,
+        isEditable = true,
+    ) ?: PlaylistEntity(
+        id = importData.localPlaylistId,
+        name = importData.title,
+        bookmarkedAt = updatedAt,
+        lastUpdateTime = updatedAt,
+        thumbnailUrl = importData.thumbnailUrl,
+        isEditable = true,
+    )
+
+    if (existing == null) insert(entity) else update(entity)
+    return entity
 }

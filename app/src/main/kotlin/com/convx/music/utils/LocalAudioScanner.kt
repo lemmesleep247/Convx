@@ -17,14 +17,22 @@ import com.convx.music.db.entities.ArtistEntity
 import com.convx.music.db.entities.SongAlbumMap
 import com.convx.music.db.entities.SongArtistMap
 import com.convx.music.db.entities.SongEntity
+import com.convx.music.playback.DownloadExporter
+import java.time.Instant
+import java.time.LocalDateTime
+import java.time.ZoneId
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import timber.log.Timber
 
+private fun localDateTimeFromEpochSeconds(seconds: Long): LocalDateTime =
+    Instant.ofEpochSecond(seconds).atZone(ZoneId.systemDefault()).toLocalDateTime()
+
 object LocalAudioScanner {
 
     private const val MIN_DURATION_MS = 15_000L // 15 seconds - skip ringtones, notifications
+    private val ALBUM_ART_URI = Uri.parse("content://media/external/audio/albumart")
 
     data class ScanResult(
         val totalFound: Int,
@@ -32,13 +40,7 @@ object LocalAudioScanner {
         val skippedExisting: Int,
     )
 
-    /**
-     * Excluded folders are read here rather than passed in. They used to be a parameter
-     * defaulting to an empty set, and two of the four callers (Home's pull-to-refresh and
-     * the auto-playlist scan) never passed it — so excluding a folder in settings dropped
-     * its songs, and then the very next refresh imported every one of them straight back.
-     * Reading the preference at the one place that acts on it makes every caller correct.
-     */
+    // Read exclusions here so every caller applies the same folder settings.
     suspend fun scanAndInsert(
         context: Context,
         database: MusicDatabase,
@@ -68,9 +70,17 @@ object LocalAudioScanner {
             // IS_MUSIC alone misses files whose scanner flag isn't set (common
             // for FLAC/OGG/OPUS from downloads) — accept anything with an
             // audio/* mime type too. Duration floor still filters ringtones.
+            // Exported downloads are already stored as online songs in the library.
+            val downloadExclusion = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                " AND (${MediaStore.MediaColumns.RELATIVE_PATH} IS NULL OR (" +
+                    "${MediaStore.MediaColumns.RELATIVE_PATH} NOT LIKE '${DownloadExporter.FOLDER}/%'" +
+                    " AND ${MediaStore.MediaColumns.RELATIVE_PATH} NOT LIKE 'Music/Convx/%'))"
+            } else {
+                ""
+            }
             val selection =
                 "(${MediaStore.Audio.Media.IS_MUSIC} != 0 OR ${MediaStore.Audio.Media.MIME_TYPE} LIKE 'audio/%')" +
-                    " AND ${MediaStore.Audio.Media.DURATION} >= ?"
+                    " AND ${MediaStore.Audio.Media.DURATION} >= ?" + downloadExclusion
             val selectionArgs = arrayOf(MIN_DURATION_MS.toString())
             val sortOrder = "${MediaStore.Audio.Media.TITLE} ASC"
 
@@ -85,181 +95,87 @@ object LocalAudioScanner {
                 listOf(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI)
             }
 
+            // Load IDs once to avoid a Room query for every MediaStore row.
+            // Fetch full entities only when removing or backfilling a song.
+            val existingIds = database.localSongIds().toHashSet()
+
             collections.forEach { collection ->
-            context.contentResolver.query(
-                collection,
-                projection,
-                selection,
-                selectionArgs,
-                sortOrder,
-            )?.use { cursor ->
-                val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
-                val titleColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
-                val artistColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
-                val albumColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
-                val albumIdColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
-                val durationColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
-                val dateAddedColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
-                val dateModifiedColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_MODIFIED)
-                val yearColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.YEAR)
-                val pathColumnIndex = cursor.getColumnIndexOrThrow(LocalFolderIndex.pathColumn)
+                context.contentResolver.query(
+                    collection,
+                    projection,
+                    selection,
+                    selectionArgs,
+                    sortOrder,
+                )?.use { cursor ->
+                    val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+                    val titleColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
+                    val artistColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
+                    val albumColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
+                    val albumIdColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
+                    val durationColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
+                    val dateAddedColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
+                    val dateModifiedColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_MODIFIED)
+                    val yearColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.YEAR)
+                    val pathColumnIndex = cursor.getColumnIndexOrThrow(LocalFolderIndex.pathColumn)
 
-                while (cursor.moveToNext()) {
-                    totalFound++
-                    val id = cursor.getLong(idColumn)
-                    val title = cursor.getString(titleColumn) ?: "Unknown"
-                    val artistName = cursor.getString(artistColumn) ?: "Unknown Artist"
-                    val albumName = cursor.getString(albumColumn)
-                    val albumId = cursor.getLong(albumIdColumn)
-                    val durationMs = cursor.getLong(durationColumn)
-                    val dateAdded = cursor.getLong(dateAddedColumn)
-                    val dateModified = cursor.getLong(dateModifiedColumn)
-                    val year = cursor.getInt(yearColumn)
-                    val folderPath = cursor.getString(pathColumnIndex)
-                        ?.let { LocalFolderIndex.folderPathOf(it) }
-                        ?: ""
+                    while (cursor.moveToNext()) {
+                        totalFound++
+                        val id = cursor.getLong(idColumn)
+                        val title = cursor.getString(titleColumn) ?: "Unknown"
+                        val artistName = cursor.getString(artistColumn) ?: "Unknown Artist"
+                        val albumName = cursor.getString(albumColumn)
+                        val albumId = cursor.getLong(albumIdColumn)
+                        val durationMs = cursor.getLong(durationColumn)
+                        val dateAdded = cursor.getLong(dateAddedColumn)
+                        val dateModified = cursor.getLong(dateModifiedColumn)
+                        val year = cursor.getInt(yearColumn)
+                        val folderPath = cursor.getString(pathColumnIndex)
+                            ?.let { LocalFolderIndex.folderPathOf(it) }
+                            ?: ""
 
-                    val contentUri = ContentUris.withAppendedId(
-                        collection,
-                        id,
-                    ).toString()
-
-                    val albumArtUri = if (albumId > 0) {
-                        ContentUris.withAppendedId(
-                            Uri.parse("content://media/external/audio/albumart"),
-                            albumId,
+                        val contentUri = ContentUris.withAppendedId(
+                            collection,
+                            id,
                         ).toString()
-                    } else {
-                        null
-                    }
 
-                    val songId = contentUri
-
-                    // Check if song already exists
-                    val existingSong = database.getSongById(songId)
-
-                    // Prefix match, not equality: excluding "Music/Podcasts" has to take
-                    // its subfolders with it, and a folder picked by hand in settings is
-                    // usually a parent of the ones MediaStore actually reports.
-                    if (folderPath != null && excludedFolders.any {
-                            folderPath == it || folderPath.startsWith("$it/")
+                        val albumArtUri = if (albumId > 0) {
+                            ContentUris.withAppendedId(ALBUM_ART_URI, albumId).toString()
+                        } else {
+                            null
                         }
-                    ) {
-                        // Already imported from a folder that's since been excluded —
-                        // remove it so toggling the folder off actually takes effect,
-                        // not just "no new songs from here" going forward.
-                        if (existingSong != null) database.delete(existingSong.song)
-                        continue
-                    }
 
-                    if (existingSong != null) {
-                        // Rows written before the scanner recorded DATE_ADDED have a null
-                        // inLibrary, and this branch used to skip them forever — so
-                        // "Recently added" stayed a no-op for anyone whose library was
-                        // scanned by an older build, however many times they rescanned.
-                        // Backfill the dates only; everything else about the row is left
-                        // alone so a rescan never clobbers user edits.
-                        if (existingSong.song.inLibrary == null) {
-                            runCatching {
-                                database.withTransaction {
-                                    upsert(
-                                        existingSong.song.copy(
-                                            inLibrary = java.time.Instant.ofEpochSecond(dateAdded)
-                                                .atZone(java.time.ZoneId.systemDefault())
-                                                .toLocalDateTime(),
-                                            dateModified = existingSong.song.dateModified
-                                                ?: java.time.Instant.ofEpochSecond(dateModified)
-                                                    .atZone(java.time.ZoneId.systemDefault())
-                                                    .toLocalDateTime(),
-                                        ),
-                                    )
-                                }
-                            }
+                        val songId = contentUri
+
+                        // Prefix matching excludes nested folders too.
+                        if (isExcludedFolder(folderPath, excludedFolders)) {
+                            removeExcludedSong(database, songId, existingIds)
+                            continue
                         }
-                        skippedExisting++
-                        continue
-                    }
 
-                    val artistId = "local_artist_${artistName.hashCode()}"
-                    val albumIdStr = "local_album_${albumName.hashCode()}"
-
-                    // Insert song entity
-                    val songEntity = SongEntity(
-                        id = songId,
-                        title = title,
-                        duration = (durationMs / 1000).toInt(),
-                        thumbnailUrl = albumArtUri,
-                        albumId = if (albumName.isNotBlank()) albumIdStr else null,
-                        albumName = albumName,
-                        year = if (year > 0) year else null,
-                        dateModified = java.time.Instant.ofEpochSecond(dateModified)
-                            .atZone(java.time.ZoneId.systemDefault())
-                            .toLocalDateTime(),
-                        isLocal = true,
-                        // The file's real MediaStore DATE_ADDED, not the scan time —
-                        // scanning stamps every song with the same instant, which makes
-                        // "Date added" sorting meaningless. dateAdded was already being
-                        // read here and discarded.
-                        inLibrary = java.time.Instant.ofEpochSecond(dateAdded)
-                            .atZone(java.time.ZoneId.systemDefault())
-                            .toLocalDateTime(),
-                    )
-
-                    // Song + artist + mapping in ONE transaction: the previous
-                    // separate database.query {} blocks were posted to Room's
-                    // multi-threaded query executor with no ordering guarantee,
-                    // so the SongArtistMap insert could run before the song
-                    // upsert committed and die on the foreign-key constraint —
-                    // uncaught on the executor thread, crashing the whole app.
-                    // withTransaction is serial, atomic, and throws HERE where
-                    // we can catch it, so one bad row skips instead of killing
-                    // the scan.
-                    try {
-                        database.withTransaction {
-                            upsert(songEntity)
-                            insert(
-                                ArtistEntity(
-                                    id = artistId,
-                                    name = artistName,
-                                    isLocal = true,
-                                )
-                            )
-                            insert(
-                                SongArtistMap(
-                                    songId = songId,
-                                    artistId = artistId,
-                                    position = 0,
-                                )
-                            )
-                            // Create album entity + mapping so local albums appear in library
-                            if (albumName.isNotBlank()) {
-                                insert(
-                                    AlbumEntity(
-                                        id = albumIdStr,
-                                        title = albumName,
-                                        thumbnailUrl = albumArtUri,
-                                        songCount = 1,
-                                        duration = (durationMs / 1000).toInt(),
-                                        year = if (year > 0) year else null,
-                                        isLocal = true,
-                                        inLibrary = java.time.LocalDateTime.now(),
-                                    )
-                                )
-                                insert(
-                                    SongAlbumMap(
-                                        songId = songId,
-                                        albumId = albumIdStr,
-                                        index = 0,
-                                    )
-                                )
-                            }
+                        if (songId in existingIds) {
+                            backfillExistingSongDates(database, songId, dateAdded, dateModified)
+                            skippedExisting++
+                            continue
                         }
-                        newSongs++
-                    } catch (e: Exception) {
-                        Timber.tag("LocalAudioScanner").w(e, "Failed to insert $title")
+                        existingIds.add(songId)
+
+                        val inserted = insertNewSong(
+                            database = database,
+                            songId = songId,
+                            title = title,
+                            artistName = artistName,
+                            albumName = albumName,
+                            albumArtUri = albumArtUri,
+                            durationMs = durationMs,
+                            year = year,
+                            dateAdded = dateAdded,
+                            dateModified = dateModified,
+                        )
+                        if (inserted) {
+                            newSongs++
+                        }
                     }
                 }
-            }
             }
 
             Timber.tag("LocalAudioScanner")
@@ -269,6 +185,97 @@ object LocalAudioScanner {
                 totalFound = totalFound,
                 newSongs = newSongs,
                 skippedExisting = skippedExisting,
+            )
+        }
+
+    private suspend fun removeExcludedSong(
+        database: MusicDatabase,
+        songId: String,
+        existingIds: MutableSet<String>,
+    ) {
+        if (songId !in existingIds) return
+
+        database.getSongById(songId)?.let { database.delete(it.song) }
+        existingIds.remove(songId)
+    }
+
+    private suspend fun backfillExistingSongDates(
+        database: MusicDatabase,
+        songId: String,
+        dateAdded: Long,
+        dateModified: Long,
+    ) {
+        runCatching {
+            database.backfillLocalSongDates(
+                songId = songId,
+                dateAdded = localDateTimeFromEpochSeconds(dateAdded),
+                dateModified = localDateTimeFromEpochSeconds(dateModified),
+            )
+        }
+    }
+
+    private suspend fun insertNewSong(
+        database: MusicDatabase,
+        songId: String,
+        title: String,
+        artistName: String,
+        albumName: String,
+        albumArtUri: String?,
+        durationMs: Long,
+        year: Int,
+        dateAdded: Long,
+        dateModified: Long,
+    ): Boolean {
+        val artistId = "local_artist_${artistName.hashCode()}"
+        val albumId = "local_album_${albumName.hashCode()}"
+        val durationSeconds = (durationMs / 1000).toInt()
+        val song = SongEntity(
+            id = songId,
+            title = title,
+            duration = durationSeconds,
+            thumbnailUrl = albumArtUri,
+            albumId = albumId.takeIf { albumName.isNotBlank() },
+            albumName = albumName,
+            year = year.takeIf { it > 0 },
+            dateModified = localDateTimeFromEpochSeconds(dateModified),
+            isLocal = true,
+            // Use MediaStore's original date instead of the scan time.
+            inLibrary = localDateTimeFromEpochSeconds(dateAdded),
+        )
+
+        return try {
+            // Song, artist, and album rows reference each other, so save them atomically.
+            database.withTransaction {
+                upsert(song)
+                insert(ArtistEntity(id = artistId, name = artistName, isLocal = true))
+                insert(SongArtistMap(songId = songId, artistId = artistId, position = 0))
+                if (albumName.isNotBlank()) {
+                    insert(
+                        AlbumEntity(
+                            id = albumId,
+                            title = albumName,
+                            thumbnailUrl = albumArtUri,
+                            songCount = 1,
+                            duration = durationSeconds,
+                            year = year.takeIf { it > 0 },
+                            isLocal = true,
+                            inLibrary = LocalDateTime.now(),
+                        ),
+                    )
+                    insert(SongAlbumMap(songId = songId, albumId = albumId, index = 0))
+                }
+            }
+            true
+        } catch (e: Exception) {
+            Timber.tag("LocalAudioScanner").w(e, "Failed to insert $title")
+            false
+        }
+    }
+
+    private fun isExcludedFolder(folderPath: String, excludedFolders: Set<String>): Boolean =
+        excludedFolders.any { excluded ->
+            folderPath == excluded || (
+                folderPath.startsWith(excluded) && folderPath.getOrNull(excluded.length) == '/'
             )
         }
 }

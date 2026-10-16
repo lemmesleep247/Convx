@@ -9,12 +9,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.convx.music.ui.ios.compat.AlertDialog
+import com.convx.music.ui.ios.compat.Button
+import com.convx.music.ui.ios.compat.LinearProgressIndicator
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.Text
+import com.convx.music.ui.ios.compat.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,9 +46,9 @@ fun RingtoneProgressDialog(
                     isComplete -> stringResource(R.string.ringtone_failed)
                     else -> stringResource(R.string.setting_ringtone)
                 },
-                style = MaterialTheme.typography.headlineSmall,
+                style = AppTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
-                color = if (isComplete && !isSuccess) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                color = if (isComplete && !isSuccess) AppTheme.colorScheme.error else AppTheme.colorScheme.onSurface
             )
         },
         text = {
@@ -69,8 +69,8 @@ fun RingtoneProgressDialog(
 
                 Text(
                     text = statusMessage,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    style = AppTheme.typography.bodyMedium,
+                    color = AppTheme.colorScheme.onSurfaceVariant
                 )
             }
         },

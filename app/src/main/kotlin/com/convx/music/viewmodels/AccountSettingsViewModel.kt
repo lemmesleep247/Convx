@@ -35,25 +35,18 @@ class AccountSettingsViewModel @Inject constructor(
     private val syncUtils: SyncUtils,
 ) : ViewModel() {
 
-    /**
-     * Logout user and clear all synced content to prevent data mixing between accounts
-     */
+    /** Logs out and clears synced content. */
     fun logoutAndClearSyncedContent(context: Context, onCookieChange: (String) -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
-            // Clear all YouTube Music synced content first
             syncUtils.clearAllSyncedContent()
 
-            // Then clear account preferences
             App.forgetAccount(context)
 
-            // Clear cookie in UI
             onCookieChange("")
         }
     }
 
-    /**
-     * Just logout without clearing library data
-     */
+    /** Logs out without clearing library data. */
     fun logoutKeepData(context: Context, onCookieChange: (String) -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
             App.forgetAccount(context)
@@ -63,12 +56,7 @@ class AccountSettingsViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Save token credentials atomically to DataStore, then restart the app.
-     * This ensures all writes complete before the process is killed,
-     * preventing the race condition where Runtime.exit(0) kills the process
-     * before async DataStore coroutines finish writing.
-     */
+    /** Saves credentials before restarting so DataStore writes finish before process exit. */
     fun saveTokenAndRestart(
         context: Context,
         cookie: String,
@@ -87,24 +75,11 @@ class AccountSettingsViewModel @Inject constructor(
                 settings[AccountEmailKey] = accountEmail
                 settings[AccountChannelHandleKey] = accountChannelHandle
             }
-            withContext(Dispatchers.Main) {
-                val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
-                intent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-                context.startActivity(intent)
-                Runtime.getRuntime().exit(0)
-            }
+            withContext(Dispatchers.Main) { restartApp(context) }
         }
     }
 
-    /**
-     * Finishes a fresh login once a channel has been chosen (or there was only one
-     * to begin with). [cookie]/[visitorData] are the values the WebView just captured;
-     * [chosenDataSyncId] selects which of [allChannels] is active. Looks up the
-     * chosen channel's name/email/handle via [com.music.innertube.YouTube.accountInfo]
-     * — that call reads whatever identity is currently set on the client, so
-     * dataSyncId must be assigned first — then saves every channel for later
-     * instant switching and restarts, same as [saveTokenAndRestart].
-     */
+    /** Saves the selected channel and account list, then restarts with that identity. */
     fun applyChannelAndRestart(
         context: Context,
         cookie: String,
@@ -116,6 +91,7 @@ class AccountSettingsViewModel @Inject constructor(
             YouTube.cookie = cookie
             YouTube.visitorData = visitorData
             YouTube.dataSyncId = chosenDataSyncId
+            // Read the profile after setting the selected channel.
             val info = YouTube.accountInfo().getOrNull()
 
             context.dataStore.edit { settings ->
@@ -127,24 +103,11 @@ class AccountSettingsViewModel @Inject constructor(
                 settings[AccountChannelHandleKey] = info?.channelHandle.orEmpty()
                 settings[SavedAccountsKey] = allChannels.toJson()
             }
-            withContext(Dispatchers.Main) {
-                val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
-                intent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-                context.startActivity(intent)
-                Runtime.getRuntime().exit(0)
-            }
+            withContext(Dispatchers.Main) { restartApp(context) }
         }
     }
 
-    /**
-     * Re-reads the account's channel list and stores it for tap-to-switch.
-     *
-     * The list used to be written only by [applyChannelAndRestart], i.e. only by a
-     * login that happened after the channel picker shipped — anyone signed in before
-     * that, or whose channel lookup failed once at login, was left with an empty list
-     * and no way to refill it, so the switcher never appeared. Cheap enough to run
-     * whenever Account settings opens.
-     */
+    /** Refreshes saved channels when Account settings opens. */
     fun refreshSavedAccounts(context: Context) {
         viewModelScope.launch(Dispatchers.IO) {
             if (YouTube.cookie == null) return@launch
@@ -160,22 +123,12 @@ class AccountSettingsViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Switches the active channel to an already-saved account. No WebView, no
-     * restart — the cookie is unchanged (same Google login), only which channel
-     * it acts as changes, same mechanism [com.convx.music.ui.screens.SwitchChannelScreen]
-     * uses when it detects a DATASYNC_ID change.
-     */
+    /** Switches to a saved channel without changing the Google login or restarting. */
     fun switchToSavedAccount(context: Context, account: SavedAccount) {
         viewModelScope.launch(Dispatchers.IO) {
             YouTube.dataSyncId = account.dataSyncId
 
-            // Same staleness risk SwitchChannelScreen's WebView flow already
-            // guards against: Google can rotate the session cookie as part of
-            // a channel switch. This path has no WebView page load of its own
-            // to pick up a fresh one, but CookieManager's jar is persistent —
-            // pull whatever it currently holds rather than leaving the cookie
-            // captured at initial login in place indefinitely.
+            // Refresh the cookie in case Google rotated it during the switch.
             CookieManager.getInstance().getCookie("https://music.youtube.com")
                 ?.takeIf { it.isNotBlank() }
                 ?.let { freshCookie ->
@@ -191,5 +144,12 @@ class AccountSettingsViewModel @Inject constructor(
                 settings[AccountChannelHandleKey] = account.channelHandle.orEmpty()
             }
         }
+    }
+
+    private fun restartApp(context: Context) {
+        val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
+        intent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        context.startActivity(intent)
+        Runtime.getRuntime().exit(0)
     }
 }

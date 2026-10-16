@@ -39,9 +39,7 @@ class BotDetectionMitigatorTest {
 
     @Test
     fun `notifyPlaybackFailure returns false for logged-in users`() {
-        // Signed-in users never trigger guest-session rotation logic — there's
-        // no guest session to rotate — but they DO still get the plain retry
-        // added in this fix; that path doesn't call notifyPlaybackFailure at all.
+        // Signed-in playback uses a separate retry path without guest-session rotation.
         assertFalse(BotDetectionMitigator.notifyPlaybackFailure(isLoggedIn = true, errorMessage = "Bad stream player response"))
     }
 

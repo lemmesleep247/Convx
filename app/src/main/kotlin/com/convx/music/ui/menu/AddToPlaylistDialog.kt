@@ -5,6 +5,8 @@
 
 package com.convx.music.ui.menu
 
+import com.convx.music.ui.component.sf
+import com.convx.music.ui.component.SymbolIcon
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
@@ -14,14 +16,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import com.convx.music.utils.listItemShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import com.convx.music.ui.component.shapes.ContinuousRoundedRectangle
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.IconButton
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.convx.music.ui.ios.compat.Text
+import com.convx.music.ui.ios.compat.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -59,7 +61,9 @@ import com.convx.music.utils.rememberEnumPreference
 import com.convx.music.utils.rememberPreference
 import com.convx.music.viewmodels.PlaylistsViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @Composable
 fun AddToPlaylistDialog(
@@ -70,7 +74,7 @@ fun AddToPlaylistDialog(
     onDismiss: () -> Unit,
     viewModel: PlaylistsViewModel = hiltViewModel()
 ) {
-    val database = LocalDatabase.current
+    val database = LocalDatabase.current.get()
     val coroutineScope = rememberCoroutineScope()
     val (sortType, onSortTypeChange) = rememberEnumPreference(
         AddToPlaylistSortTypeKey,
@@ -80,7 +84,7 @@ fun AddToPlaylistDialog(
         AddToPlaylistSortDescendingKey,
         false
     )
-    val playlists by viewModel.allPlaylists.collectAsState()
+    val playlists by viewModel.allPlaylists.collectAsStateWithLifecycle()
     val (innerTubeCookie) = rememberPreference(InnerTubeCookieKey, "")
     val isLoggedIn = remember(innerTubeCookie) {
         "SAPISID" in parseCookieString(innerTubeCookie)
@@ -124,7 +128,7 @@ fun AddToPlaylistDialog(
                         Image(
                             painter = painterResource(R.drawable.add),
                             contentDescription = null,
-                            colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onBackground),
+                            colorFilter = ColorFilter.tint(AppTheme.colorScheme.onBackground),
                             modifier = Modifier.size(ListThumbnailSize)
                         )
                     },
@@ -143,38 +147,30 @@ fun AddToPlaylistDialog(
                         placeholder = { 
                             Text(
                                 text = stringResource(R.string.search),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                style = AppTheme.typography.bodyMedium,
+                                color = AppTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                             ) 
                         },
                         leadingIcon = {
-                            Icon(
-                                painter = painterResource(R.drawable.search),
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary
-                            )
+                            SymbolIcon(symbol = sf("magnifyingglass"), contentDescription = null, tint = AppTheme.colorScheme.primary)
                         },
                         trailingIcon = {
                             if (searchQuery.isNotEmpty()) {
                                 IconButton(onClick = { searchQuery = "" }) {
-                                    Icon(
-                                        painter = painterResource(R.drawable.close),
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                                    SymbolIcon(symbol = sf("xmark"), contentDescription = null, tint = AppTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
                         },
                         singleLine = true,
-                        shape = RoundedCornerShape(24.dp),
+                        shape = ContinuousRoundedRectangle(24.dp),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-                            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
-                            cursorColor = MaterialTheme.colorScheme.primary,
+                            focusedBorderColor = AppTheme.colorScheme.primary,
+                            unfocusedBorderColor = AppTheme.colorScheme.outlineVariant,
+                            focusedContainerColor = AppTheme.colorScheme.surfaceVariant,
+                            unfocusedContainerColor = AppTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                            cursorColor = AppTheme.colorScheme.primary,
                         ),
-                        textStyle = MaterialTheme.typography.bodyMedium,
+                        textStyle = AppTheme.typography.bodyMedium,
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 6.dp)
@@ -210,8 +206,8 @@ fun AddToPlaylistDialog(
                 item {
                     Text(
                         text = stringResource(R.string.no_results_found),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = AppTheme.typography.bodyMedium,
+                        color = AppTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 16.dp),
@@ -227,18 +223,16 @@ fun AddToPlaylistDialog(
                     modifier = Modifier.clickable {
                         selectedPlaylist = playlist
                         coroutineScope.launch(Dispatchers.IO) {
-                            if (songIds == null) {
-                                songIds = onGetSong(playlist)
-                            }
-                            duplicates = database.playlistDuplicates(playlist.id, songIds!!)
+                            val playlistSongIds = songIds ?: onGetSong(playlist).also { songIds = it }
+                            duplicates = database.playlistDuplicates(playlist.id, playlistSongIds)
                             if (duplicates.isNotEmpty()) {
                                 showDuplicateDialog = true
                             } else {
                                 onDismiss()
-                                database.addSongToPlaylist(playlist, songIds!!)
+                                database.addSongToPlaylist(playlist, playlistSongIds)
 
                                 playlist.playlist.browseId?.let { plist ->
-                                    songIds?.forEach {
+                                    playlistSongIds.forEach {
                                         YouTube.addToPlaylist(plist, it)
                                     }
                                 }
@@ -254,7 +248,17 @@ fun AddToPlaylistDialog(
         CreatePlaylistDialog(
             onDismiss = { showCreatePlaylistDialog = false },
             initialTextFieldValue = initialTextFieldValue,
-            allowSyncing = allowSyncing
+            allowSyncing = allowSyncing,
+            onPlaylistCreated = { playlistId ->
+                coroutineScope.launch(Dispatchers.IO) {
+                    val newPlaylist = database.playlist(playlistId).first() ?: return@launch
+                    val ids = songIds ?: onGetSong(newPlaylist)
+                    database.addSongToPlaylist(newPlaylist, ids)
+                    // A synced playlist is empty on YouTube; without this the next sync drops the songs.
+                    newPlaylist.playlist.browseId?.let { remote -> ids.forEach { YouTube.addToPlaylist(remote, it) } }
+                    onDismiss()
+                }
+            }
         )
     }
 
@@ -267,13 +271,15 @@ fun AddToPlaylistDialog(
                         onClick = {
                             showDuplicateDialog = false
                             onDismiss()
-                            database.transaction {
-                                addSongToPlaylist(
-                                    selectedPlaylist!!,
-                                    songIds!!.filter {
-                                        !duplicates.contains(it)
+                            selectedPlaylist?.let { playlist ->
+                                songIds?.let { playlistSongIds ->
+                                    database.transaction {
+                                        addSongToPlaylist(
+                                            playlist,
+                                            playlistSongIds.filterNot { it in duplicates },
+                                        )
                                     }
-                                )
+                                }
                             }
                         }
                     ) {
@@ -284,8 +290,12 @@ fun AddToPlaylistDialog(
                         onClick = {
                             showDuplicateDialog = false
                             onDismiss()
-                            database.transaction {
-                                addSongToPlaylist(selectedPlaylist!!, songIds!!)
+                            selectedPlaylist?.let { playlist ->
+                                songIds?.let { playlistSongIds ->
+                                    database.transaction {
+                                        addSongToPlaylist(playlist, playlistSongIds)
+                                    }
+                                }
                             }
                         }
                     ) {

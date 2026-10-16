@@ -12,6 +12,9 @@ on:
     - cron: '0 0 * * *' # Every night at 00:00 UTC
   workflow_dispatch: # Allows manual triggering
 
+permissions:
+  contents: write
+
 jobs:
   build_nightly:
     name: Build Universal GMS Release
@@ -75,3 +78,23 @@ jobs:
         with:
           name: convx-gms-nightly
           path: app/build/outputs/apk/universalGms/release/*.apk
+
+      # One rolling pre-release: the tag moves to each new build and the same
+      # release is updated, so the README link never changes and no tags pile up.
+      - name: Publish nightly pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="2.0.0-nightly"
+          TITLE="Convx 2.0.0 Nightly"
+          APK=$(find app/build/outputs/apk/universalGms/release -name '*.apk' | head -n 1)
+          cp "$APK" "convx-${TAG}.apk"
+          git tag -f "$TAG" "$GITHUB_SHA"
+          git push -f origin "refs/tags/$TAG"
+          NOTES=".github/release-notes/2.0.0-nightly.md"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TITLE" --notes-file "$NOTES" --prerelease
+            gh release upload "$TAG" "convx-${TAG}.apk" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" "convx-${TAG}.apk" --repo "$GITHUB_REPOSITORY" --title "$TITLE" --notes-file "$NOTES" --prerelease --latest=false
+          fi

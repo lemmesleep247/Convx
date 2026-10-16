@@ -27,7 +27,7 @@
     {
       "title": "Full-Screen Lyrics Overhaul",
       "items": [
-        "Full-screen lyrics is now a dedicated, ArchiveTune-style presentation you can switch to from the player.",
+        "Full-screen lyrics is now a dedicated, reference-style presentation you can switch to from the player.",
         "New one-tap flow: Settings → Player → enable One-tap full-screen lyrics and the lyrics button opens/closes full-screen lyrics in a single tap (off keeps the classic two-tap flow).",
         "Player controls now collapse to the top (or bottom, your choice) instead of hiding: Settings → Player → Collapse controls upward.",
         "Playback controls position in full-screen lyrics is toggleable, and the play/pause button can overlay the artwork thumbnail.",

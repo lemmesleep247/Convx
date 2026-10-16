@@ -68,8 +68,6 @@ class KeyDetectorTest {
         assertEquals(0, MusicalKey.matchingShift(gMajor, gMajor))
     }
 
-    // --- fixtures -----------------------------------------------------------
-
     private fun analyze(samples: FloatArray): MusicalKey {
         val detector = KeyDetector(SAMPLE_RATE)
         for (sample in samples) detector.accept(sample)
@@ -120,7 +118,6 @@ class KeyDetectorTest {
         )
 
         // i - iv - V - i in A minor: Am, Dm, E, Am.
-        //
         // Deliberately NOT the Am-F-C-G loop: that has exactly the same pitch
         // classes as the C major progression above, so no chroma-based detector
         // could tell them apart and the test would be asserting the impossible.

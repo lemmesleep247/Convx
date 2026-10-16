@@ -6,6 +6,11 @@
 package com.convx.music.ui.screens
  
  import androidx.compose.foundation.ExperimentalFoundationApi
+ import androidx.compose.foundation.layout.Box
+ import androidx.compose.foundation.layout.Column
+ import androidx.compose.foundation.layout.fillMaxWidth
+ import androidx.compose.foundation.layout.padding
+ import androidx.compose.ui.Alignment
  
  import androidx.compose.foundation.layout.asPaddingValues
  import androidx.compose.foundation.lazy.grid.GridCells
@@ -14,7 +19,8 @@ package com.convx.music.ui.screens
  import androidx.compose.material3.ExperimentalMaterial3Api
  import androidx.compose.material3.Icon
  import androidx.compose.material3.Text
- import androidx.compose.material3.TopAppBar
+ import androidx.compose.material3.TextButton
+ import com.convx.music.ui.ios.compat.TopAppBar
  import androidx.compose.material3.TopAppBarScrollBehavior
  import androidx.compose.runtime.Composable
  import androidx.compose.runtime.collectAsState
@@ -22,15 +28,20 @@ package com.convx.music.ui.screens
  import androidx.compose.runtime.rememberCoroutineScope
  import androidx.compose.ui.Modifier
  import androidx.compose.ui.res.painterResource
+ import androidx.compose.ui.res.stringResource
  import androidx.compose.ui.unit.dp
  import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
  import androidx.navigation.NavController
  import com.music.innertube.models.AlbumItem
  import com.music.innertube.models.ArtistItem
  import com.music.innertube.models.PlaylistItem
+ import com.music.innertube.models.SongItem
+ import com.music.innertube.models.WatchEndpoint
  import com.convx.music.LocalPlayerAwareWindowInsets
  import com.convx.music.LocalPlayerConnection
  import com.convx.music.R
+ import com.convx.music.models.toMediaMetadata
+ import com.convx.music.playback.queues.YouTubeQueue
 import com.convx.music.ui.utils.rememberGridColumns
  import com.convx.music.constants.GridItemSize
  import com.convx.music.constants.GridItemsSizeKey
@@ -46,10 +57,17 @@ import com.convx.music.ui.utils.rememberGridColumns
  import com.convx.music.ui.utils.backToMain
  import com.convx.music.ui.utils.bounceClick
 import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.utils.combinedBounceClick
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import com.convx.music.ui.utils.albumRoute
+import com.convx.music.ui.utils.artistRoute
+import com.convx.music.ui.utils.onlinePlaylistRoute
 import com.convx.music.utils.rememberEnumPreference
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import com.convx.music.ui.component.ScreenLargeTitle
+import com.convx.music.ui.component.ScreenScaffold
+import com.convx.music.ui.component.rememberTitleCollapseProgressState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
  import com.convx.music.viewmodels.BrowseViewModel
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
@@ -62,22 +80,40 @@ import com.convx.music.utils.rememberEnumPreference
 ) {
      val menuState = LocalMenuState.current
      val playerConnection = LocalPlayerConnection.current ?: return
-     val isPlaying by playerConnection.isEffectivelyPlaying.collectAsState()
-     val mediaMetadata by playerConnection.mediaMetadata.collectAsState()
+     val isPlaying by playerConnection.isEffectivelyPlaying.collectAsStateWithLifecycle()
+     val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
  
-     val title by viewModel.title.collectAsState()
-     val items by viewModel.items.collectAsState()
+     val title by viewModel.title.collectAsStateWithLifecycle()
+     val browseItems by viewModel.items.collectAsStateWithLifecycle()
+     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
+     val hasError by viewModel.hasError.collectAsStateWithLifecycle()
  
      val coroutineScope = rememberCoroutineScope()
      val gridItemSize by rememberEnumPreference(GridItemsSizeKey, GridItemSize.BIG)
  
+     val gridState = rememberLazyGridState()
+     val browseTitleProgress = rememberTitleCollapseProgressState(gridState)
+
+ScreenScaffold(
+        title = title ?: "",
+        titleAlpha = 0f,
+        titleAlphaProvider = { browseTitleProgress.value },
+        onBack = navController::navigateUp,
+        onBackLongClick = navController::backToMain,
+    ) { chrome ->
      LazyVerticalGrid(
+         state = gridState,
          columns = rememberGridColumns(),
+         modifier = chrome.contentModifier(),
          contentPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues()
      ) {
-         items?.let { items ->
+         item(key = "title", span = { GridItemSpan(maxLineSpan) }) {
+             ScreenLargeTitle(title ?: "")
+         }
+
+         if (!browseItems.isNullOrEmpty()) {
              items(
-                 items = items.distinctBy { it.id },
+                 items = browseItems.orEmpty().distinctBy { it.id },
                  key = { it.id }
              ) { item ->
                  YouTubeGridItem(
@@ -89,12 +125,14 @@ import com.convx.music.utils.rememberEnumPreference
                          .combinedBounceClick(
                              onClick = {
                                  when (item) {
-                                     is AlbumItem -> navController.navigate("album/${item.id}")
-                                     is PlaylistItem -> navController.navigate("online_playlist/${item.id}")
-                                     is ArtistItem -> navController.navigate("artist/${item.id}")
-                                     else -> {
-                                         // Do nothing
-                                     }
+                                      is SongItem -> playerConnection.playQueue(
+                                          YouTubeQueue(WatchEndpoint(videoId = item.id), item.toMediaMetadata()),
+                                      )
+                                      is AlbumItem -> navController.navigate(albumRoute(item.id, item.thumbnail))
+                                      is PlaylistItem -> navController.navigate(onlinePlaylistRoute(item.id, item.title, item.thumbnail))
+                                      is ArtistItem -> navController.navigate(artistRoute(item.id, item.thumbnail))
+else -> {
+                                    }
                                  }
                              },
                              onLongClick = {
@@ -122,9 +160,8 @@ import com.convx.music.utils.rememberEnumPreference
                                              )
                                          }
  
-                                         else -> {
-                                             // Do nothing
-                                         }
+else -> {
+                                        }
                                      }
                                  }
                              }
@@ -132,29 +169,27 @@ import com.convx.music.utils.rememberEnumPreference
                  )
              }
  
-             if (items.isEmpty()) {
+         } else if (isLoading) {
                  items(8) {
                      ShimmerHost {
                          GridItemPlaceHolder(fillMaxWidth = true)
+                     }
+                 }
+         } else {
+             item(key = "browse_empty", span = { GridItemSpan(maxLineSpan) }) {
+                 Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                     if (hasError) {
+                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                             Text(stringResource(R.string.home_category_load_failed))
+                             TextButton(onClick = viewModel::retry) { Text(stringResource(R.string.retry)) }
+                         }
+                     } else {
+                         Text(stringResource(R.string.no_results_found))
                      }
                  }
              }
          }
      }
  
-     TopAppBar(
-            windowInsets = appTopBarWindowInsets(),
-         title = { Text(title ?: "") },
-         navigationIcon = {
-             IconButton(
-                 onClick = navController::navigateUp,
-                 onLongClick = navController::backToMain
-             ) {
-                 Icon(
-                     painterResource(R.drawable.arrow_back),
-                     contentDescription = null
-                 )
-             }
-         }
-     )
+     }
  }

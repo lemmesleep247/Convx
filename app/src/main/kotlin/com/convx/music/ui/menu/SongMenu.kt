@@ -5,6 +5,10 @@
 
 package com.convx.music.ui.menu
 
+import com.convx.music.ui.component.DownloadRingIcon
+import com.convx.music.ui.component.sf
+import com.convx.music.ui.component.SymbolIcon
+import com.convx.music.ui.component.menuBottomInset
 import android.content.Intent
 import android.content.res.Configuration
 import androidx.compose.animation.core.animateFloatAsState
@@ -24,14 +28,14 @@ import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.LocalContentColor
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import com.convx.music.ui.ios.compat.CircularProgressIndicator
+import com.convx.music.ui.ios.compat.HorizontalDivider
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.IconButton
+import com.convx.music.ui.ios.compat.ListItem
+import com.convx.music.ui.ios.compat.LocalContentColor
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -85,8 +89,8 @@ import com.convx.music.playback.ExoDownloadService
 import com.convx.music.playback.queues.YouTubeQueue
 import com.convx.music.ui.component.ListDialog
 import com.convx.music.ui.component.LocalBottomSheetPageState
-import com.convx.music.ui.component.Material3MenuGroup
-import com.convx.music.ui.component.Material3MenuItemData
+import com.convx.music.ui.component.IosMenuGroup
+import com.convx.music.ui.component.IosMenuItemData
 import com.convx.music.ui.component.NewAction
 import com.convx.music.ui.component.NewActionGrid
 import com.convx.music.ui.component.SongListItem
@@ -112,14 +116,15 @@ fun SongMenu(
 ) {
     val context = LocalContext.current
     val ringtoneViewModel = com.convx.music.LocalRingtoneViewModel.current
-    val database = LocalDatabase.current
+    val database = LocalDatabase.current.get()
     val playerConnection = LocalPlayerConnection.current ?: return
     val songState = database.song(originalSong.id).collectAsState(initial = originalSong)
     val song = songState.value ?: originalSong
-    val download by LocalDownloadUtil.current.getDownload(originalSong.id)
+    val downloadUtil = LocalDownloadUtil.current.get()
+    val download by downloadUtil.getDownload(originalSong.id)
         .collectAsState(initial = null)
     val coroutineScope = rememberCoroutineScope()
-    val syncUtils = LocalSyncUtils.current
+    val syncUtils = LocalSyncUtils.current.get()
     val listenTogetherManager = LocalListenTogetherManager.current
     val scope = rememberCoroutineScope()
     var refetchIconDegree by remember { mutableFloatStateOf(0f) }
@@ -161,13 +166,36 @@ fun SongMenu(
         mutableStateOf(TextFieldValue(song.artists.firstOrNull()?.name.orEmpty()))
     }
 
+    var showCoverSearch by rememberSaveable { mutableStateOf(false) }
+    var showSplitNotice by rememberSaveable { mutableStateOf(false) }
+    val (stemQuality) = com.convx.music.utils.rememberEnumPreference(com.convx.music.constants.StemQualityKey, com.convx.music.playback.smart.StemQuality.FAST)
+    val stemCount = if (stemQuality == com.convx.music.playback.smart.StemQuality.DEMUCS && com.convx.music.playback.smart.DemucsModel.isInstalled(context)) 4 else 2
+    if (showSplitNotice) {
+        com.convx.music.ui.component.StemNoticeDialog(
+            bytes = com.convx.music.playback.smart.StemStore.estimatedBytes(song.song.duration, stemCount),
+            onDismiss = { showSplitNotice = false },
+            onConfirm = {
+                showSplitNotice = false
+                com.convx.music.playback.dj.LibraryAnalysis.analyze(
+                    context,
+                    listOf(com.convx.music.playback.dj.LibraryAnalysis.Target(song.id, song.song.duration, song.song.title, stems = true)),
+                )
+                onDismiss()
+            },
+        )
+    }
+    if (showCoverSearch) {
+        com.convx.music.ui.component.CoverSearchDialog(
+            initialQuery = listOf(song.song.title, song.artists.firstOrNull()?.name).filterNotNull().joinToString(" "),
+            onDismiss = { showCoverSearch = false },
+            apply = { url -> com.convx.music.utils.SongBundle.applySongCover(context, database, song.id, url) },
+        )
+    }
+
     if (showEditDialog) {
         TextFieldDialog(
             icon = {
-                Icon(
-                    painter = painterResource(R.drawable.edit),
-                    contentDescription = null
-                )
+                SymbolIcon(symbol = sf("pencil"), contentDescription = null)
             },
             title = {
                 Text(text = stringResource(R.string.edit_song))
@@ -238,7 +266,7 @@ fun SongMenu(
                         Image(
                             painter = painterResource(R.drawable.close),
                             contentDescription = null,
-                            colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onBackground),
+                            colorFilter = ColorFilter.tint(AppTheme.colorScheme.onBackground),
                             modifier = Modifier.size(ListThumbnailSize),
                         )
                     },
@@ -316,11 +344,7 @@ fun SongMenu(
                     syncUtils.likeSong(s)
                 },
             ) {
-                Icon(
-                    painter = painterResource(if (song.song.liked) R.drawable.favorite else R.drawable.favorite_border),
-                    tint = if (song.song.liked) MaterialTheme.colorScheme.error else LocalContentColor.current,
-                    contentDescription = null,
-                )
+                SymbolIcon(symbol = if (song.song.liked) sf("heart.fill") else sf("heart"), contentDescription = null, tint = if (song.song.liked) AppTheme.colorScheme.error else LocalContentColor.current)
             }
         },
     )
@@ -334,50 +358,64 @@ fun SongMenu(
     val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
 
     val isGuest = listenTogetherManager?.isInRoom == true && !listenTogetherManager.isHost
+    // A file on the device has no YouTube id: share links, radio, download and refetch would all target a video that doesn't exist.
+    val isLocal = song.song.isLocal
 
     LazyColumn(
         contentPadding = PaddingValues(
             start = 0.dp,
             top = 0.dp,
             end = 0.dp,
-            bottom = 8.dp + WindowInsets.systemBars.asPaddingValues().calculateBottomPadding(),
+            bottom = 8.dp + menuBottomInset(),
         ),
     ) {
         item {
             NewActionGrid(
-                actions = listOf(
+                actions = listOfNotNull(
                     NewAction(
                         icon = {
-                            Icon(
-                                painter = painterResource(R.drawable.edit),
-                                contentDescription = null,
-                                modifier = Modifier.size(28.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            SymbolIcon(symbol = sf("pencil"), contentDescription = null, size = 28.dp, tint = AppTheme.colorScheme.onSurfaceVariant)
                         },
                         text = stringResource(R.string.edit),
                         onClick = { showEditDialog = true }
                     ),
                     NewAction(
                         icon = {
-                            Icon(
-                                painter = painterResource(R.drawable.playlist_add),
-                                contentDescription = null,
-                                modifier = Modifier.size(28.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            SymbolIcon(symbol = sf("photo"), contentDescription = null, size = 28.dp, tint = AppTheme.colorScheme.onSurfaceVariant)
+                        },
+                        text = stringResource(R.string.search_cover),
+                        onClick = { showCoverSearch = true }
+                    ),
+                    if (isLocal || song.song.isDownloaded) NewAction(
+                        icon = {
+                            SymbolIcon(symbol = sf("waveform"), contentDescription = null, size = 28.dp, tint = AppTheme.colorScheme.onSurfaceVariant)
+                        },
+                        text = stringResource(R.string.analyze_song),
+                        onClick = {
+                            com.convx.music.playback.dj.LibraryAnalysis.analyze(
+                                context,
+                                listOf(com.convx.music.playback.dj.LibraryAnalysis.Target(song.id, song.song.duration, song.song.title)),
                             )
+                            onDismiss()
+                        }
+                    ) else null,
+                    if ((isLocal || song.song.isDownloaded) && song.song.duration in 1..com.convx.music.playback.smart.StemSeparator.MAX_SECONDS) NewAction(
+                        icon = {
+                            SymbolIcon(symbol = sf("waveform.path"), contentDescription = null, size = 28.dp, tint = AppTheme.colorScheme.onSurfaceVariant)
+                        },
+                        text = stringResource(R.string.split_stems),
+                        onClick = { showSplitNotice = true }
+                    ) else null,
+                    NewAction(
+                        icon = {
+                            SymbolIcon(symbol = sf("text.badge.plus"), contentDescription = null, size = 28.dp, tint = AppTheme.colorScheme.onSurfaceVariant)
                         },
                         text = stringResource(R.string.add_to_an_playlist),
                         onClick = { showChoosePlaylistDialog = true }
                     ),
-                    NewAction(
+                    if (isLocal) null else NewAction(
                         icon = {
-                            Icon(
-                                painter = painterResource(R.drawable.share),
-                                contentDescription = null,
-                                modifier = Modifier.size(28.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            SymbolIcon(symbol = sf("square.and.arrow.up"), contentDescription = null, size = 28.dp, tint = AppTheme.colorScheme.onSurfaceVariant)
                         },
                         text = stringResource(R.string.share),
                         onClick = {
@@ -393,11 +431,21 @@ fun SongMenu(
                     NewAction(
                         icon = {
                             Icon(
-                                painter = painterResource(R.drawable.share),
+                                painter = painterResource(R.drawable.sparks),
                                 contentDescription = null,
                                 modifier = Modifier.size(28.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                tint = AppTheme.colorScheme.onSurfaceVariant
                             )
+                        },
+                        text = stringResource(R.string.ai_dj_mix_from_song),
+                        onClick = {
+                            onDismiss()
+                            navController.navigate("ai_dj_set?seedSongId=${song.id}")
+                        }
+                    ),
+                    if (isLocal) null else NewAction(
+                        icon = {
+                            SymbolIcon(symbol = sf("square.and.arrow.up"), contentDescription = null, size = 28.dp, tint = AppTheme.colorScheme.onSurfaceVariant)
                         },
                         text = stringResource(R.string.share_smart_link),
                         onClick = {
@@ -417,16 +465,13 @@ fun SongMenu(
             )
         }
         item {
-            Material3MenuGroup(
+            IosMenuGroup(
                 items = listOfNotNull(
                     if (listenTogetherManager != null && listenTogetherManager.isInRoom && !listenTogetherManager.isHost) {
-                        Material3MenuItemData(
+                        IosMenuItemData(
                             title = { Text(text = stringResource(R.string.suggest_to_host)) },
                             icon = {
-                                Icon(
-                                    painter = painterResource(R.drawable.queue_music),
-                                    contentDescription = null,
-                                )
+                                SymbolIcon(symbol = sf("music.note.list"), contentDescription = null)
                             },
                             onClick = {
                                 val durationMs = if (song.song.duration > 0) song.song.duration.toLong() * 1000 else 180000L
@@ -443,15 +488,12 @@ fun SongMenu(
                             }
                         )
                     } else null,
-                    if (!isGuest) {
-                        Material3MenuItemData(
+                    if (!isGuest && !isLocal) {
+                        IosMenuItemData(
                             title = { Text(text = stringResource(R.string.start_radio)) },
                             description = { Text(text = stringResource(R.string.start_radio_desc)) },
                             icon = {
-                                Icon(
-                                    painter = painterResource(R.drawable.radio),
-                                    contentDescription = null,
-                                )
+                                SymbolIcon(symbol = sf("dot.radiowaves.left.and.right"), contentDescription = null)
                             },
                             onClick = {
                                 onDismiss()
@@ -460,14 +502,11 @@ fun SongMenu(
                         )
                     } else null,
                     if (!isGuest) {
-                        Material3MenuItemData(
+                        IosMenuItemData(
                             title = { Text(text = stringResource(R.string.play_next)) },
                             description = { Text(text = stringResource(R.string.play_next_desc)) },
                             icon = {
-                                Icon(
-                                    painter = painterResource(R.drawable.playlist_play),
-                                    contentDescription = null,
-                                )
+                                SymbolIcon(symbol = sf("text.line.first.and.arrowtriangle.forward"), contentDescription = null)
                             },
                             onClick = {
                                 onDismiss()
@@ -476,14 +515,11 @@ fun SongMenu(
                         )
                     } else null,
                     if (!isGuest) {
-                        Material3MenuItemData(
+                        IosMenuItemData(
                             title = { Text(text = stringResource(R.string.add_to_queue)) },
                             description = { Text(text = stringResource(R.string.add_to_queue_desc)) },
                             icon = {
-                                Icon(
-                                    painter = painterResource(R.drawable.queue_music),
-                                    contentDescription = null,
-                                )
+                                SymbolIcon(symbol = sf("music.note.list"), contentDescription = null)
                             },
                             onClick = {
                                 onDismiss()
@@ -498,20 +534,17 @@ fun SongMenu(
         item { Spacer(modifier = Modifier.height(12.dp)) }
 
         item {
-            Material3MenuGroup(
+            IosMenuGroup(
                 items = buildList {
                     add(
-                        Material3MenuItemData(
+                        IosMenuItemData(
                             title = { 
                                 Text(
                                     text = if (isPinned) "Unpin from Speed dial" else "Pin to Speed dial" 
                                 ) 
                             },
                             icon = {
-                                Icon(
-                                    painter = painterResource(if (isPinned) R.drawable.remove else R.drawable.add),
-                                    contentDescription = null,
-                                )
+                                SymbolIcon(symbol = if (isPinned) sf("minus") else sf("plus"), contentDescription = null)
                             },
                             onClick = {
                                 coroutineScope.launch(Dispatchers.IO) {
@@ -535,7 +568,7 @@ fun SongMenu(
                         )
                     )
                     add(
-                        Material3MenuItemData(
+                        IosMenuItemData(
                             title = {
                                 Text(
                                     text = stringResource(
@@ -546,13 +579,10 @@ fun SongMenu(
                             },
                             description = { Text(text = stringResource(R.string.add_to_library_desc)) },
                             icon = {
-                                Icon(
-                                    painter = painterResource(
-                                        if (song.song.inLibrary == null) R.drawable.library_add
-                                        else R.drawable.library_add_check
-                                    ),
-                                    contentDescription = null,
-                                )
+                                SymbolIcon(symbol = 
+                                        if (song.song.inLibrary == null) sf("text.badge.plus")
+                                        else sf("text.badge.checkmark")
+                                    , contentDescription = null)
                             },
                             onClick = {
                                 val currentSong = song.song
@@ -574,13 +604,10 @@ fun SongMenu(
                     )
                     if (event != null) {
                         add(
-                            Material3MenuItemData(
+                            IosMenuItemData(
                                 title = { Text(text = stringResource(R.string.remove_from_history)) },
                                 icon = {
-                                    Icon(
-                                        painter = painterResource(R.drawable.delete),
-                                        contentDescription = null,
-                                    )
+                                    SymbolIcon(symbol = sf("trash"), contentDescription = null)
                                 },
                                 onClick = {
                                     onDismiss()
@@ -593,13 +620,10 @@ fun SongMenu(
                     }
                     if (playlistSong != null) {
                         add(
-                            Material3MenuItemData(
+                            IosMenuItemData(
                                 title = { Text(text = stringResource(R.string.remove_from_playlist)) },
                                 icon = {
-                                    Icon(
-                                        painter = painterResource(R.drawable.delete),
-                                        contentDescription = null,
-                                    )
+                                    SymbolIcon(symbol = sf("trash"), contentDescription = null)
                                 },
                                 onClick = {
                                     database.transaction {
@@ -628,13 +652,10 @@ fun SongMenu(
                     }
                     if (isFromCache) {
                         add(
-                            Material3MenuItemData(
+                            IosMenuItemData(
                                 title = { Text(text = stringResource(R.string.remove_from_cache)) },
                                 icon = {
-                                    Icon(
-                                        painter = painterResource(R.drawable.delete),
-                                        contentDescription = null,
-                                    )
+                                    SymbolIcon(symbol = sf("trash"), contentDescription = null)
                                 },
                                 onClick = {
                                     onDismiss()
@@ -644,25 +665,18 @@ fun SongMenu(
                         )
                     }
                     add(
-                        Material3MenuItemData(
+                        IosMenuItemData(
                             title = { Text(text = stringResource(R.string.set_as_ringtone)) },
                             icon = {
-                                Icon(
-                                    painter = painterResource(R.drawable.notification),
-                                    contentDescription = null,
-                                )
+                                SymbolIcon(symbol = sf("bell"), contentDescription = null)
                             },
                             onClick = {
-                                if (ringtoneViewModel.hasSettingsPermission(context)) {
-                                    ringtoneViewModel.showTrimmer(
-                                        song.id,
-                                        song.song.title,
-                                        song.artists.joinToString { it.name },
-                                        song.song.duration
-                                    )
-                                } else {
-                                    ringtoneViewModel.requestSettingsPermission(context)
-                                }
+                                ringtoneViewModel.showTrimmer(
+                                    song.id,
+                                    song.song.title,
+                                    song.artists.joinToString { it.name },
+                                    song.song.duration
+                                )
                                 onDismiss()
                             }
                         )
@@ -673,41 +687,30 @@ fun SongMenu(
 
         item { Spacer(modifier = Modifier.height(12.dp)) }
 
-        item {
-            Material3MenuGroup(
-                items = listOf(
+        if (!isLocal) item {
+            IosMenuGroup(
+                items = listOfNotNull(
                     when (download?.state) {
                         Download.STATE_COMPLETED -> {
-                            Material3MenuItemData(
+                            IosMenuItemData(
                                 title = {
                                     Text(
                                         text = stringResource(R.string.remove_download)
                                     )
                                 },
                                 icon = {
-                                    Icon(
-                                        painter = painterResource(R.drawable.offline),
-                                        contentDescription = null
-                                    )
+                                    SymbolIcon(symbol = sf("arrow.down.circle"), contentDescription = null)
                                 },
                                 onClick = {
-                                    DownloadService.sendRemoveDownload(
-                                        context,
-                                        ExoDownloadService::class.java,
-                                        song.id,
-                                        false,
-                                    )
+                                    com.convx.music.playback.removeDownloads(context, listOf(song.id))
                                 }
                             )
                         }
                         Download.STATE_QUEUED, Download.STATE_DOWNLOADING -> {
-                            Material3MenuItemData(
+                            IosMenuItemData(
                                 title = { Text(text = stringResource(R.string.downloading)) },
                                 icon = {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(24.dp),
-                                        strokeWidth = 2.dp
-                                    )
+                                    DownloadRingIcon(download)
                                 },
                                 onClick = {
                                     DownloadService.sendRemoveDownload(
@@ -719,19 +722,12 @@ fun SongMenu(
                                 }
                             )
                         }
-                        // A failed download used to fall into the same branch as
-                        // "never downloaded" below — same icon, same "Download" label,
-                        // no sign anything had gone wrong. Surfacing it distinctly (and
-                        // letting the same tap re-queue it) is the whole fix.
+                        // Show failed downloads separately and let the user retry.
                         Download.STATE_FAILED -> {
-                            Material3MenuItemData(
+                            IosMenuItemData(
                                 title = { Text(text = stringResource(R.string.download_failed)) },
                                 icon = {
-                                    Icon(
-                                        painter = painterResource(R.drawable.error),
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.error,
-                                    )
+                                    SymbolIcon(symbol = sf("exclamationmark.circle"), contentDescription = null, tint = AppTheme.colorScheme.error)
                                 },
                                 onClick = {
                                     val downloadRequest =
@@ -750,14 +746,11 @@ fun SongMenu(
                             )
                         }
                         else -> {
-                            Material3MenuItemData(
+                            IosMenuItemData(
                                 title = { Text(text = stringResource(R.string.action_download)) },
                                 description = { Text(text = stringResource(R.string.download_desc)) },
                                 icon = {
-                                    Icon(
-                                        painter = painterResource(R.drawable.download),
-                                        contentDescription = null,
-                                    )
+                                    SymbolIcon(symbol = sf("arrow.down.circle"), contentDescription = null)
                                 },
                                 onClick = {
                                     val downloadRequest =
@@ -775,7 +768,18 @@ fun SongMenu(
                                 }
                             )
                         }
-                    }
+                    },
+                    if (download?.state == Download.STATE_COMPLETED) {
+                        IosMenuItemData(
+                            title = { Text(text = stringResource(R.string.upgrade_download_quality)) },
+                            description = { Text(text = stringResource(R.string.upgrade_download_quality_desc)) },
+                            icon = { SymbolIcon(symbol = sf("arrow.up.circle"), contentDescription = null) },
+                            onClick = {
+                                downloadUtil.upgradeQuality(song.id)
+                                onDismiss()
+                            }
+                        )
+                    } else null,
                 )
             )
         }
@@ -783,17 +787,14 @@ fun SongMenu(
         item { Spacer(modifier = Modifier.height(12.dp)) }
 
         item {
-            Material3MenuGroup(
+            IosMenuGroup(
                 items = buildList {
                     add(
-                        Material3MenuItemData(
+                        IosMenuItemData(
                             title = { Text(text = stringResource(R.string.view_artist)) },
                             description = { Text(text = song.artists.joinToString { it.name }) },
                             icon = {
-                                Icon(
-                                    painter = painterResource(R.drawable.artist),
-                                    contentDescription = null,
-                                )
+                                SymbolIcon(symbol = sf("music.mic"), contentDescription = null)
                             },
                             onClick = {
                                 if (song.artists.size == 1) {
@@ -805,38 +806,31 @@ fun SongMenu(
                             }
                         )
                     )
-                    if (song.song.albumId != null) {
+                    val albumId = song.song.albumId?.takeIf { it.isNotBlank() } ?: song.album?.id?.takeIf { it.isNotBlank() }
+                    val albumName = song.song.albumName ?: song.album?.title
+                    if (!albumId.isNullOrBlank()) {
                         add(
-                            Material3MenuItemData(
+                            IosMenuItemData(
                                 title = { Text(text = stringResource(R.string.view_album)) },
-                                description = {
-                                    song.song.albumName?.let {
-                                        Text(text = it)
-                                    }
+                                description = albumName?.let { name ->
+                                    { Text(text = name) }
                                 },
                                 icon = {
-                                    Icon(
-                                        painter = painterResource(R.drawable.album),
-                                        contentDescription = null,
-                                    )
+                                    SymbolIcon(symbol = sf("square.stack"), contentDescription = null)
                                 },
                                 onClick = {
                                     onDismiss()
-                                    navController.navigate("album/${song.song.albumId}")
+                                    navController.navigate("album/$albumId")
                                 }
                             )
                         )
                     }
-                    add(
-                        Material3MenuItemData(
+                    if (!isLocal) add(
+                        IosMenuItemData(
                             title = { Text(text = stringResource(R.string.refetch)) },
                             description = { Text(text = stringResource(R.string.refetch_desc)) },
                             icon = {
-                                Icon(
-                                    painter = painterResource(R.drawable.sync),
-                                    contentDescription = null,
-                                    modifier = Modifier.graphicsLayer(rotationZ = rotationAnimation),
-                                )
+                                SymbolIcon(symbol = sf("arrow.triangle.2.circlepath"), contentDescription = null, modifier = Modifier.graphicsLayer(rotationZ = rotationAnimation))
                             },
                             onClick = {
                                 refetchIconDegree -= 360
@@ -854,18 +848,15 @@ fun SongMenu(
                         )
                     )
                     add(
-                        Material3MenuItemData(
+                        IosMenuItemData(
                             title = { Text(text = stringResource(R.string.details)) },
                             description = { Text(text = stringResource(R.string.details_desc)) },
                             icon = {
-                                Icon(
-                                    painter = painterResource(R.drawable.info),
-                                    contentDescription = null,
-                                )
+                                SymbolIcon(symbol = sf("info.circle"), contentDescription = null)
                             },
                             onClick = {
                                 onDismiss()
-                                bottomSheetPageState.show {
+                                bottomSheetPageState.showFloating {
                                     ShowMediaInfo(song.id)
                                 }
                             }
@@ -876,16 +867,13 @@ fun SongMenu(
                     // is nothing on disk to edit for a YouTube track.
                     if (song.song.isLocal) {
                         add(
-                            Material3MenuItemData(
+                            IosMenuItemData(
                                 title = { Text(text = stringResource(R.string.edit_tags)) },
                                 description = {
                                     Text(text = stringResource(R.string.edit_tags_desc))
                                 },
                                 icon = {
-                                    Icon(
-                                        painter = painterResource(R.drawable.edit),
-                                        contentDescription = null,
-                                    )
+                                    SymbolIcon(symbol = sf("pencil"), contentDescription = null)
                                 },
                                 onClick = {
                                     onDismiss()

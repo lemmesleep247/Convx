@@ -6,97 +6,54 @@
 package com.convx.music.ui.screens.settings
 
 import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.Spacer
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.height
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.padding
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.size
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.windowInsetsPadding
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.rememberScrollState
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.verticalScroll
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.material3.ExperimentalMaterial3Api
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.Icon
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.ui.component.GlassSwitchCompat as Switch
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.Switch
 import androidx.compose.material3.SwitchDefaults
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.Text
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.TopAppBar
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import com.convx.music.ui.ios.compat.Text
 import androidx.compose.material3.TopAppBarScrollBehavior
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.Composable
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.remember
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.platform.LocalContext
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.res.painterResource
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.res.stringResource
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.unit.dp
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.navigation.NavController
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.LocalPlayerAwareWindowInsets
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.R
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.LyricsRomanizeAsMainKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.LyricsRomanizeBelarusianKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.LyricsRomanizeBulgarianKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.LyricsRomanizeChineseKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.LyricsRomanizeHindiKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.LyricsRomanizePunjabiKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.LyricsRomanizeCyrillicByLineKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.LyricsRomanizeJapaneseKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.LyricsRomanizeKoreanKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.LyricsRomanizeKyrgyzKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.LyricsRomanizeMacedonianKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.LyricsRomanizeRussianKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.LyricsRomanizeSerbianKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.LyricsRomanizeUkrainianKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.component.ActionPromptDialog
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.component.IconButton
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.ui.component.Material3SettingsGroup
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.ui.component.Material3SettingsItem
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import com.convx.music.ui.component.IosSettingsGroup
+import com.convx.music.ui.component.IosSettingsItem
+import com.convx.music.ui.ios.foundation.IosTheme
 import com.convx.music.ui.utils.backToMain
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.utils.rememberPreference
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -123,131 +80,77 @@ fun RomanizationSettings(
     val (lyricsRomanizeCyrillicByLine, onLyricsRomanizeCyrillicByLineChange) = rememberPreference(LyricsRomanizeCyrillicByLineKey, defaultValue = false)
     val (showDialog, setShowDialog) = remember { mutableStateOf(false) }
 
-    Column(
-        Modifier
-            .windowInsetsPadding(LocalPlayerAwareWindowInsets.current)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp),
+    SettingsPage(
+        navController = navController,
+        title = stringResource(R.string.lyrics_romanize_title),
+        pageColor = IosTheme.colors.systemGroupedBackground,
+        horizontalPadding = 16.dp,
     ) {
-        Material3SettingsGroup(
-            title = stringResource(R.string.general),
+        IosSettingsGroup(
+            title = "Romanization",
             items = listOf(
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.lyrics),
                     title = { Text(stringResource(R.string.lyrics_romanize_as_main)) },
                     trailingContent = {
                         Switch(
                             checked = lyricsRomanizeAsMain,
-                            onCheckedChange = onLyricsRomanizeAsMainChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (lyricsRomanizeAsMain) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
+                            onCheckedChange = onLyricsRomanizeAsMainChange
                         )
                     },
                     onClick = { onLyricsRomanizeAsMainChange(!lyricsRomanizeAsMain) }
                 ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.language_japanese_latin),
                     title = { Text(stringResource(R.string.lyrics_romanize_japanese)) },
                     trailingContent = {
                         Switch(
                             checked = lyricsRomanizeJapanese,
-                            onCheckedChange = onLyricsRomanizeJapaneseChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (lyricsRomanizeJapanese) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
+                            onCheckedChange = onLyricsRomanizeJapaneseChange
                         )
                     },
                     onClick = { onLyricsRomanizeJapaneseChange(!lyricsRomanizeJapanese) }
                 ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.language_korean_latin),
                     title = { Text(stringResource(R.string.lyrics_romanize_korean)) },
                     trailingContent = {
                         Switch(
                             checked = lyricsRomanizeKorean,
-                            onCheckedChange = onLyricsRomanizeKoreanChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (lyricsRomanizeKorean) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
+                            onCheckedChange = onLyricsRomanizeKoreanChange
                         )
                     },
                     onClick = { onLyricsRomanizeKoreanChange(!lyricsRomanizeKorean) }
                 ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.language),
                     title = { Text(stringResource(R.string.lyrics_romanize_chinese)) },
                     trailingContent = {
                         Switch(
                             checked = lyricsRomanizeChinese,
-                            onCheckedChange = onLyricsRomanizeChineseChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (lyricsRomanizeChinese) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
+                            onCheckedChange = onLyricsRomanizeChineseChange
                         )
                     },
                     onClick = { onLyricsRomanizeChineseChange(!lyricsRomanizeChinese) }
                 ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.language),
                     title = { Text(stringResource(R.string.lyrics_romanize_hindi)) },
                     trailingContent = {
                         Switch(
                             checked = lyricsRomanizeHindi,
-                            onCheckedChange = onLyricsRomanizeHindiChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (lyricsRomanizeHindi) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
+                            onCheckedChange = onLyricsRomanizeHindiChange
                         )
                     },
                     onClick = { onLyricsRomanizeHindiChange(!lyricsRomanizeHindi) }
                 ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.language),
                     title = { Text(stringResource(R.string.lyrics_romanize_punjabi)) },
                     trailingContent = {
                         Switch(
                             checked = lyricsRomanizePunjabi,
-                            onCheckedChange = onLyricsRomanizePunjabiChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (lyricsRomanizePunjabi) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
+                            onCheckedChange = onLyricsRomanizePunjabiChange
                         )
                     },
                     onClick = { onLyricsRomanizePunjabiChange(!lyricsRomanizePunjabi) }
@@ -257,150 +160,87 @@ fun RomanizationSettings(
 
         Spacer(modifier = Modifier.height(27.dp))
 
-        Material3SettingsGroup(
+        IosSettingsGroup(
             title = stringResource(R.string.lyrics_romanization_cyrillic),
             items = listOf(
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.alphabet_cyrillic),
                     title = { Text(stringResource(R.string.lyrics_romanize_russian)) },
                     trailingContent = {
                         Switch(
                             checked = lyricsRomanizeRussian,
-                            onCheckedChange = onLyricsRomanizeRussianChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (lyricsRomanizeRussian) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
+                            onCheckedChange = onLyricsRomanizeRussianChange
                         )
                     },
                     onClick = { onLyricsRomanizeRussianChange(!lyricsRomanizeRussian) }
                 ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.alphabet_cyrillic),
                     title = { Text(stringResource(R.string.lyrics_romanize_ukrainian)) },
                     trailingContent = {
                         Switch(
                             checked = lyricsRomanizeUkrainian,
-                            onCheckedChange = onLyricsRomanizeUkrainianChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (lyricsRomanizeUkrainian) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
+                            onCheckedChange = onLyricsRomanizeUkrainianChange
                         )
                     },
                     onClick = { onLyricsRomanizeUkrainianChange(!lyricsRomanizeUkrainian) }
                 ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.alphabet_cyrillic),
                     title = { Text(stringResource(R.string.lyrics_romanize_serbian)) },
                     trailingContent = {
                         Switch(
                             checked = lyricsRomanizeSerbian,
-                            onCheckedChange = onLyricsRomanizeSerbianChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (lyricsRomanizeSerbian) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
+                            onCheckedChange = onLyricsRomanizeSerbianChange
                         )
                     },
                     onClick = { onLyricsRomanizeSerbianChange(!lyricsRomanizeSerbian) }
                 ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.alphabet_cyrillic),
                     title = { Text(stringResource(R.string.lyrics_romanize_bulgarian)) },
                     trailingContent = {
                         Switch(
                             checked = lyricsRomanizeBulgarian,
-                            onCheckedChange = onLyricsRomanizeBulgarianChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (lyricsRomanizeBulgarian) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
+                            onCheckedChange = onLyricsRomanizeBulgarianChange
                         )
                     },
                     onClick = { onLyricsRomanizeBulgarianChange(!lyricsRomanizeBulgarian) }
                 ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.alphabet_cyrillic),
                     title = { Text(stringResource(R.string.lyrics_romanize_belarusian)) },
                     trailingContent = {
                         Switch(
                             checked = lyricsRomanizeBelarusian,
-                            onCheckedChange = onLyricsRomanizeBelarusianChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (lyricsRomanizeBelarusian) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
+                            onCheckedChange = onLyricsRomanizeBelarusianChange
                         )
                     },
                     onClick = { onLyricsRomanizeBelarusianChange(!lyricsRomanizeBelarusian) }
                 ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.alphabet_cyrillic),
                     title = { Text(stringResource(R.string.lyrics_romanize_kyrgyz)) },
                     trailingContent = {
                         Switch(
                             checked = lyricsRomanizeKyrgyz,
-                            onCheckedChange = onLyricsRomanizeKyrgyzChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (lyricsRomanizeKyrgyz) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
+                            onCheckedChange = onLyricsRomanizeKyrgyzChange
                         )
                     },
                     onClick = { onLyricsRomanizeKyrgyzChange(!lyricsRomanizeKyrgyz) }
                 ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.alphabet_cyrillic),
                     title = { Text(stringResource(R.string.lyrics_romanize_macedonian)) },
                     trailingContent = {
                         Switch(
                             checked = lyricsRomanizeMacedonian,
-                            onCheckedChange = onLyricsRomanizeMacedonianChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (lyricsRomanizeMacedonian) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
+                            onCheckedChange = onLyricsRomanizeMacedonianChange
                         )
                     },
                     onClick = { onLyricsRomanizeMacedonianChange(!lyricsRomanizeMacedonian) }
                 ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.warning),
                     title = { Text(stringResource(R.string.line_by_line_option_title)) },
                     description = { Text(stringResource(R.string.line_by_line_option_desc)) },
@@ -413,15 +253,6 @@ fun RomanizationSettings(
                                 } else {
                                     onLyricsRomanizeCyrillicByLineChange(false)
                                 }
-                            },
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (lyricsRomanizeCyrillicByLine) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
                             }
                         )
                     },
@@ -449,21 +280,6 @@ fun RomanizationSettings(
                 }
             )
         }
+    
     }
-
-    TopAppBar(
-            windowInsets = appTopBarWindowInsets(),
-        title = { Text(stringResource(R.string.lyrics_romanize_title)) },
-        navigationIcon = {
-            IconButton(
-                onClick = navController::navigateUp,
-                onLongClick = navController::backToMain,
-            ) {
-                Icon(
-                    painterResource(R.drawable.arrow_back),
-                    contentDescription = null,
-                )
-            }
-        }
-    )
 }

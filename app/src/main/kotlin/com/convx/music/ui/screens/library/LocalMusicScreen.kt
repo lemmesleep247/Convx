@@ -1,11 +1,12 @@
 package com.convx.music.ui.screens.library
 
-import android.Manifest
-import android.os.Build
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
+import com.convx.music.ui.utils.sharedArtworkSource
+import com.convx.music.ui.component.sf
+import com.convx.music.ui.component.SymbolIcon
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,19 +27,30 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import com.convx.music.constants.ThumbnailRoundedShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
+import com.convx.music.ui.component.LocalMusicEmptyState
+import com.convx.music.ui.component.LocalMusicPermissionPrompt
+import com.convx.music.ui.component.hasLocalAudioPermission
+import com.convx.music.ui.component.rememberLocalAudioPermission
+import com.convx.music.ui.ios.compat.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import com.convx.music.ui.ios.compat.CircularProgressIndicator
+import com.convx.music.ui.ios.compat.DropdownMenu
+import com.convx.music.ui.ios.compat.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
+import com.convx.music.ui.ios.compat.HorizontalDivider
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.IconButton
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.OutlinedButton
+import com.convx.music.ui.ios.compat.OutlinedTextField
+import com.convx.music.ui.ios.compat.Text
+import com.composables.sfsymbols.SfSymbols
+import com.composables.sfsymbols.monochrome.SFArrowClockwise
+import com.composables.sfsymbols.monochrome.SFListBullet
+import com.composables.sfsymbols.monochrome.SFMagnifyingglass
+import com.composables.sfsymbols.monochrome.SFPlayFill
+import com.composables.sfsymbols.monochrome.SFShuffle
+import com.composables.sfsymbols.monochrome.SFXmark
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -73,7 +85,10 @@ import com.convx.music.playback.queues.ListQueue
 import com.convx.music.ui.component.ListScrollRail
 import com.convx.music.ui.component.LocalMenuState
 import com.convx.music.ui.menu.SongMenu
+import com.convx.music.ui.utils.albumRoute
+import com.convx.music.ui.utils.artistRoute
 import java.time.LocalDateTime
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -87,11 +102,11 @@ fun LocalMusicScreen(
     val menuState = LocalMenuState.current
     val (accentColor, onAccentColor) = rememberGlobalAccentColors()
 
-    val songs by viewModel.songs.collectAsState()
-    val albums by viewModel.albums.collectAsState()
-    val artists by viewModel.artists.collectAsState()
-    val isScanning by viewModel.isScanning.collectAsState()
-    val scanResult by viewModel.scanResult.collectAsState()
+    val songs by viewModel.songs.collectAsStateWithLifecycle()
+    val albums by viewModel.albums.collectAsStateWithLifecycle()
+    val artists by viewModel.artists.collectAsStateWithLifecycle()
+    val isScanning by viewModel.isScanning.collectAsStateWithLifecycle()
+    val scanResult by viewModel.scanResult.collectAsStateWithLifecycle()
 
     var hasStoragePermission by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
@@ -106,12 +121,7 @@ fun LocalMusicScreen(
                 when (sortMode) {
                     LocalSortMode.NAME -> list.sortedBy { it.title.lowercase() }
                     LocalSortMode.DURATION -> list.sortedByDescending { it.song.duration }
-                    // "Recently added" means MediaStore's DATE_ADDED, which the scanner
-                    // stores in inLibrary — not dateModified, which is the file's mtime.
-                    // Copying a music folder onto the device preserves the source files'
-                    // mtimes, so sorting on it ordered songs by when they were authored
-                    // rather than when they landed on the phone. dateModified stays as a
-                    // fallback for rows written before the scanner recorded DATE_ADDED.
+                    // "Recently added" = MediaStore DATE_ADDED stored at scan; dateModified is the file's mtime.
                     LocalSortMode.RECENT -> list.sortedByDescending {
                         it.song.inLibrary ?: it.song.dateModified ?: LocalDateTime.MIN
                     }
@@ -125,30 +135,12 @@ fun LocalMusicScreen(
         artists.filter { it.title.contains(searchQuery, ignoreCase = true) }
     }
 
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        hasStoragePermission = granted
-    }
+    val audioPermission = rememberLocalAudioPermission { granted -> hasStoragePermission = granted }
 
-    LaunchedEffect(Unit) {
-        val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            Manifest.permission.READ_MEDIA_AUDIO
-        } else {
-            Manifest.permission.READ_EXTERNAL_STORAGE
-        }
-        // Check if already granted
-        hasStoragePermission = when {
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU ->
-                context.checkSelfPermission(permission) == android.content.pm.PackageManager.PERMISSION_GRANTED
-            else ->
-                context.checkSelfPermission(permission) == android.content.pm.PackageManager.PERMISSION_GRANTED
-        }
-    }
+    // Re-read on entry as well as after the dialog: the user may have flipped it in Settings.
+    LaunchedEffect(Unit) { hasStoragePermission = hasLocalAudioPermission(context) }
 
-    // Entering the screen refreshes the library instead of leaving it to the Rescan
-    // button. force = false so this only fires when the last scan has gone stale —
-    // navigating to the player and back must not restart a full MediaStore sweep.
+    // Refresh on entry; force=false so returning from the player doesn't re-sweep.
     LaunchedEffect(hasStoragePermission) {
         if (hasStoragePermission) viewModel.scanDevice(context, force = false)
     }
@@ -160,7 +152,6 @@ fun LocalMusicScreen(
         state = lazyListState,
         modifier = Modifier.fillMaxSize(),
     ) {
-        // Header
         item(key = "header") {
             Column(
                 modifier = Modifier
@@ -173,30 +164,22 @@ fun LocalMusicScreen(
                 ) {
                     Text(
                         text = stringResource(R.string.filter_local),
-                        style = MaterialTheme.typography.headlineLarge,
+                        style = AppTheme.typography.headlineLarge,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.weight(1f),
                     )
                     if (hasStoragePermission) {
-                        // Search
                         IconButton(
                             onClick = {
                                 showSearch = !showSearch
                                 if (!showSearch) searchQuery = ""
                             },
                         ) {
-                            Icon(
-                                painter = painterResource(if (showSearch) R.drawable.close else R.drawable.search),
-                                contentDescription = "Search",
-                            )
+                            SymbolIcon(bounceOnEnter = true, symbol = if (showSearch) sf("SFXmark") else sf("SFMagnifyingglass"), contentDescription = "Search")
                         }
-                        // Sort
                         Box {
                             IconButton(onClick = { showSortMenu = true }) {
-                                Icon(
-                                    painter = painterResource(R.drawable.list),
-                                    contentDescription = "Sort",
-                                )
+                                SymbolIcon(bounceOnEnter = true, symbol = sf("SFListBullet"), contentDescription = "Sort")
                             }
                             DropdownMenu(
                                 expanded = showSortMenu,
@@ -227,10 +210,7 @@ fun LocalMusicScreen(
                                     strokeWidth = 2.dp,
                                 )
                             } else {
-                                Icon(
-                                    painter = painterResource(R.drawable.refresh),
-                                    contentDescription = "Rescan",
-                                )
+                                SymbolIcon(bounceOnEnter = true, symbol = sf("SFArrowClockwise"), contentDescription = "Rescan")
                             }
                         }
                     }
@@ -243,8 +223,8 @@ fun LocalMusicScreen(
                 if (totalCount > 0) {
                     Text(
                         text = "${displaySongs.size} songs \u00b7 ${displayAlbums.size} albums \u00b7 ${displayArtists.size} artists",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = AppTheme.typography.bodyMedium,
+                        color = AppTheme.colorScheme.onSurfaceVariant,
                     )
                 }
 
@@ -264,52 +244,11 @@ fun LocalMusicScreen(
         // Scan / Permission section
         if (!hasStoragePermission) {
             item(key = "permission") {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Text(
-                        text = "Grant permission to access your music library",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    Button(
-                        onClick = {
-                            val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                Manifest.permission.READ_MEDIA_AUDIO
-                            } else {
-                                Manifest.permission.READ_EXTERNAL_STORAGE
-                            }
-                            permissionLauncher.launch(permission)
-                        },
-                    ) {
-                        Text("Grant Permission")
-                    }
-                }
+                LocalMusicPermissionPrompt(permission = audioPermission)
             }
         } else if (songs.isEmpty() && !isScanning) {
             item(key = "empty") {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Text(
-                        text = "No local music found",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    Button(
-                        onClick = { viewModel.scanDevice(context) },
-                    ) {
-                        Text("Scan Device")
-                    }
-                }
+                LocalMusicEmptyState(onScan = { viewModel.scanDevice(context) })
             }
         }
 
@@ -327,8 +266,8 @@ fun LocalMusicScreen(
                     Spacer(Modifier.width(12.dp))
                     Text(
                         text = "Scanning device...",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = AppTheme.typography.bodyMedium,
+                        color = AppTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -347,13 +286,13 @@ fun LocalMusicScreen(
                 ) {
                     Text(
                         text = "Found ${result.newSongs} new songs (${result.totalFound} total)",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = AppTheme.typography.bodySmall,
+                        color = AppTheme.colorScheme.onSurfaceVariant,
                     )
                     OutlinedButton(
                         onClick = { viewModel.scanDevice(context) },
                     ) {
-                        Text("Rescan", style = MaterialTheme.typography.labelMedium)
+                        Text("Rescan", style = AppTheme.typography.labelMedium)
                     }
                 }
             }
@@ -381,11 +320,7 @@ fun LocalMusicScreen(
                             contentColor = onAccentColor,
                         ),
                     ) {
-                        Icon(
-                            painter = painterResource(R.drawable.play),
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                        )
+                        SymbolIcon(bounceOnEnter = true, symbol = sf("SFPlayFill"), contentDescription = null, size = 18.dp)
                         Spacer(Modifier.width(8.dp))
                         Text("Play All")
                     }
@@ -402,11 +337,7 @@ fun LocalMusicScreen(
                             contentColor = onAccentColor,
                         ),
                     ) {
-                        Icon(
-                            painter = painterResource(R.drawable.shuffle),
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                        )
+                        SymbolIcon(bounceOnEnter = true, symbol = sf("SFShuffle"), contentDescription = null, size = 18.dp)
                         Spacer(Modifier.width(8.dp))
                         Text("Shuffle")
                     }
@@ -453,8 +384,8 @@ fun LocalMusicScreen(
                 item(key = "songs_more") {
                     Text(
                         text = "+ ${displaySongs.size - LocalMusicSongRowCap} more songs",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.primary,
+                        style = AppTheme.typography.bodyMedium,
+                        color = AppTheme.colorScheme.primary,
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable {
@@ -483,7 +414,7 @@ fun LocalMusicScreen(
                 AlbumListItem(
                     album = album,
                     onClick = {
-                        navController.navigate("album/${album.id}")
+                        navController.navigate(albumRoute(album.id, album.thumbnailUrl))
                     },
                 )
                 if (index != displayAlbums.lastIndex) HorizontalDivider()
@@ -507,7 +438,7 @@ fun LocalMusicScreen(
                 ArtistListItem(
                     artist = artist,
                     onClick = {
-                        navController.navigate("artist/${artist.id}")
+                        navController.navigate(artistRoute(artist.id, artist.thumbnailUrl))
                     },
                 )
                 if (index != displayArtists.lastIndex) HorizontalDivider()
@@ -520,12 +451,7 @@ fun LocalMusicScreen(
         }
     }
 
-        // This screen stacks three sections in one column, so the rail scrubs raw lazy
-        // indices rather than one block's indices with a header offset. The count is
-        // derived from the data plus the fixed rows around it; a proportional rail maps
-        // a fraction of the rail to a fraction of the list, so being a row or two out
-        // near the very bottom costs nothing, and an over-long index is caught by
-        // scrollToItem's own guards.
+        // The rail indexes the combined song, album, and artist list plus its fixed rows.
         val railItemCount = displaySongs.size.coerceAtMost(LocalMusicSongRowCap) +
             displayAlbums.size + displayArtists.size + LocalMusicFixedRows
         ListScrollRail(
@@ -554,76 +480,80 @@ private fun SectionHeader(
     ) {
         Text(
             text = title,
-            style = MaterialTheme.typography.titleMedium,
+            style = AppTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
         )
         Spacer(Modifier.width(8.dp))
         Text(
             text = "($count)",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = AppTheme.typography.bodyMedium,
+            color = AppTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
 
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 private fun SongListItem(
     song: Song,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
+    com.convx.music.ui.utils.ArtworkSourceHost(Modifier) { sourceModifier ->
+    val artworkOwner = com.convx.music.ui.utils.rememberArtworkSourceOwner()
+    val albumArtworkId = song.album?.id ?: song.song.albumId
     Row(
-        modifier = Modifier
+        modifier = sourceModifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(horizontal = 20.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Thumbnail
         AsyncImage(
             model = ImageRequest.Builder(LocalContext.current)
                 .data(song.thumbnailUrl)
                 .size(CoilSize(96, 96))
                 .build(),
+            onSuccess = com.convx.music.ui.utils.sharedArtworkImageListener(artworkOwner, song.thumbnailUrl),
             contentDescription = null,
             contentScale = ContentScale.Crop,
             placeholder = painterResource(R.drawable.thumbnail_fallback),
             error = painterResource(R.drawable.thumbnail_fallback),
             modifier = Modifier
+                .sharedArtworkSource(albumArtworkId, song.thumbnailUrl, artworkOwner)
                 .size(48.dp)
                 .clip(RoundedCornerShape(8.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
+                .background(AppTheme.colorScheme.surfaceVariant),
         )
 
         Spacer(Modifier.width(12.dp))
 
-        // Info
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = song.title,
-                style = MaterialTheme.typography.bodyLarge,
+                style = AppTheme.typography.bodyLarge,
                 maxLines = 1,
                 softWrap = false,
                 modifier = Modifier.horizontalScroll(rememberScrollState()),
             )
             Text(
                 text = song.artists.joinToString { it.name }.ifEmpty { "Unknown Artist" },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = AppTheme.typography.bodySmall,
+                color = AppTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 softWrap = false,
                 modifier = Modifier.horizontalScroll(rememberScrollState()),
             )
         }
 
-        // Duration
         if (song.song.duration > 0) {
             Text(
                 text = formatDuration(song.song.duration),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = AppTheme.typography.bodySmall,
+                color = AppTheme.colorScheme.onSurfaceVariant,
             )
         }
+    }
     }
 }
 
@@ -632,8 +562,10 @@ private fun AlbumListItem(
     album: Album,
     onClick: () -> Unit,
 ) {
+    com.convx.music.ui.utils.ArtworkSourceHost(Modifier) { sourceModifier ->
+    val artworkOwner = com.convx.music.ui.utils.rememberArtworkSourceOwner()
     Row(
-        modifier = Modifier
+        modifier = sourceModifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .padding(horizontal = 20.dp, vertical = 8.dp),
@@ -644,14 +576,16 @@ private fun AlbumListItem(
                 .data(album.thumbnailUrl)
                 .size(CoilSize(112, 112))
                 .build(),
+            onSuccess = com.convx.music.ui.utils.sharedArtworkImageListener(artworkOwner, album.thumbnailUrl),
             contentDescription = null,
             contentScale = ContentScale.Crop,
             placeholder = painterResource(R.drawable.thumbnail_fallback),
             error = painterResource(R.drawable.thumbnail_fallback),
             modifier = Modifier
+                .sharedArtworkSource(album.id, album.thumbnailUrl, artworkOwner)
                 .size(56.dp)
                 .clip(RoundedCornerShape(8.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
+                .background(AppTheme.colorScheme.surfaceVariant),
         )
 
         Spacer(Modifier.width(12.dp))
@@ -659,7 +593,7 @@ private fun AlbumListItem(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = album.title,
-                style = MaterialTheme.typography.bodyLarge,
+                style = AppTheme.typography.bodyLarge,
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
                 softWrap = false,
@@ -667,11 +601,12 @@ private fun AlbumListItem(
             )
             Text(
                 text = "${album.album.songCount} songs${if (album.album.year != null) " \u00b7 ${album.album.year}" else ""}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = AppTheme.typography.bodySmall,
+                color = AppTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
             )
         }
+    }
     }
 }
 
@@ -697,9 +632,10 @@ private fun ArtistListItem(
             placeholder = painterResource(R.drawable.thumbnail_fallback),
             error = painterResource(R.drawable.thumbnail_fallback),
             modifier = Modifier
+                .sharedArtworkSource(artist.id, artist.thumbnailUrl)
                 .size(48.dp)
                 .clip(ThumbnailRoundedShape)
-                .background(MaterialTheme.colorScheme.surfaceVariant),
+                .background(AppTheme.colorScheme.surfaceVariant),
         )
 
         Spacer(Modifier.width(12.dp))
@@ -707,7 +643,7 @@ private fun ArtistListItem(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = artist.artist.name,
-                style = MaterialTheme.typography.bodyLarge,
+                style = AppTheme.typography.bodyLarge,
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
                 softWrap = false,
@@ -715,8 +651,8 @@ private fun ArtistListItem(
             )
             Text(
                 text = "${artist.songCount} songs",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = AppTheme.typography.bodySmall,
+                color = AppTheme.colorScheme.onSurfaceVariant,
             )
         }
     }

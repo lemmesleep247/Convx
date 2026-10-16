@@ -12,7 +12,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
-import androidx.compose.material3.MaterialTheme
+import com.convx.music.ui.ios.compat.AppTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -128,7 +128,12 @@ fun BoxScope.HomeVideoBackground(
         },
         modifier = Modifier
             .matchParentSize()
-            .graphicsLayer { this.alpha = alpha }
+            .graphicsLayer {
+                this.alpha = alpha
+                val overscan = if (blur > 0f) 1.12f else 1f
+                scaleX = overscan
+                scaleY = overscan
+            }
             .blur(blur.dp),
     )
     Box(
@@ -137,7 +142,7 @@ fun BoxScope.HomeVideoBackground(
             .background(Color.Black.copy(alpha = dim)),
     )
     if (withGradient) {
-        val primary = MaterialTheme.colorScheme.primary
+        val primary = AppTheme.colorScheme.primary
         Box(
             modifier = Modifier
                 .matchParentSize()

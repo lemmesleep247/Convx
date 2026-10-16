@@ -9,14 +9,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import com.convx.music.ui.ios.compat.AlertDialog
+import com.convx.music.ui.ios.compat.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.OutlinedButton
+import com.convx.music.ui.ios.compat.Text
+import com.convx.music.ui.ios.compat.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -30,6 +30,7 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.datastore.preferences.core.edit
 import com.convx.music.R
 import com.convx.music.constants.DonationKofiUrl
 import com.convx.music.constants.DonationPromptDismissedKey
@@ -37,6 +38,7 @@ import com.convx.music.constants.DonationPromptLastShownKey
 import com.convx.music.constants.DonationUpiUri
 import com.convx.music.constants.FirstLaunchTimestampKey
 import com.convx.music.ui.utils.safeOpenUri
+import com.convx.music.utils.dataStore
 import com.convx.music.utils.rememberPreference
 import java.util.concurrent.TimeUnit
 
@@ -44,20 +46,21 @@ private val MIN_DAYS_BEFORE_FIRST_PROMPT = TimeUnit.DAYS.toMillis(3)
 private val MIN_DAYS_BETWEEN_PROMPTS = TimeUnit.DAYS.toMillis(30)
 
 /**
- * Gentle, occasional ask to support the project — never on a fresh install, never more
- * than once a month, and gone for good the moment the user says not to ask again.
- * Mount this once near the app root; it decides on its own whether to actually show.
+ * Self-gating donation ask: never on a fresh install, at most monthly, gone for good
+ * once dismissed. Mount once near the app root.
  */
 @Composable
 fun DonationPromptHost() {
-    var firstLaunch by rememberPreference(FirstLaunchTimestampKey, 0L)
+    val context = LocalContext.current
+    val firstLaunch by rememberPreference(FirstLaunchTimestampKey, 0L)
     var lastShown by rememberPreference(DonationPromptLastShownKey, 0L)
     var dismissedForever by rememberPreference(DonationPromptDismissedKey, false)
 
-    // Stamp the very first composition, once, so "used for a while" has a start line.
-    LaunchedEffect(Unit) {
-        if (firstLaunch == 0L) {
-            firstLaunch = System.currentTimeMillis()
+    LaunchedEffect(context) {
+        context.dataStore.edit { preferences ->
+            if ((preferences[FirstLaunchTimestampKey] ?: 0L) == 0L) {
+                preferences[FirstLaunchTimestampKey] = System.currentTimeMillis()
+            }
         }
     }
 
@@ -72,7 +75,6 @@ fun DonationPromptHost() {
     var visible by remember(shouldShow) { mutableStateOf(shouldShow) }
     if (!visible) return
 
-    val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
 
     fun dismiss() {
@@ -82,7 +84,7 @@ fun DonationPromptHost() {
 
     AlertDialog(
         onDismissRequest = ::dismiss,
-        icon = { Icon(painterResource(R.drawable.favorite), contentDescription = null) },
+        icon = { SymbolIcon(symbol = sf("heart.fill"), contentDescription = null) },
         title = { Text(stringResource(R.string.donation_prompt_title)) },
         text = { Text(stringResource(R.string.donation_prompt_message)) },
         confirmButton = {
@@ -121,7 +123,7 @@ fun DonationPromptHost() {
                         visible = false
                     },
                     colors = ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        contentColor = AppTheme.colorScheme.onSurfaceVariant,
                     ),
                 ) {
                     Text(stringResource(R.string.donation_prompt_dont_ask))

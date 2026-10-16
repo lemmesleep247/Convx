@@ -14,8 +14,10 @@ import racra.compose.smooth_corner_rect_library.AbsoluteSmoothCornerShape
 import androidx.compose.ui.graphics.Shape
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
+import timber.log.Timber
+
 fun reportException(throwable: Throwable) {
-    throwable.printStackTrace()
+    Timber.e(throwable)
 }
 
 @Suppress("DEPRECATION")
@@ -25,11 +27,7 @@ fun setAppLocale(context: Context, locale: Locale) {
     context.resources.updateConfiguration(config, context.resources.displayMetrics)
 }
 
-// A radius only ever yields three distinct shapes (single / first / last), but
-// this is called from inside ~29 lazy-list item lambdas, so it used to allocate
-// a fresh AbsoluteSmoothCornerShape per item per composition. The identity churn
-// also missed Compose's outline cache — which keys on the shape instance — so
-// every row rebuilt its corner Path on every draw. Cache per radius instead.
+// Reuse three shapes per radius so Compose can reuse each lazy row's cached outline.
 private val listItemShapes = ConcurrentHashMap<Dp, Array<Shape>>()
 
 fun listItemShape(index: Int, count: Int, radius: Dp = 24.dp): Shape {

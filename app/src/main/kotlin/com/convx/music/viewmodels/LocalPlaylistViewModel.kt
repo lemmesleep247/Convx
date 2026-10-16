@@ -43,7 +43,8 @@ constructor(
     private val syncUtils: SyncUtils,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
-    val playlistId = savedStateHandle.get<String>("playlistId")!!
+    val playlistId = requireNotNull(savedStateHandle.get<String>("playlistId")) { "Missing playlistId" }
+    val thumbArg = savedStateHandle.get<String>("thumb")?.takeIf { it.isNotEmpty() }
     val playlist =
         database
             .playlist(playlistId)

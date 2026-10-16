@@ -5,6 +5,8 @@
 
 package com.convx.music.ui.menu
 
+import com.convx.music.ui.component.sf
+import com.convx.music.ui.component.SymbolIcon
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
@@ -14,18 +16,16 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import com.convx.music.utils.listItemShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import com.convx.music.ui.component.shapes.ContinuousRoundedRectangle
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.IconButton
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.convx.music.ui.ios.compat.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.TextUnitType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.music.innertube.SearchFilter
 import com.music.innertube.YouTube
 import com.music.innertube.models.SongItem
 import com.convx.music.LocalDatabase
@@ -52,12 +53,9 @@ import com.convx.music.constants.AddToPlaylistSortDescendingKey
 import com.convx.music.constants.AddToPlaylistSortTypeKey
 import com.convx.music.constants.ListThumbnailSize
 import com.convx.music.constants.PlaylistSortType
-import com.convx.music.db.entities.Playlist
 import com.convx.music.db.entities.Song
-import com.convx.music.models.ItemsPage
 import com.convx.music.models.toMediaMetadata
 import com.convx.music.ui.component.CreatePlaylistDialog
-import com.convx.music.ui.component.DefaultDialog
 import com.convx.music.ui.component.ListDialog
 import com.convx.music.ui.component.ListItem
 import com.convx.music.ui.component.PlaylistListItem
@@ -72,6 +70,7 @@ import kotlinx.coroutines.withContext
 import timber.log.Timber
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @Composable
 fun AddToPlaylistDialogOnline(
@@ -84,10 +83,9 @@ fun AddToPlaylistDialogOnline(
     onPercentageChange: (Int) -> Unit,
     viewModel: PlaylistsViewModel = hiltViewModel()
 ) {
-    val database = LocalDatabase.current
-    val syncUtils = LocalSyncUtils.current
+    val database = LocalDatabase.current.get()
+    val syncUtils = LocalSyncUtils.current.get()
     val coroutineScope = rememberCoroutineScope()
-    val viewStateMap = remember { mutableStateMapOf<String, ItemsPage?>() }
     val (sortType, onSortTypeChange) = rememberEnumPreference(
         AddToPlaylistSortTypeKey,
         PlaylistSortType.NAME
@@ -96,24 +94,12 @@ fun AddToPlaylistDialogOnline(
         AddToPlaylistSortDescendingKey,
         false
     )
-    val playlists by viewModel.allPlaylists.collectAsState()
+    val playlists by viewModel.allPlaylists.collectAsStateWithLifecycle()
 
     var showCreatePlaylistDialog by rememberSaveable {
         mutableStateOf(false)
     }
 
-    var showDuplicateDialog by remember {
-        mutableStateOf(false)
-    }
-    var selectedPlaylist by remember {
-        mutableStateOf<Playlist?>(null)
-    }
-    val songIds by remember {
-        mutableStateOf<List<String>?>(null) // list is not saveable
-    }
-    val duplicates by remember {
-        mutableStateOf(emptyList<String>())
-    }
     var searchQuery by rememberSaveable {
         mutableStateOf("")
     }
@@ -137,7 +123,7 @@ fun AddToPlaylistDialogOnline(
                         Image(
                             painter = painterResource(id = R.drawable.playlist_add),
                             contentDescription = null,
-                            colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onBackground),
+                            colorFilter = ColorFilter.tint(AppTheme.colorScheme.onBackground),
                             modifier = Modifier.size(ListThumbnailSize)
                         )
                     },
@@ -156,38 +142,30 @@ fun AddToPlaylistDialogOnline(
                         placeholder = { 
                             Text(
                                 text = stringResource(R.string.search),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                style = AppTheme.typography.bodyMedium,
+                                color = AppTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                             ) 
                         },
                         leadingIcon = {
-                            Icon(
-                                painter = painterResource(R.drawable.search),
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary
-                            )
+                            SymbolIcon(symbol = sf("magnifyingglass"), contentDescription = null, tint = AppTheme.colorScheme.primary)
                         },
                         trailingIcon = {
                             if (searchQuery.isNotEmpty()) {
                                 IconButton(onClick = { searchQuery = "" }) {
-                                    Icon(
-                                        painter = painterResource(R.drawable.close),
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                                    SymbolIcon(symbol = sf("xmark"), contentDescription = null, tint = AppTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
                         },
                         singleLine = true,
-                        shape = RoundedCornerShape(24.dp),
+                        shape = ContinuousRoundedRectangle(24.dp),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-                            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
-                            cursorColor = MaterialTheme.colorScheme.primary,
+                            focusedBorderColor = AppTheme.colorScheme.primary,
+                            unfocusedBorderColor = AppTheme.colorScheme.outlineVariant,
+                            focusedContainerColor = AppTheme.colorScheme.surfaceVariant,
+                            unfocusedContainerColor = AppTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                            cursorColor = AppTheme.colorScheme.primary,
                         ),
-                        textStyle = MaterialTheme.typography.bodyMedium,
+                        textStyle = AppTheme.typography.bodyMedium,
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 6.dp)
@@ -223,8 +201,8 @@ fun AddToPlaylistDialogOnline(
                 item {
                     Text(
                         text = stringResource(R.string.no_results_found),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = AppTheme.typography.bodyMedium,
+                        color = AppTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 16.dp),
@@ -238,7 +216,6 @@ fun AddToPlaylistDialogOnline(
                     playlist = playlist,
                     shape = listItemShape(index = index + 1, count = totalItemsCount),
                     modifier = Modifier.clickable {
-                        selectedPlaylist = playlist
                         coroutineScope.launch(Dispatchers.IO) {
                             onDismiss()
                             val songsTot = songs.count().toDouble()
@@ -255,14 +232,13 @@ fun AddToPlaylistDialogOnline(
 
                                 coroutineScope.launch {
                                     try {
-                                        YouTube.search(query, YouTube.SearchFilter.FILTER_SONG)
+                                        YouTube.search(query, SearchFilter.FILTER_SONG)
                                             .onSuccess { result ->
                                                 val items = result.items.distinctBy { it.id }
                                                 if (items.isNotEmpty()) {
-                                                    viewStateMap[YouTube.SearchFilter.FILTER_SONG.value] =
-                                                        ItemsPage(items, result.continuation)
-                                                    val itemsPage = viewStateMap.entries.firstOrNull()?.value
-                                                    val firstSong = itemsPage?.items?.firstOrNull() as? SongItem
+                                                    // Use this coroutine's result directly; a shared map
+                                                    // allowed concurrent searches to overwrite each other.
+                                                    val firstSong = items.firstOrNull() as? SongItem
                                                     if (firstSong != null) {
                                                         val firstSongMedia = firstSong.toMediaMetadata()
                                                         val ids = listOf(firstSong.id)
@@ -277,7 +253,6 @@ fun AddToPlaylistDialogOnline(
                                                             syncUtils.uploadPlaylistToYouTube(playlist.id, ids)
                                                         }
                                                     }
-                                                    viewStateMap.clear()
                                                 }
                                                 songsIdx += 1
                                             }
@@ -323,14 +298,13 @@ fun AddToPlaylistDialogOnline(
 
                                 coroutineScope.launch {
                                     try {
-                                        YouTube.search(query, YouTube.SearchFilter.FILTER_SONG)
+                                        YouTube.search(query, SearchFilter.FILTER_SONG)
                                             .onSuccess { result ->
                                                 val items = result.items.distinctBy { it.id }
                                                 if (items.isNotEmpty()) {
-                                                    viewStateMap[YouTube.SearchFilter.FILTER_SONG.value] =
-                                                        ItemsPage(items, result.continuation)
-                                                    val itemsPage = viewStateMap.entries.firstOrNull()?.value
-                                                    val firstSong = itemsPage?.items?.firstOrNull() as? SongItem
+                                                    // Same shared-map race as the add-to-playlist branch
+                                                    // above — read this coroutine's own result directly.
+                                                    val firstSong = items.firstOrNull() as? SongItem
                                                     if (firstSong != null) {
                                                         val firstSongMedia = firstSong.toMediaMetadata()
                                                         val firstSongEnt = firstSong.toMediaMetadata().toSongEntity()
@@ -346,7 +320,6 @@ fun AddToPlaylistDialogOnline(
                                                             }
                                                         }
                                                     }
-                                                    viewStateMap.clear()
                                                 }
                                                 songsIdx += 1
                                             }
@@ -373,10 +346,10 @@ fun AddToPlaylistDialogOnline(
                     title = stringResource(R.string.liked_songs),
                     thumbnailContent = {
                         Image(
-                            painter = painterResource(id = R.drawable.favorite), // The XML image
+                            painter = painterResource(id = R.drawable.favorite),
                             contentDescription = null,
-                            modifier = Modifier.size(40.dp), // Adjust size as needed
-                            colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onBackground) // Optional tinting
+                            modifier = Modifier.size(40.dp),
+                            colorFilter = ColorFilter.tint(AppTheme.colorScheme.onBackground),
                         )
                     },
                     trailingContent = {}
@@ -401,61 +374,4 @@ fun AddToPlaylistDialogOnline(
         )
     }
 
-    // duplicate songs warning
-    if (showDuplicateDialog) {
-        DefaultDialog(
-            title = { Text(stringResource(R.string.duplicates)) },
-            buttons = {
-                TextButton(
-                    onClick = {
-                        showDuplicateDialog = false
-                        onDismiss()
-                        database.transaction {
-                            addSongToPlaylist(
-                                selectedPlaylist!!,
-                                songIds!!.filter {
-                                    !duplicates.contains(it)
-                                }
-                            )
-                        }
-                    }
-                ) {
-                    Text(stringResource(R.string.skip_duplicates))
-                }
-
-                TextButton(
-                    onClick = {
-                        showDuplicateDialog = false
-                        onDismiss()
-                        database.transaction {
-                            addSongToPlaylist(selectedPlaylist!!, songIds!!)
-                        }
-                    }
-                ) {
-                    Text(stringResource(R.string.add_anyway))
-                }
-
-                TextButton(
-                    onClick = {
-                        showDuplicateDialog = false
-                    }
-                ) {
-                    Text(stringResource(android.R.string.cancel))
-                }
-            },
-            onDismiss = {
-                showDuplicateDialog = false
-            }
-        ) {
-            Text(
-                text = if (duplicates.size == 1) {
-                    stringResource(R.string.duplicates_description_single)
-                } else {
-                    stringResource(R.string.duplicates_description_multiple, duplicates.size)
-                },
-                textAlign = TextAlign.Start,
-                modifier = Modifier.align(Alignment.Start)
-            )
-        }
-    }
 }

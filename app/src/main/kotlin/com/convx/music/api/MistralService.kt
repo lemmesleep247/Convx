@@ -46,16 +46,6 @@ object MistralService {
 
             while (currentAttempt < maxRetries) {
                 try {
-                    val systemPrompt = """You are a precise lyrics translation assistant. Your output must ALWAYS be a valid JSON array of strings.
-
-CRITICAL RULES:
-1. Output ONLY a JSON array: ["line1", "line2", "line3"]
-2. NO explanations, NO questions, NO additional text
-3. Each input line maps to exactly one output line
-4. Preserve empty lines as empty strings ""
-5. Return EXACTLY $lineCount items in the array
-6. If uncertain, provide best approximation but maintain line count"""
-
                     val userPrompt =
                         when (mode) {
                             "Romanized" -> {
@@ -153,7 +143,7 @@ Output MUST be a JSON array with EXACTLY $lineCount strings."""
                             .build()
 
                     val response = client.newCall(request).execute()
-                    val responseBody = response.body?.string()
+                    val responseBody = response.body.string()
 
                     if (!response.isSuccessful) {
                         if (response.code >= 500) {
@@ -164,17 +154,12 @@ Output MUST be a JSON array with EXACTLY $lineCount strings."""
 
                         val errorMsg =
                             try {
-                                JSONObject(responseBody ?: "").optJSONObject("error")?.optString("message")
+                                JSONObject(responseBody).optJSONObject("error")?.optString("message")
                                     ?: "HTTP ${response.code}: ${response.message}"
                             } catch (e: Exception) {
                                 "HTTP ${response.code}: ${response.message}"
                             }
                         return@withContext Result.failure(Exception("Translation failed: $errorMsg"))
-                    }
-
-                    if (responseBody == null) {
-                        currentAttempt++
-                        continue
                     }
 
                     val jsonResponse = JSONObject(responseBody)
@@ -184,54 +169,10 @@ Output MUST be a JSON array with EXACTLY $lineCount strings."""
                         var content = message?.optString("content")?.trim()
 
                         if (!content.isNullOrBlank()) {
-                            var translatedLines: List<String>? = null
-
-                            // Strategy 1: Try direct JSON parsing
-                            try {
-                                val jsonArray = JSONArray(content)
-                                translatedLines = (0 until jsonArray.length()).map { jsonArray.optString(it) }
-                            } catch (e: Exception) {
-                                // Strategy 2: Extract JSON from markdown code blocks
-                                content = content.replace("```json", "").replace("```", "").trim()
-
-                                try {
-                                    val jsonArray = JSONArray(content)
-                                    translatedLines = (0 until jsonArray.length()).map { jsonArray.optString(it) }
-                                } catch (e2: Exception) {
-                                    // Strategy 3: Find first [ and last ]
-                                    val startIdx = content.indexOf('[')
-                                    val endIdx = content.lastIndexOf(']')
-
-                                    if (startIdx != -1 && endIdx != -1 && endIdx > startIdx) {
-                                        val jsonString = content.substring(startIdx, endIdx + 1)
-                                        try {
-                                            val jsonArray = JSONArray(jsonString)
-                                            translatedLines = (0 until jsonArray.length()).map { jsonArray.optString(it) }
-                                        } catch (e3: Exception) {
-                                            // Strategy 4: Manual line-by-line parsing as last resort
-                                            translatedLines =
-                                                content
-                                                    .lines()
-                                                    .filter { it.trim().isNotEmpty() }
-                                                    .map { it.trim().removeSurrounding("\"").removeSurrounding("'") }
-                                        }
-                                    }
-                                }
-                            }
+                            val translatedLines = parseTranslationContent(content)
 
                             if (translatedLines != null) {
-                                return@withContext when {
-                                    translatedLines.size == lineCount -> Result.success(translatedLines)
-                                    translatedLines.size > lineCount -> Result.success(translatedLines.take(lineCount))
-                                    else -> {
-                                        // Pad with empty strings if we got fewer lines
-                                        val paddedLines = translatedLines.toMutableList()
-                                        while (paddedLines.size < lineCount) {
-                                            paddedLines.add("")
-                                        }
-                                        Result.success(paddedLines)
-                                    }
-                                }
+                                return@withContext Result.success(fitLineCount(translatedLines, lineCount))
                             }
                         }
                     }
@@ -245,4 +186,5 @@ Output MUST be a JSON array with EXACTLY $lineCount strings."""
             }
             return@withContext Result.failure(Exception("Max retries exceeded"))
         }
+
 }

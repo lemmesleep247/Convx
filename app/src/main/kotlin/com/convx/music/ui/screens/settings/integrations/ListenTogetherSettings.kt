@@ -5,172 +5,94 @@
 
 package com.convx.music.ui.screens.settings.integrations
 
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import com.convx.music.ui.component.sf
+import com.convx.music.ui.component.SymbolIcon
 import com.convx.music.ui.utils.appTopBarWindowInsets
 import android.widget.Toast
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.background
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.utils.bounceClick
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.utils.combinedBounceClick
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.Arrangement
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.Box
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.Column
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.Row
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.Spacer
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.height
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.only
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.padding
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.size
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.width
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.windowInsetsPadding
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.lazy.LazyColumn
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.lazy.items
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.lazy.rememberLazyListState
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.rememberScrollState
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.shape.RoundedCornerShape
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.verticalScroll
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.Button
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.Card
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import com.convx.music.ui.ios.compat.Button
+import com.convx.music.ui.ios.compat.Card
 import androidx.compose.material3.CardDefaults
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.material3.ExperimentalMaterial3Api
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.HorizontalDivider
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.Icon
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.MaterialTheme
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.OutlinedTextField
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.Surface
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.ui.component.GlassSwitchCompat as Switch
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import com.convx.music.ui.ios.compat.HorizontalDivider
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.OutlinedTextField
+import com.convx.music.ui.ios.compat.Surface
+import com.convx.music.ui.ios.compat.Switch
 import androidx.compose.material3.SwitchDefaults
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.Text
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.TextButton
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.TopAppBar
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import com.convx.music.ui.ios.compat.Text
+import com.convx.music.ui.ios.compat.TextButton
 import androidx.compose.material3.TopAppBarScrollBehavior
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.Composable
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.collectAsState
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.getValue
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.mutableStateOf
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.remember
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.rememberCoroutineScope
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.saveable.rememberSaveable
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.setValue
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.Alignment
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.Modifier
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.draw.clip
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.graphics.Color
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.platform.LocalContext
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.res.painterResource
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.res.stringResource
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.text.font.FontFamily
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.text.font.FontWeight
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.text.style.TextOverflow
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.unit.dp
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.navigation.NavController
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.LocalPlayerAwareWindowInsets
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.R
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.ListenTogetherAutoAddSuggestionsKey
 import com.convx.music.constants.ListenTogetherAutoApprovalKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.ListenTogetherServerUrlKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.ListenTogetherSmartResyncKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.ListenTogetherSyncVolumeKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.ListenTogetherUsernameKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.listentogether.ListenTogetherEvent
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.listentogether.ListenTogetherServer
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.listentogether.ListenTogetherServers
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.listentogether.LogEntry
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.listentogether.LogLevel
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.listentogether.RoomRole
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.component.DefaultDialog
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.component.IconButton
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.component.IntegrationCard
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.component.IntegrationCardItem
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.utils.backToMain
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.utils.rememberPreference
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.viewmodels.ListenTogetherViewModel
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import kotlinx.coroutines.flow.collectLatest
+import com.convx.music.ui.screens.settings.SettingsPage
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -182,12 +104,12 @@ fun ListenTogetherSettings(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     
-    val connectionState by viewModel.connectionState.collectAsState()
-    val roomState by viewModel.roomState.collectAsState()
-    val role by viewModel.role.collectAsState()
-    val pendingJoinRequests by viewModel.pendingJoinRequests.collectAsState()
-    val logs by viewModel.logs.collectAsState()
-    val blockedUsernames by viewModel.blockedUsernames.collectAsState()
+    val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
+    val roomState by viewModel.roomState.collectAsStateWithLifecycle()
+    val role by viewModel.role.collectAsStateWithLifecycle()
+    val pendingJoinRequests by viewModel.pendingJoinRequests.collectAsStateWithLifecycle()
+    val logs by viewModel.logs.collectAsStateWithLifecycle()
+    val blockedUsernames by viewModel.blockedUsernames.collectAsStateWithLifecycle()
     
     val servers = remember { ListenTogetherServers.servers }
     var serverUrl by rememberPreference(ListenTogetherServerUrlKey, ListenTogetherServers.defaultServerUrl)
@@ -205,7 +127,6 @@ fun ListenTogetherSettings(
     var showBlockedUsersDialog by rememberSaveable { mutableStateOf(false) }
     var roomCodeInput by rememberSaveable { mutableStateOf("") }
     
-    // Handle events
     LaunchedEffect(Unit) {
         viewModel.events.collectLatest { event ->
             when (event) {
@@ -257,7 +178,7 @@ fun ListenTogetherSettings(
 
         DefaultDialog(
             onDismiss = { showUsernameDialog = false },
-            icon = { Icon(painterResource(R.drawable.person), contentDescription = null) },
+            icon = { SymbolIcon(symbol = sf("person.fill"), contentDescription = null) },
             title = { Text(stringResource(R.string.listen_together_username)) },
             buttons = {
                 TextButton(onClick = { username = ""; showUsernameDialog = false }) {
@@ -274,12 +195,12 @@ fun ListenTogetherSettings(
                 onValueChange = { tempUsername = it },
                 label = { Text(stringResource(R.string.listen_together_username)) },
                 leadingIcon = {
-                    Icon(painterResource(R.drawable.person), contentDescription = null)
+                    SymbolIcon(symbol = sf("person.fill"), contentDescription = null)
                 },
                 trailingIcon = {
                     if (tempUsername.isNotBlank()) {
                         IconButton(onClick = { tempUsername = "" }, onLongClick = {}) {
-                            Icon(painterResource(R.drawable.close), contentDescription = null)
+                            SymbolIcon(symbol = sf("xmark"), contentDescription = null)
                         }
                     }
                 },
@@ -294,7 +215,7 @@ fun ListenTogetherSettings(
 
         DefaultDialog(
             onDismiss = { showCreateRoomDialog = false },
-            icon = { Icon(painterResource(R.drawable.add), contentDescription = null) },
+            icon = { SymbolIcon(symbol = sf("plus"), contentDescription = null) },
             title = { Text(stringResource(R.string.listen_together_create_room)) },
             buttons = {
                 TextButton(onClick = { showCreateRoomDialog = false }) {
@@ -323,15 +244,15 @@ fun ListenTogetherSettings(
             ) {
                 Text(
                     text = stringResource(R.string.listen_together_create_room_desc),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    style = AppTheme.typography.bodyMedium,
+                    color = AppTheme.colorScheme.onSurfaceVariant
                 )
                 OutlinedTextField(
                     value = createUsername,
                     onValueChange = { createUsername = it },
                     label = { Text(stringResource(R.string.listen_together_username)) },
                     leadingIcon = {
-                        Icon(painterResource(R.drawable.person), contentDescription = null)
+                        SymbolIcon(symbol = sf("person.fill"), contentDescription = null)
                     },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
@@ -345,7 +266,7 @@ fun ListenTogetherSettings(
 
         DefaultDialog(
             onDismiss = { showJoinRoomDialog = false },
-            icon = { Icon(painterResource(R.drawable.group_add), contentDescription = null) },
+            icon = { SymbolIcon(symbol = sf("person.badge.plus"), contentDescription = null) },
             title = { Text(stringResource(R.string.listen_together_join_room)) },
             buttons = {
                 TextButton(onClick = { showJoinRoomDialog = false }) {
@@ -378,7 +299,7 @@ fun ListenTogetherSettings(
                     onValueChange = { joinUsername = it },
                     label = { Text(stringResource(R.string.listen_together_username)) },
                     leadingIcon = {
-                        Icon(painterResource(R.drawable.person), contentDescription = null)
+                        SymbolIcon(symbol = sf("person.fill"), contentDescription = null)
                     },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
@@ -388,7 +309,7 @@ fun ListenTogetherSettings(
                     onValueChange = { roomCodeInput = it.uppercase().filter { c -> c.isLetterOrDigit() }.take(8) },
                     label = { Text(stringResource(R.string.listen_together_room_code)) },
                     leadingIcon = {
-                        Icon(painterResource(R.drawable.key), contentDescription = null)
+                        SymbolIcon(symbol = sf("key.fill"), contentDescription = null)
                     },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
@@ -413,18 +334,11 @@ fun ListenTogetherSettings(
         )
     }
 
-    Column(
-        Modifier
-            .windowInsetsPadding(LocalPlayerAwareWindowInsets.current.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))
-            .verticalScroll(rememberScrollState())
+    SettingsPage(
+        navController = navController,
+        title = stringResource(R.string.listen_together),
+        pageColor = AppTheme.colorScheme.background,
     ) {
-        Spacer(
-            Modifier.windowInsetsPadding(
-                LocalPlayerAwareWindowInsets.current.only(WindowInsetsSides.Top)
-            )
-        )
-        
-        // Settings section using IntegrationCard
         val selectedServer = remember(serverUrl) { ListenTogetherServers.findByUrl(serverUrl) }
         
         Column(modifier = Modifier.padding(horizontal = 16.dp)) {
@@ -483,16 +397,7 @@ fun ListenTogetherSettings(
                                 checked = autoApproval,
                                 onCheckedChange = { autoApproval = it },
                                 // Only disable for guests in a room (hosts can always change)
-                                enabled = roomState == null || role != RoomRole.GUEST,
-                                thumbContent = {
-                                    Icon(
-                                        painter = painterResource(
-                                            id = if (autoApproval) R.drawable.check else R.drawable.close
-                                        ),
-                                        contentDescription = null,
-                                        modifier = Modifier.size(SwitchDefaults.IconSize),
-                                    )
-                                }
+                                enabled = roomState == null || role != RoomRole.GUEST
                             )
                         },
                         // Allow clicking to see disabled state, but only change if enabled
@@ -508,16 +413,7 @@ fun ListenTogetherSettings(
                             Switch(
                                 checked = autoAddSuggestions,
                                 onCheckedChange = { autoAddSuggestions = it },
-                                enabled = roomState == null || role != RoomRole.GUEST,
-                                thumbContent = {
-                                    Icon(
-                                        painter = painterResource(
-                                            id = if (autoAddSuggestions) R.drawable.check else R.drawable.close
-                                        ),
-                                        contentDescription = null,
-                                        modifier = Modifier.size(SwitchDefaults.IconSize),
-                                    )
-                                }
+                                enabled = roomState == null || role != RoomRole.GUEST
                             )
                         },
                         onClick = {
@@ -535,16 +431,7 @@ fun ListenTogetherSettings(
                         trailingContent = {
                             Switch(
                                 checked = syncHostVolume,
-                                onCheckedChange = { syncHostVolume = it },
-                                thumbContent = {
-                                    Icon(
-                                        painter = painterResource(
-                                            id = if (syncHostVolume) R.drawable.check else R.drawable.close
-                                        ),
-                                        contentDescription = null,
-                                        modifier = Modifier.size(SwitchDefaults.IconSize),
-                                    )
-                                }
+                                onCheckedChange = { syncHostVolume = it }
                             )
                         },
                         onClick = { syncHostVolume = !syncHostVolume }
@@ -558,16 +445,7 @@ fun ListenTogetherSettings(
                         trailingContent = {
                             Switch(
                                 checked = smartResync,
-                                onCheckedChange = { smartResync = it },
-                                thumbContent = {
-                                    Icon(
-                                        painter = painterResource(
-                                            id = if (smartResync) R.drawable.check else R.drawable.close
-                                        ),
-                                        contentDescription = null,
-                                        modifier = Modifier.size(SwitchDefaults.IconSize),
-                                    )
-                                }
+                                onCheckedChange = { smartResync = it }
                             )
                         },
                         onClick = { smartResync = !smartResync }
@@ -585,23 +463,8 @@ fun ListenTogetherSettings(
         }
         
         Spacer(modifier = Modifier.height(16.dp))
+    
     }
-
-    TopAppBar(
-            windowInsets = appTopBarWindowInsets(),
-        title = { Text(stringResource(R.string.listen_together)) },
-        navigationIcon = {
-            IconButton(
-                onClick = navController::navigateUp,
-                onLongClick = navController::backToMain,
-            ) {
-                Icon(
-                    painterResource(R.drawable.arrow_back),
-                    contentDescription = null,
-                )
-            }
-        }
-    )
 }
 
 @Composable
@@ -622,7 +485,7 @@ fun LogsDialog(
 
     DefaultDialog(
         onDismiss = onDismiss,
-        icon = { Icon(painterResource(R.drawable.bug_report), contentDescription = null) },
+        icon = { SymbolIcon(symbol = sf("ladybug"), contentDescription = null) },
         title = { Text(stringResource(R.string.listen_together_logs)) },
         buttons = {
             TextButton(
@@ -667,7 +530,7 @@ fun LogsDialog(
                 ) {
                     Text(
                         text = stringResource(R.string.listen_together_no_logs),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = AppTheme.colorScheme.onSurfaceVariant
                     )
                 }
             } else {
@@ -697,7 +560,7 @@ private fun ServerChooserDialog(
 
     DefaultDialog(
         onDismiss = onDismiss,
-        icon = { Icon(painterResource(R.drawable.cloud), contentDescription = null) },
+        icon = { SymbolIcon(symbol = sf("cloud.fill"), contentDescription = null) },
         title = { Text(stringResource(R.string.listen_together_choose_server)) },
         buttons = {
             TextButton(onClick = onDismiss) {
@@ -720,9 +583,9 @@ private fun ServerChooserDialog(
                     shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(
                         containerColor = if (isSelected) {
-                            MaterialTheme.colorScheme.primaryContainer
+                            AppTheme.colorScheme.primaryContainer
                         } else {
-                            MaterialTheme.colorScheme.surfaceVariant
+                            AppTheme.colorScheme.surfaceVariant
                         }
                     )
                 ) {
@@ -735,28 +598,24 @@ private fun ServerChooserDialog(
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = server.name,
-                                style = MaterialTheme.typography.titleSmall,
+                                style = AppTheme.typography.titleSmall,
                                 fontWeight = FontWeight.SemiBold
                             )
                             Text(
                                 text = "${server.location} - ${server.operator}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                style = AppTheme.typography.bodySmall,
+                                color = AppTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
                                 text = server.url,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = AppTheme.typography.labelSmall,
+                                color = AppTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
                         if (isSelected) {
-                            Icon(
-                                painter = painterResource(R.drawable.done),
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary
-                            )
+                            SymbolIcon(symbol = sf("checkmark"), contentDescription = null, tint = AppTheme.colorScheme.primary)
                         }
                     }
                 }
@@ -766,7 +625,7 @@ private fun ServerChooserDialog(
 
             Text(
                 text = stringResource(R.string.listen_together_custom_server),
-                style = MaterialTheme.typography.titleSmall,
+                style = AppTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold
             )
             OutlinedTextField(
@@ -774,7 +633,7 @@ private fun ServerChooserDialog(
                 onValueChange = { customUrl = it },
                 label = { Text(stringResource(R.string.listen_together_server_url)) },
                 leadingIcon = {
-                    Icon(painterResource(R.drawable.link), contentDescription = null)
+                    SymbolIcon(symbol = sf("link"), contentDescription = null)
                 },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
@@ -806,29 +665,29 @@ fun LogEntryItem(log: LogEntry) {
         ) {
             Text(
                 text = log.timestamp,
-                style = MaterialTheme.typography.labelSmall,
+                style = AppTheme.typography.labelSmall,
                 fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = AppTheme.colorScheme.onSurfaceVariant
             )
             Spacer(modifier = Modifier.width(8.dp))
             Surface(
                 shape = RoundedCornerShape(8.dp),
                 color = when (log.level) {
-                    LogLevel.ERROR -> MaterialTheme.colorScheme.errorContainer
+                    LogLevel.ERROR -> AppTheme.colorScheme.errorContainer
                     LogLevel.WARNING -> Color(0xFFFFF3CD)
-                    LogLevel.DEBUG -> MaterialTheme.colorScheme.surfaceVariant
-                    LogLevel.INFO -> MaterialTheme.colorScheme.primaryContainer
+                    LogLevel.DEBUG -> AppTheme.colorScheme.surfaceVariant
+                    LogLevel.INFO -> AppTheme.colorScheme.primaryContainer
                 }
             ) {
                 Text(
                     text = log.level.name,
-                    style = MaterialTheme.typography.labelSmall,
+                    style = AppTheme.typography.labelSmall,
                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
                     color = when (log.level) {
-                        LogLevel.ERROR -> MaterialTheme.colorScheme.onErrorContainer
+                        LogLevel.ERROR -> AppTheme.colorScheme.onErrorContainer
                         LogLevel.WARNING -> Color(0xFF856404)
-                        LogLevel.DEBUG -> MaterialTheme.colorScheme.onSurfaceVariant
-                        LogLevel.INFO -> MaterialTheme.colorScheme.onPrimaryContainer
+                        LogLevel.DEBUG -> AppTheme.colorScheme.onSurfaceVariant
+                        LogLevel.INFO -> AppTheme.colorScheme.onPrimaryContainer
                     }
                 )
             }
@@ -836,15 +695,15 @@ fun LogEntryItem(log: LogEntry) {
 
         Text(
             text = log.message,
-            style = MaterialTheme.typography.bodySmall,
+            style = AppTheme.typography.bodySmall,
             fontFamily = FontFamily.Monospace
         )
         log.details?.let { details ->
             Text(
                 text = details,
-                style = MaterialTheme.typography.bodySmall,
+                style = AppTheme.typography.bodySmall,
                 fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = AppTheme.colorScheme.onSurfaceVariant,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
@@ -862,7 +721,7 @@ fun BlockedUsersDialog(
 
     DefaultDialog(
         onDismiss = onDismiss,
-        icon = { Icon(painterResource(R.drawable.person), contentDescription = null) },
+        icon = { SymbolIcon(symbol = sf("person.fill"), contentDescription = null) },
         title = { Text(stringResource(R.string.listen_together_blocked_users)) },
         buttons = {
             Button(onClick = onDismiss) {
@@ -882,7 +741,7 @@ fun BlockedUsersDialog(
                 ) {
                     Text(
                         text = stringResource(R.string.listen_together_no_blocked_users),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = AppTheme.colorScheme.onSurfaceVariant
                     )
                 }
             } else {
@@ -891,13 +750,13 @@ fun BlockedUsersDialog(
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(blockedUsernames.toList()) { username ->
+                    items(blockedUsernames.toList(), key = { it }) { username ->
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(12.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .background(AppTheme.colorScheme.surfaceVariant)
                                 .padding(12.dp),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
@@ -905,16 +764,11 @@ fun BlockedUsersDialog(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.weight(1f)
                             ) {
-                                Icon(
-                                    painter = painterResource(R.drawable.person),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(20.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                                SymbolIcon(symbol = sf("person.fill"), contentDescription = null, size = 20.dp, tint = AppTheme.colorScheme.onSurfaceVariant)
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
                                     text = username,
-                                    style = MaterialTheme.typography.bodyMedium
+                                    style = AppTheme.typography.bodyMedium
                                 )
                             }
                             TextButton(

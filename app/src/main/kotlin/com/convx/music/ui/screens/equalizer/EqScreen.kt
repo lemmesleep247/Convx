@@ -1,5 +1,7 @@
 package com.convx.music.ui.screens.equalizer
 
+import com.convx.music.ui.component.sf
+import com.convx.music.ui.component.SymbolIcon
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.media.audiofx.AudioEffect
@@ -7,6 +9,7 @@ import android.media.session.PlaybackState
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.res.painterResource
 import com.convx.music.ui.utils.bounceClick
 import com.convx.music.ui.utils.combinedBounceClick
 import androidx.compose.foundation.layout.Arrangement
@@ -22,18 +25,18 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import com.convx.music.ui.ios.compat.AlertDialog
+import com.convx.music.ui.ios.compat.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.IconButton
+import com.convx.music.ui.ios.compat.ListItem
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.OutlinedButton
+import com.convx.music.ui.ios.compat.RadioButton
+import com.convx.music.ui.ios.compat.Surface
+import com.convx.music.ui.ios.compat.Text
+import com.convx.music.ui.ios.compat.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -42,7 +45,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -50,6 +52,10 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.composables.sfsymbols.SfSymbols
+import com.composables.sfsymbols.monochrome.SFPlus
+import com.composables.sfsymbols.monochrome.SFSliderHorizontal3
+import com.composables.sfsymbols.monochrome.SFTrash
 import com.convx.music.LocalPlayerConnection
 import com.convx.music.R
 import com.convx.music.eq.data.SavedEQProfile
@@ -71,7 +77,6 @@ fun EqScreen(
 
     var showError by remember { mutableStateOf<String?>(null) }
 
-    // Activity result launcher for system equalizer
     val activityResultLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { }
@@ -204,8 +209,8 @@ private fun EqScreenContent(
     onDeleteProfile: (String) -> Unit
 ) {
     Surface(
-        shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = AppTheme.shapes.extraLarge,
+        color = AppTheme.colorScheme.surfaceContainerHigh,
         tonalElevation = 6.dp,
         modifier = Modifier
             .fillMaxWidth(0.9f)
@@ -213,7 +218,6 @@ private fun EqScreenContent(
             .padding(vertical = 24.dp) // Optional extra padding if desired, but dialog handles it.
     ) {
         Column {
-            // Header
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -224,7 +228,7 @@ private fun EqScreenContent(
                 Column {
                     Text(
                         text = stringResource(R.string.equalizer_header),
-                        style = MaterialTheme.typography.headlineSmall
+                        style = AppTheme.typography.headlineSmall
                     )
                     Text(
                         text = pluralStringResource(
@@ -232,28 +236,19 @@ private fun EqScreenContent(
                             count = profiles.size,
                             profiles.size
                         ),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        style = AppTheme.typography.bodyMedium,
+                        color = AppTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 Row {
                     IconButton(onClick = onNavigateToAxion) {
-                        Icon(
-                            painter = painterResource(R.drawable.tune),
-                            contentDescription = stringResource(R.string.vivi_equalizer)
-                        )
+                        SymbolIcon(symbol = sf("SFSliderHorizontal3"), contentDescription = stringResource(R.string.convx_equalizer))
                     }
                     IconButton(onClick = onImportCustomEQ) {
-                        Icon(
-                            painter = painterResource(R.drawable.add),
-                            contentDescription = stringResource(R.string.import_profile)
-                        )
+                        SymbolIcon(symbol = sf("SFPlus"), contentDescription = stringResource(R.string.import_profile))
                     }
                     IconButton(onClick = onOpenSystemEqualizer) {
-                        Icon(
-                            painter = painterResource(R.drawable.equalizer),
-                            contentDescription = stringResource(R.string.system_equalizer)
-                        )
+                        SymbolIcon(symbol = sf("SFSliderHorizontal3"), contentDescription = stringResource(R.string.system_equalizer))
                     }
                 }
             }
@@ -275,7 +270,7 @@ private fun EqScreenContent(
                 val customProfiles = profiles.filter { it.isCustom }
 
                 if (customProfiles.isNotEmpty()) {
-                    items(customProfiles) { profile ->
+                    items(customProfiles, key = { it.id }) { profile ->
                         EQProfileItem(
                             profile = profile,
                             isSelected = activeProfileId == profile.id,
@@ -297,17 +292,12 @@ private fun EqScreenContent(
                             Column(
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                Icon(
-                                    painter = painterResource(R.drawable.equalizer),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(48.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                                SymbolIcon(symbol = sf("slider.vertical.3"), contentDescription = null, size = 48.dp, tint = AppTheme.colorScheme.onSurfaceVariant)
                                 Spacer(modifier = Modifier.height(16.dp))
                                 Text(
                                     text = stringResource(R.string.no_profiles),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    style = AppTheme.typography.titleMedium,
+                                    color = AppTheme.colorScheme.onSurfaceVariant
                                 )
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Button(onClick = onImportCustomEQ) {
@@ -325,8 +315,6 @@ private fun EqScreenContent(
         }
     }
 }
-
-// --- HELPER COMPOSABLES ---
 
 @Composable
 private fun NoEqualizationItem(
@@ -385,11 +373,7 @@ private fun EQProfileItem(
         },
         trailingContent = {
             IconButton(onClick = { showDeleteDialog = true }) {
-                Icon(
-                    painter = painterResource(R.drawable.delete),
-                    contentDescription = stringResource(R.string.delete_profile_desc),
-                    tint = MaterialTheme.colorScheme.error
-                )
+                SymbolIcon(symbol = sf("trash"), contentDescription = stringResource(R.string.delete_profile_desc), tint = AppTheme.colorScheme.error)
             }
         },
         modifier = Modifier

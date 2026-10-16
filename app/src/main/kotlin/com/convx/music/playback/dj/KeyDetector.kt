@@ -9,17 +9,11 @@ import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sqrt
 
-/**
- * A detected musical key, plus its position on the Camelot wheel — the notation
- * DJs actually use, where compatible keys are neighbours by construction.
- */
 data class MusicalKey(
-    /** Pitch class of the tonic, 0 = C .. 11 = B. */
     val pitchClass: Int,
     val isMinor: Boolean,
     val confidence: Float,
 ) {
-    /** Camelot number, 1..12. Letter is A for minor, B for major. */
     val camelotNumber: Int
         get() {
             val relativeMajor = if (isMinor) (pitchClass + 3) % 12 else pitchClass
@@ -33,15 +27,6 @@ data class MusicalKey(
     companion object {
         val PITCH_NAMES = arrayOf("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
 
-        /**
-         * Harmonic compatibility, by the rule every DJ uses: the same key, one
-         * step around the Camelot wheel, or the relative major/minor (same
-         * number, other letter).
-         *
-         * Either key being absent or unconfident returns true — this is a
-         * fail-soft check like the rest of the pipeline. An unknown key must not
-         * block a mix that the tempo analysis says is fine.
-         */
         fun compatible(a: MusicalKey?, b: MusicalKey?, minConfidence: Float = MIN_USABLE_CONFIDENCE): Boolean {
             if (a == null || b == null) return true
             if (a.confidence < minConfidence || b.confidence < minConfidence) return true
@@ -51,12 +36,6 @@ data class MusicalKey(
             return (distance == 1 || distance == 11) && a.isMinor == b.isMinor
         }
 
-        /**
-         * Semitone shift that would put [incoming] in a compatible key with
-         * [outgoing], limited to ±1 — beyond that, pitch-shifting is more
-         * audible than the key clash it fixes. 0 when already compatible or
-         * when no small shift helps.
-         */
         fun matchingShift(outgoing: MusicalKey?, incoming: MusicalKey?): Int {
             if (outgoing == null || incoming == null) return 0
             if (outgoing.confidence < MIN_USABLE_CONFIDENCE || incoming.confidence < MIN_USABLE_CONFIDENCE) return 0
@@ -74,22 +53,8 @@ data class MusicalKey(
     }
 }
 
-/**
- * Chroma-based key detection.
- *
- * Goertzel bandpass bins rather than an FFT: only 36 frequencies are needed
- * (12 pitch classes over 3 octaves), and a single Goertzel bin is a three-term
- * recurrence. That is far less code than an FFT and, more to the point, avoids
- * adding a DSP dependency to the project for one feature.
- *
- * Pure Kotlin like [BeatTracker], for the same reason: this is the part that
- * can be wrong, so it has to be testable without a device.
- */
 class KeyDetector(inputSampleRate: Int) {
 
-    /** Audio is decimated before analysis — the highest note we look at is
-     *  under 1 kHz, so carrying 44.1 kHz through 36 Goertzel bins would be 10x
-     *  the work for no extra information. */
     private val decimation = (inputSampleRate / TARGET_SAMPLE_RATE).coerceAtLeast(1)
     private val workingRate = inputSampleRate / decimation
 
@@ -99,20 +64,22 @@ class KeyDetector(inputSampleRate: Int) {
     private var decimationCounter = 0
 
     private val block = DoubleArray(BLOCK_SIZE)
+    private val windowedBlock = DoubleArray(BLOCK_SIZE)
+    private val coefficients = DoubleArray(PITCH_CLASSES * OCTAVES) { bin ->
+        val frequency = LOWEST_HZ * Math.pow(2.0, bin / PITCH_CLASSES + (bin % PITCH_CLASSES) / 12.0)
+        if (frequency < workingRate / 2.0) 2.0 * cos(2.0 * PI * frequency / workingRate) else Double.NaN
+    }
     private var blockFill = 0
 
     private val chroma = DoubleArray(12)
     private var blocksAnalyzed = 0
 
-    /** Hann window, precomputed once. Without it, leakage between adjacent
-     *  semitones smears the chroma badly enough to flip the detected mode. */
     private val window = DoubleArray(BLOCK_SIZE) { i ->
         0.5 - 0.5 * cos(2.0 * PI * i / (BLOCK_SIZE - 1))
     }
 
     val hasEnoughData: Boolean get() = blocksAnalyzed >= MIN_BLOCKS
 
-    /** One mono frame at the original sample rate, roughly [-1, 1]. */
     fun accept(sample: Float) {
         val filtered = antiAlias.process(sample.toDouble())
         if (++decimationCounter < decimation) return
@@ -126,23 +93,20 @@ class KeyDetector(inputSampleRate: Int) {
     }
 
     private fun analyzeBlock() {
+        for (index in block.indices) windowedBlock[index] = block[index] * window[index]
         for (bin in 0 until PITCH_CLASSES * OCTAVES) {
-            val pitchClass = bin % PITCH_CLASSES
-            val octave = bin / PITCH_CLASSES
-            val frequency = LOWEST_HZ * Math.pow(2.0, octave + pitchClass / 12.0)
-            if (frequency >= workingRate / 2.0) continue
-            chroma[pitchClass] += goertzelMagnitude(frequency)
+            val coefficient = coefficients[bin]
+            if (coefficient.isNaN()) continue
+            chroma[bin % PITCH_CLASSES] += goertzelMagnitude(coefficient)
         }
         blocksAnalyzed++
     }
 
-    private fun goertzelMagnitude(frequency: Double): Double {
-        val omega = 2.0 * PI * frequency / workingRate
-        val coefficient = 2.0 * cos(omega)
+    private fun goertzelMagnitude(coefficient: Double): Double {
         var s1 = 0.0
         var s2 = 0.0
         for (i in 0 until BLOCK_SIZE) {
-            val s = block[i] * window[i] + coefficient * s1 - s2
+            val s = windowedBlock[i] + coefficient * s1 - s2
             s2 = s1
             s1 = s
         }
@@ -150,16 +114,6 @@ class KeyDetector(inputSampleRate: Int) {
         return if (power > 0.0) sqrt(power) else 0.0
     }
 
-    /**
-     * Best-matching key by correlating the accumulated chroma against the
-     * Krumhansl-Schmuckler profiles at all 12 rotations in both modes.
-     *
-     * Confidence is the winning correlation scaled by how far clear of the
-     * runner-up it is. A track whose top two candidates are neck and neck is
-     * ambiguous however strong the winner looks on its own, and a wrong key
-     * confidently applied is worse than no key at all — [MusicalKey.compatible]
-     * treats low confidence as "don't know, don't block".
-     */
     fun estimate(): MusicalKey {
         if (!hasEnoughData) return MusicalKey.NONE
         val total = chroma.sum()
@@ -198,8 +152,6 @@ class KeyDetector(inputSampleRate: Int) {
         chroma.fill(0.0)
     }
 
-    /** Pearson correlation between the chroma and a key profile rotated to
-     *  [tonic]. */
     private fun correlate(values: DoubleArray, profile: DoubleArray, tonic: Int): Double {
         var meanValues = 0.0
         var meanProfile = 0.0
@@ -228,8 +180,6 @@ class KeyDetector(inputSampleRate: Int) {
         private const val PITCH_CLASSES = 12
         private const val OCTAVES = 3
 
-        /** C3. Three octaves up from here reaches just under 1 kHz, which is
-         *  where most of a mix's harmonic content lives. */
         private const val LOWEST_HZ = 130.81
 
         private const val TARGET_SAMPLE_RATE = 4410
@@ -237,12 +187,9 @@ class KeyDetector(inputSampleRate: Int) {
         private const val BLOCK_SIZE = 2048
         private const val MIN_BLOCKS = 20
 
-        /** Even a runaway winner gets no more than this fraction of its raw
-         *  correlation unless it also clears the field. */
         private const val MARGIN_FLOOR = 0.4
         private const val MARGIN_GAIN = 4.0
 
-        // Krumhansl-Schmuckler key profiles, indexed from the tonic.
         private val MAJOR_PROFILE = doubleArrayOf(
             6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88,
         )

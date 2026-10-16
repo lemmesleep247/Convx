@@ -15,9 +15,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.Text
+import com.convx.music.ui.ios.compat.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -43,6 +43,7 @@ import com.convx.music.ui.component.IconButton
 import com.convx.music.ui.utils.backToMain
 import com.convx.music.utils.rememberPreference
 import kotlinx.coroutines.launch
+import com.convx.music.ui.component.ScreenScaffold
 
 /**
  * Lets an already-logged-in user switch which YouTube channel on their Google
@@ -70,10 +71,18 @@ fun SwitchChannelScreen(navController: NavController) {
     val webViewRef = remember { mutableStateOf<WebView?>(null) }
     var switched by remember { mutableStateOf(false) }
 
-    Box(
-        modifier = Modifier.fillMaxSize()
+    ScreenScaffold(
+        title = stringResource(if (switched) R.string.switch_channel_switched_title else R.string.switch_channel_title),
+        // A login WebView does not scroll under the bar, so there is no large
+        // title to hand off from — the compact one simply stays.
+        titleAlpha = 1f,
+        onBack = navController::navigateUp,
+        onBackLongClick = navController::backToMain,
     ) {
         AndroidView(
+            // Deliberately NOT the chrome's contentModifier: recording a
+            // hardware-accelerated WebView into a backdrop layer makes the page
+            // tear (see AppRoutePolicy.isWebViewRoute).
             modifier = Modifier
                 .windowInsetsPadding(LocalPlayerAwareWindowInsets.current)
                 .fillMaxSize(),
@@ -97,11 +106,7 @@ fun SwitchChannelScreen(navController: NavController) {
                                 dataSyncId = newDataSyncId
                                 YouTube.dataSyncId = newDataSyncId
 
-                                // Google can rotate the session cookie as part of a channel
-                                // switch. The cookie stored at initial login was never
-                                // refreshed after this point, so it went stale on the NEXT
-                                // switch and every request looked logged-out — forcing a
-                                // full re-login just to get a matching cookie again.
+                                // Refresh the cookie because Google may rotate it during a channel switch.
                                 CookieManager.getInstance().getCookie("https://music.youtube.com")
                                     ?.takeIf { it.isNotBlank() }
                                     ?.let { freshCookie ->
@@ -134,20 +139,6 @@ fun SwitchChannelScreen(navController: NavController) {
             }
         )
 
-        TopAppBar(
-            title = { Text(stringResource(if (switched) R.string.switch_channel_switched_title else R.string.switch_channel_title)) },
-            navigationIcon = {
-                IconButton(
-                    onClick = navController::navigateUp,
-                    onLongClick = navController::backToMain
-                ) {
-                    Icon(
-                        painterResource(R.drawable.arrow_back),
-                        contentDescription = null
-                    )
-                }
-            }
-        )
     }
 
     BackHandler(enabled = webViewRef.value?.canGoBack() == true) {

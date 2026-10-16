@@ -5,11 +5,18 @@
 
 package com.convx.music.ui.screens.search
 
+import com.convx.music.ui.component.sf
+import com.convx.music.ui.component.SymbolIcon
+import com.convx.music.ui.component.chromeShadow
+import androidx.compose.ui.res.painterResource
 import android.content.res.Configuration
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import com.convx.music.ui.utils.albumRoute
+import com.convx.music.ui.utils.artistRoute
 import com.convx.music.ui.utils.bounceClick
 import com.convx.music.ui.utils.combinedBounceClick
+import com.convx.music.ui.utils.localPlaylistRoute
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -27,11 +34,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LocalContentColor
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.IconButton
+import com.convx.music.ui.ios.compat.LocalContentColor
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -44,11 +51,11 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalWindowInfo
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavController
+import com.composables.sfsymbols.SfSymbols
 import com.convx.music.LocalPlayerAwareWindowInsets
 import com.convx.music.LocalPlayerConnection
 import com.convx.music.R
@@ -76,6 +83,7 @@ import com.convx.music.ui.theme.AppleTokens
 import com.convx.music.ui.theme.HeroTintedContent
 import com.convx.music.ui.component.GlassComponent
 import com.convx.music.ui.component.LocalGlassEffectConfig
+import com.convx.music.ui.component.withFixedStyle
 import com.convx.music.ui.component.isGlassAllowed
 import com.convx.music.ui.component.liquidGlass
 import com.convx.music.ui.component.shapes.ContinuousRoundedRectangle
@@ -87,6 +95,7 @@ import com.convx.music.utils.listItemShape
 import com.convx.music.viewmodels.LocalFilter
 import com.convx.music.viewmodels.LocalSearchViewModel
 import kotlinx.coroutines.flow.drop
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -103,14 +112,28 @@ fun LocalSearchScreen(
     val menuState = LocalMenuState.current
     val playerConnection = LocalPlayerConnection.current ?: return
 
-    val isPlaying by playerConnection.isEffectivelyPlaying.collectAsState()
-    val mediaMetadata by playerConnection.mediaMetadata.collectAsState()
+    val isPlaying by playerConnection.isEffectivelyPlaying.collectAsStateWithLifecycle()
+    val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
 
-    val searchFilter by viewModel.filter.collectAsState()
-    val result by viewModel.result.collectAsState()
+    val searchFilter by viewModel.filter.collectAsStateWithLifecycle()
+    val result by viewModel.result.collectAsStateWithLifecycle()
 
     LaunchedEffect(query) {
         viewModel.query.value = query
+    }
+    val localOnly = com.convx.music.LocalLocalOnlyMode.current
+    val audioPermission = com.convx.music.ui.component.rememberLocalAudioPermission { }
+    LaunchedEffect(localOnly, audioPermission.granted) {
+        if (localOnly && audioPermission.granted) viewModel.scanLocalFiles()
+    }
+    if (localOnly && !audioPermission.granted) {
+        Box(Modifier.fillMaxSize()) {
+            com.convx.music.ui.screens.library.apple.LocalAccessCard(
+                blocked = audioPermission.blocked,
+                onAllow = audioPermission.request,
+            )
+        }
+        return
     }
 
     val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
@@ -123,24 +146,34 @@ fun LocalSearchScreen(
             is Album -> it.album.thumbnailUrl
             is Artist -> it.artist.thumbnailUrl
             is Playlist -> it.thumbnails.firstOrNull()
-            else -> null
         }
     }
     val heroSource = rememberHeroSource(
         staticArt = heroUrl,
         songs = result.map[LocalFilter.SONG]?.filterIsInstance<Song>()?.map { it.song.thumbnailUrl to false } ?: emptyList()
     )
-    // Was hardcoded Color.Black regardless of the Theme settings color/pureBlack
-    // choice — the top bar and result background never matched what the rest of
-    // the app (online SearchScreen included) actually painted. Same token online
-    // search uses, with pureBlack forcing flat black same as every other
-    // hero-tinted screen already does (see rememberHeroTint's PureBlack override).
-    val tint = if (pureBlack) Color.Black else rememberAppBackgroundColor(AppleTokens.BgElevated)
+    // Use the theme background unless pure-black mode is enabled.
+    val tint = if (pureBlack) Color.Black else rememberAppBackgroundColor(AppTheme.colorScheme.background)
     val onTint = AppleTokens.onColor(tint)
 
-    val glassConfig = LocalGlassEffectConfig.current
+    // Keep top-bar glass fixed; the global preference controls the nav bar and mini player.
+    val glassConfig = LocalGlassEffectConfig.current.withFixedStyle()
     val useGlass = glassConfig.isEnabledFor(GlassComponent.NAV_BAR) && isGlassAllowed()
     val heroBackdrop = rememberLayerBackdrop()
+
+    fun playSearchSongs(selectedSongId: String) {
+        val songs = result.map
+            .getOrDefault(LocalFilter.SONG, emptyList())
+            .filterIsInstance<Song>()
+            .map { it.toMediaItem() }
+        playerConnection.playQueue(
+            ListQueue(
+                title = context.getString(R.string.queue_searched_songs),
+                items = songs,
+                startIndex = songs.indexOfFirst { it.mediaId == selectedSongId },
+            )
+        )
+    }
 
     Box(
         modifier = Modifier
@@ -154,7 +187,7 @@ fun LocalSearchScreen(
       HeroTintedContent(tint = tint, backdrop = heroBackdrop) {
         val chromeShape = ContinuousRoundedRectangle(percent = 50)
         val chromeBackgroundModifier = if (useGlass) {
-            Modifier.liquidGlass(config = glassConfig, shape = chromeShape, highlightAlpha = 0.3f)
+            Modifier.chromeShadow(chromeShape).liquidGlass(config = glassConfig, shape = chromeShape)
         } else {
             Modifier.background(LocalContentColor.current.copy(alpha = 0.15f), chromeShape)
         }
@@ -162,7 +195,7 @@ fun LocalSearchScreen(
         LazyColumn(
             state = lazyListState,
             contentPadding = LocalPlayerAwareWindowInsets.current
-                .only(WindowInsetsSides.Bottom)
+                .only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom)
                 .asPaddingValues(),
             modifier = Modifier
                 .fillMaxSize()
@@ -175,21 +208,23 @@ fun LocalSearchScreen(
                 }
         ) {
             stickyHeader {
+                // Same pills as the catalogue results; the page colour behind them so
+                // rows scroll under a clean edge.
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(tint.copy(alpha = 0.8f))
+                        .background(com.convx.music.ui.ios.foundation.IosTheme.colors.systemBackground)
                 ) {
-                    ChipsRow(
-                        chips = listOf(
+                    AppleScopePills(
+                        pills = listOf(
                             LocalFilter.ALL to stringResource(R.string.filter_all),
                             LocalFilter.SONG to stringResource(R.string.filter_songs),
                             LocalFilter.ALBUM to stringResource(R.string.filter_albums),
                             LocalFilter.ARTIST to stringResource(R.string.filter_artists),
                             LocalFilter.PLAYLIST to stringResource(R.string.filter_playlists),
                         ),
-                        currentValue = searchFilter,
-                        onValueUpdate = { viewModel.filter.value = it },
+                        selected = searchFilter,
+                        onSelect = { viewModel.filter.value = it },
                     )
                 }
             }
@@ -215,9 +250,7 @@ fun LocalSearchScreen(
                     }
                 }
 
-            // itemsIndexed so listItemShape can use the index directly. It used to call
-            // items.indexOfFirst { ... } inside every row — a linear scan per row, i.e.
-            // O(n²) per frame — and re-derive the distinct list on each recomposition.
+            // Reuse the row index and distinct list instead of rescanning them per item.
             itemsIndexed(
                 items = distinctItems,
                 key = { _, it -> it.id },
@@ -247,10 +280,7 @@ fun LocalSearchScreen(
                                     }
                                 }
                             ) {
-                                Icon(
-                                    painter = painterResource(R.drawable.more_vert),
-                                    contentDescription = null,
-                                )
+                                SymbolIcon(symbol = sf("ellipsis"), contentDescription = null)
                             }
                         },
                         modifier = Modifier
@@ -259,17 +289,7 @@ fun LocalSearchScreen(
                                     if (item.id == mediaMetadata?.id) {
                                         playerConnection.togglePlayPause()
                                     } else {
-                                        val songs = result.map
-                                            .getOrDefault(LocalFilter.SONG, emptyList())
-                                            .filterIsInstance<Song>()
-                                            .map { it.toMediaItem() }
-                                        playerConnection.playQueue(
-                                            ListQueue(
-                                                title = context.getString(R.string.queue_searched_songs),
-                                                items = songs,
-                                                startIndex = songs.indexOfFirst { it.mediaId == item.id },
-                                            )
-                                        )
+                                        playSearchSongs(item.id)
                                     }
                                 },
                                 onLongClick = {
@@ -297,7 +317,7 @@ fun LocalSearchScreen(
                         modifier = Modifier
                             .bounceClick {
                                 onDismiss()
-                                navController.navigate("album/${item.id}")
+                                navController.navigate(albumRoute(item.id, item.thumbnailUrl))
                             }
                             .animateItem(),
                     )
@@ -308,7 +328,7 @@ fun LocalSearchScreen(
                         modifier = Modifier
                             .bounceClick {
                                 onDismiss()
-                                navController.navigate("artist/${item.id}")
+                                navController.navigate(artistRoute(item.id, item.thumbnailUrl))
                             }
                             .animateItem(),
                     )
@@ -319,7 +339,7 @@ fun LocalSearchScreen(
                         modifier = Modifier
                             .bounceClick {
                                 onDismiss()
-                                navController.navigate("local_playlist/${item.id}")
+                                navController.navigate(localPlaylistRoute(item.id, item.thumbnailUrl))
                             }
                             .animateItem(),
                     )

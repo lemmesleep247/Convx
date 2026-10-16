@@ -1,12 +1,25 @@
 package com.convx.music.ui.screens.settings
 
+import com.convx.music.ui.component.sf
+import com.convx.music.ui.component.SymbolIcon
+import com.convx.music.ui.ios.compat.AppTheme
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.*
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import com.convx.music.ui.ios.compat.rememberIosModalSheetState
+import com.convx.music.ui.ios.compat.Checkbox
+import com.convx.music.ui.ios.compat.HorizontalDivider
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.IconButton
+import com.convx.music.ui.ios.compat.ModalBottomSheet
+import com.convx.music.ui.ios.compat.OutlinedTextField
+import com.convx.music.ui.ios.compat.Surface
+import com.convx.music.ui.ios.compat.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -70,16 +83,15 @@ fun SpotifyPlaylistBottomSheet(
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        sheetState = rememberIosModalSheetState(skipPartiallyExpanded = true),
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-        containerColor = MaterialTheme.colorScheme.surface,
+        containerColor = AppTheme.colorScheme.surface,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(0.85f)
         ) {
-            // Header Row (Title and Select All checkbox)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -89,9 +101,9 @@ fun SpotifyPlaylistBottomSheet(
             ) {
                 Text(
                     text = stringResource(R.string.playlists),
-                    style = MaterialTheme.typography.titleLarge,
+                    style = AppTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = AppTheme.colorScheme.onSurface
                 )
 
                 val isAllSelected = filteredDisplayItems.isNotEmpty() && filteredDisplayItems.all { item ->
@@ -105,8 +117,8 @@ fun SpotifyPlaylistBottomSheet(
                 ) {
                     Text(
                         text = stringResource(R.string.spotify_select_all),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        style = AppTheme.typography.bodyMedium,
+                        color = AppTheme.colorScheme.onSurfaceVariant
                     )
                     Checkbox(
                         checked = isAllSelected,
@@ -124,24 +136,17 @@ fun SpotifyPlaylistBottomSheet(
                 }
             }
 
-            // Search Text Field
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
                 placeholder = { Text(stringResource(R.string.search)) },
                 leadingIcon = {
-                    Icon(
-                        painter = painterResource(R.drawable.search),
-                        contentDescription = null
-                    )
+                    SymbolIcon(symbol = sf("magnifyingglass"), contentDescription = null)
                 },
                 trailingIcon = {
                     if (searchQuery.isNotEmpty()) {
                         IconButton(onClick = { searchQuery = "" }) {
-                            Icon(
-                                painter = painterResource(R.drawable.close),
-                                contentDescription = null
-                            )
+                            SymbolIcon(symbol = sf("xmark"), contentDescription = null)
                         }
                     }
                 },
@@ -151,19 +156,17 @@ fun SpotifyPlaylistBottomSheet(
                     .fillMaxWidth()
                     .padding(horizontal = 24.dp, vertical = 8.dp),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+                    focusedBorderColor = AppTheme.colorScheme.primary,
+                    unfocusedBorderColor = AppTheme.colorScheme.outlineVariant
                 )
             )
 
-            // Top Divider
             HorizontalDivider(
-                color = MaterialTheme.colorScheme.outlineVariant,
+                color = AppTheme.colorScheme.outlineVariant,
                 thickness = 1.dp,
                 modifier = Modifier.fillMaxWidth()
             )
 
-            // Playlist list
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -211,14 +214,12 @@ fun SpotifyPlaylistBottomSheet(
                 }
             }
 
-            // Bottom Divider
             HorizontalDivider(
-                color = MaterialTheme.colorScheme.outlineVariant,
+                color = AppTheme.colorScheme.outlineVariant,
                 thickness = 1.dp,
                 modifier = Modifier.fillMaxWidth()
             )
 
-            // Bottom OK Button Row
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -253,9 +254,9 @@ private fun SpotifySourceRow(
         modifier = Modifier.fillMaxWidth(),
         shape = shape,
         color = if (selected) {
-            MaterialTheme.colorScheme.secondaryContainer
+            AppTheme.colorScheme.secondaryContainer
         } else {
-            MaterialTheme.colorScheme.surfaceContainerLow
+            AppTheme.colorScheme.surfaceContainerLow
         },
         onClick = onClick,
     ) {
@@ -270,8 +271,8 @@ private fun SpotifySourceRow(
             Box(
                 modifier = Modifier
                     .size(48.dp)
-                    .clip(MaterialTheme.shapes.medium)
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                    .clip(AppTheme.shapes.medium)
+                    .background(AppTheme.colorScheme.primary.copy(alpha = 0.12f)),
                 contentAlignment = Alignment.Center,
             ) {
                 if (!thumbnailUrl.isNullOrBlank()) {
@@ -281,12 +282,7 @@ private fun SpotifySourceRow(
                         modifier = Modifier.fillMaxSize(),
                     )
                 } else {
-                    Icon(
-                        painter = painterResource(R.drawable.favorite),
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(24.dp),
-                    )
+                    SymbolIcon(symbol = sf("heart.fill"), contentDescription = null, size = 24.dp, tint = AppTheme.colorScheme.primary)
                 }
             }
             Column(
@@ -295,15 +291,15 @@ private fun SpotifySourceRow(
             ) {
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.bodyLarge,
+                    style = AppTheme.typography.bodyLarge,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
                     text = if (trackCount > 0) stringResource(R.string.spotify_track_count, trackCount) else subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = AppTheme.typography.bodySmall,
+                    color = AppTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )

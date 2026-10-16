@@ -5,6 +5,13 @@
 
 package com.convx.music.ui.screens
 
+import com.convx.music.ui.utils.sideBarInset
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeSource
+import com.convx.music.ui.utils.plusStart
+import com.convx.music.ui.utils.bleedStart
+import com.convx.music.ui.component.sf
+import com.convx.music.ui.component.SymbolIcon
 import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -40,12 +47,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.IconButton
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.Scaffold
+import com.convx.music.ui.ios.compat.Text
+import com.convx.music.ui.ios.compat.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -57,7 +64,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -67,6 +73,8 @@ import com.music.innertube.models.WatchEndpoint
 import com.convx.music.LocalPlayerAwareWindowInsets
 import com.convx.music.LocalPlayerConnection
 import com.convx.music.R
+import com.composables.sfsymbols.SfSymbols
+import androidx.compose.ui.res.painterResource
 import com.convx.music.constants.ListItemHeight
 import com.convx.music.models.toMediaMetadata
 import com.convx.music.playback.queues.YouTubeQueue
@@ -75,7 +83,6 @@ import com.convx.music.ui.component.IconButton
 import com.convx.music.ui.component.LocalMenuState
 import com.convx.music.ui.component.NavigationTitle
 import com.convx.music.ui.component.YouTubeGridItem
-import androidx.compose.material3.Text
 import com.convx.music.ui.component.YouTubeListItem
 import com.convx.music.ui.component.HeroBackground
 import com.convx.music.ui.utils.rememberHeroZoom
@@ -83,6 +90,7 @@ import com.convx.music.ui.utils.heroPullZoom
 import com.convx.music.ui.utils.listOverscroll
 import androidx.compose.foundation.layout.windowInsetsPadding
 import com.convx.music.ui.component.rememberHeroSource
+import com.convx.music.ui.component.rememberHeroTopBlur
 import com.convx.music.ui.component.rememberHeroTint
 import com.convx.music.ui.theme.AppleTokens
 import com.convx.music.ui.theme.HeroTintedContent
@@ -105,6 +113,7 @@ import com.convx.music.ui.utils.bounceClick
 import com.convx.music.ui.utils.combinedBounceClick
 import com.convx.music.utils.listItemShape
 import com.convx.music.viewmodels.ChartsViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -115,11 +124,11 @@ fun ChartsScreen(
     val menuState = LocalMenuState.current
     val haptic = LocalHapticFeedback.current
     val playerConnection = LocalPlayerConnection.current ?: return
-    val isPlaying by playerConnection.isEffectivelyPlaying.collectAsState()
-    val mediaMetadata by playerConnection.mediaMetadata.collectAsState()
+    val isPlaying by playerConnection.isEffectivelyPlaying.collectAsStateWithLifecycle()
+    val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
 
-    val chartsPage by viewModel.chartsPage.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
+    val chartsPage by viewModel.chartsPage.collectAsStateWithLifecycle()
+    val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
 
     val lazyListState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
@@ -150,11 +159,14 @@ fun ChartsScreen(
         tint = tint,
         heroSource = heroSource,
         heroScale = heroZoom.scale,
+        // Progressive top blur: artwork dissolves under the status bar as the list scrolls up.
+        topBlurProgress = rememberHeroTopBlur(lazyListState),
         modifier = Modifier.fillMaxSize(),
     ) {
       HeroTintedContent(tint = tint, backdrop = heroBackdrop) {
         val chromeShape = ContinuousRoundedRectangle(percent = 50)
-        
+        val hazeState = remember { HazeState() }
+
         Box(modifier = Modifier.fillMaxSize()) {
             if (isLoading || chartsPage == null) {
                 ShimmerHost(
@@ -192,7 +204,7 @@ fun ChartsScreen(
                                             modifier = Modifier
                                                 .size(ListItemHeight - 16.dp)
                                                 .clip(RoundedCornerShape(4.dp))
-                                                .background(MaterialTheme.colorScheme.onSurface),
+                                                .background(AppTheme.colorScheme.onSurface),
                                         )
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Column(
@@ -203,14 +215,14 @@ fun ChartsScreen(
                                                 modifier = Modifier
                                                     .height(16.dp)
                                                     .width(120.dp)
-                                                    .background(MaterialTheme.colorScheme.onSurface),
+                                                    .background(AppTheme.colorScheme.onSurface),
                                             )
                                             Spacer(modifier = Modifier.height(8.dp))
                                             Box(
                                                 modifier = Modifier
                                                     .height(12.dp)
                                                     .width(80.dp)
-                                                    .background(MaterialTheme.colorScheme.onSurface),
+                                                    .background(AppTheme.colorScheme.onSurface),
                                             )
                                         }
                                     }
@@ -232,9 +244,8 @@ fun ChartsScreen(
                 }
             } else {
                 LazyColumn(
-                    // No bounce here: the top pull drives the hero zoom instead.
                     overscrollEffect = heroZoom.listOverscroll(),
-                    modifier = Modifier.heroPullZoom(heroZoom),
+                    modifier = Modifier.heroPullZoom(heroZoom).hazeSource(hazeState),
                     state = lazyListState,
                     contentPadding = LocalPlayerAwareWindowInsets.current
                         .only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom)
@@ -272,6 +283,7 @@ fun ChartsScreen(
                                     )
                                 }
 
+                                val sideInset = sideBarInset()
                                 LazyHorizontalGrid(
                                     state = lazyGridState,
                                     rows = GridCells.Fixed(4),
@@ -281,11 +293,12 @@ fun ChartsScreen(
                                     ),
                                     contentPadding = WindowInsets.systemBars
                                         .only(WindowInsetsSides.Horizontal)
-                                        .asPaddingValues(),
+                                        .asPaddingValues().plusStart(sideInset),
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(ListItemHeight * 4)
-                                        .animateItem(),
+                                        .animateItem()
+                                        .bleedStart(sideInset),
                                 ) {
                                     itemsIndexed(
                                         items = section.items.filterIsInstance<SongItem>().distinctBy { it.id },
@@ -310,10 +323,7 @@ fun ChartsScreen(
                                                         }
                                                     },
                                                 ) {
-                                                    Icon(
-                                                        painter = painterResource(R.drawable.more_vert),
-                                                        contentDescription = null,
-                                                    )
+                                                    SymbolIcon(symbol = sf("ellipsis"), contentDescription = null)
                                                 }
                                             },
                                             modifier = Modifier
@@ -357,11 +367,12 @@ fun ChartsScreen(
                             )
                         }
                         item(key = "top_videos_content") {
+                            val sideInset = sideBarInset()
                             LazyRow(
                                 contentPadding = WindowInsets.systemBars
                                     .only(WindowInsetsSides.Horizontal)
-                                    .asPaddingValues(),
-                                modifier = Modifier.animateItem(),
+                                    .asPaddingValues().plusStart(sideInset),
+                                modifier = Modifier.animateItem().bleedStart(sideInset),
                             ) {
                                 items(
                                     items = topVideosSection.items.filterIsInstance<SongItem>().distinctBy { it.id },
@@ -409,7 +420,11 @@ fun ChartsScreen(
                 }
             }
 
-            // Top bar logic
+            com.convx.music.ui.component.TopFadeBlur(
+                hazeState = hazeState,
+                pageColor = tint,
+                modifier = Modifier.align(Alignment.TopCenter),
+            )
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -423,10 +438,7 @@ fun ChartsScreen(
                     onClick = { navController.navigateUp() },
                     onLongClick = { navController.backToMain() },
                 ) {
-                    Icon(
-                        painter = painterResource(R.drawable.arrow_back),
-                        contentDescription = null,
-                    )
+                    SymbolIcon(symbol = sf("chevron.left"), contentDescription = null)
                 }
 
                 Spacer(Modifier.weight(1f))

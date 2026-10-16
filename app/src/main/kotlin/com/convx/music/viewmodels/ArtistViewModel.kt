@@ -33,14 +33,15 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import com.convx.music.utils.PageCaches
 import javax.inject.Inject
+import java.io.File
+import com.convx.music.utils.ArtistWordmarkAssets
 import com.convx.music.extensions.filterVideoSongs as filterVideoSongsLocal
-import com.convx.music.artistvideo.ArtistVideoCanvasProvider
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
@@ -49,15 +50,15 @@ class ArtistViewModel @Inject constructor(
     database: MusicDatabase,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
-    val artistId = savedStateHandle.get<String>("artistId")!!
+    val artistId = requireNotNull(savedStateHandle.get<String>("artistId")) { "Missing artistId" }
+    val thumbArg = savedStateHandle.get<String>("thumb")?.takeIf { it.isNotEmpty() }
     var artistPage by mutableStateOf<ArtistPage?>(null)
-    
-    private val _artistVideoUrl = MutableStateFlow<String?>(null)
-    val artistVideoUrl: StateFlow<String?> = _artistVideoUrl
+    var artistSignatureUrl by mutableStateOf<String?>(null)
+        private set
+    var artistBundledLogo by mutableStateOf<File?>(null)
+        private set
+    private var signatureLookupName: String? = null
 
-    private val _artistVideoSong = MutableStateFlow<com.music.innertube.models.SongItem?>(null)
-    val artistVideoSong: StateFlow<com.music.innertube.models.SongItem?> = _artistVideoSong
-    
     val libraryArtist = database.artist(artistId)
         .stateIn(viewModelScope, SharingStarted.Lazily, null)
     val librarySongs = context.dataStore.data
@@ -76,7 +77,11 @@ class ArtistViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     init {
-        // Load artist page and reload when hide explicit setting changes
+        viewModelScope.launch {
+            database.artist(artistId).first()?.artist?.name?.takeIf { it.isNotBlank() }?.let { name ->
+                com.convx.music.utils.AppleArt.prefetch(context, com.convx.music.utils.AppleArtQuery.Artist(name))
+            }
+        }
         viewModelScope.launch {
             context.dataStore.data
                 .map {
@@ -95,37 +100,39 @@ class ArtistViewModel @Inject constructor(
 
     fun fetchArtistsFromYTM() {
         viewModelScope.launch {
-            val hideExplicit = context.dataStore.get(HideExplicitKey, false)
-            val hideVideoSongs = context.dataStore.get(HideVideoSongsKey, false) || context.dataStore.get(DataSaverEnabledKey, false)
-            val hideYoutubeShorts = context.dataStore.get(HideYoutubeShortsKey, false)
-            YouTube.artist(artistId)
-                .onSuccess { page ->
-                    val filteredSections = page.sections
-                        .map { section ->
-                            section.copy(items = section.items.filterExplicit(hideExplicit).filterVideoSongs(hideVideoSongs).filterYoutubeShorts(hideYoutubeShorts))
-                        }
-                        .filter { section -> section.items.isNotEmpty() }
-
-                    artistPage = page.copy(sections = filteredSections)
-                    
-                    // Try to fetch artist video canvas from top songs
-                    val topSongsSection = page.sections.find { it.items.firstOrNull() is com.music.innertube.models.SongItem }
-                    topSongsSection?.items?.forEach { item ->
-                        if (item is com.music.innertube.models.SongItem) {
-                            val canvas = ArtistVideoCanvasProvider.getBySongArtist(
-                                song = item.title,
-                                artist = page.artist?.title ?: ""
-                            )
-                            if (canvas?.preferredAnimationUrl != null) {
-                                _artistVideoUrl.value = canvas.preferredAnimationUrl
-                                _artistVideoSong.value = item
-                                return@forEach
-                            }
-                        }
-                    }
-                }.onFailure {
-                    reportException(it)
-                }
+            val page = PageCaches.artistPages.get(artistId) {
+                YouTube.artist(artistId).onFailure { reportException(it) }.getOrNull()
+            } ?: return@launch
+            com.convx.music.utils.AppleArt.prefetch(context, com.convx.music.utils.AppleArtQuery.Artist(page.artist.title))
+            artistPage = page.filtered()
         }
+    }
+
+    fun fetchArtistSignature(name: String) {
+        val normalized = name.trim()
+        if (normalized.isBlank() || signatureLookupName == normalized) return
+        signatureLookupName = normalized
+        val saved = ArtistWordmarkAssets.saved(context, normalized)
+        artistBundledLogo = saved.appleLogo
+        artistSignatureUrl = saved.signatureUrl
+        if (saved.appleLogo != null && saved.signature != null) return
+        viewModelScope.launch {
+            val assets = ArtistWordmarkAssets.bundle(context, normalized)
+            if (signatureLookupName == normalized) {
+                artistBundledLogo = assets.appleLogo
+                artistSignatureUrl = assets.signatureUrl
+            }
+        }
+    }
+
+    private suspend fun ArtistPage.filtered(): ArtistPage {
+        val hideExplicit = context.dataStore.get(HideExplicitKey, false)
+        val hideVideoSongs = context.dataStore.get(HideVideoSongsKey, false) || context.dataStore.get(DataSaverEnabledKey, false)
+        val hideYoutubeShorts = context.dataStore.get(HideYoutubeShortsKey, false)
+        return copy(
+            sections = sections
+                .map { it.copy(items = it.items.filterExplicit(hideExplicit).filterVideoSongs(hideVideoSongs).filterYoutubeShorts(hideYoutubeShorts)) }
+                .filter { it.items.isNotEmpty() },
+        )
     }
 }

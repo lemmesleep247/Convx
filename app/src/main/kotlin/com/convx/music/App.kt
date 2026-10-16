@@ -10,7 +10,9 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.os.Build
+import android.os.StrictMode
 import android.widget.Toast
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import coil3.ImageLoader
 import coil3.PlatformContext
@@ -26,6 +28,7 @@ import android.graphics.Bitmap
 import coil3.request.allowHardware
 import coil3.request.bitmapConfig
 import coil3.request.crossfade
+import com.convx.music.utils.ArtworkQualityInterceptor
 import com.music.innertube.YouTube
 import com.music.innertube.models.IpVersion
 import com.music.innertube.models.YouTubeLocale
@@ -40,16 +43,17 @@ import com.convx.music.utils.DebugLogs
 import com.convx.music.utils.cipher.CipherDeobfuscator
 import com.convx.music.utils.dataStore
 import com.convx.music.utils.get
+import com.convx.music.utils.migrateSharedPreferencesToMMKV
+import com.convx.music.utils.warmPreferenceMirror
 import com.convx.music.utils.reportException
+import com.tencent.mmkv.MMKV
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import okhttp3.Credentials
 import timber.log.Timber
@@ -66,26 +70,75 @@ class App : Application(), SingletonImageLoader.Factory {
     @ApplicationScope
     lateinit var applicationScope: CoroutineScope
 
+    @Inject
+    lateinit var networkRepository: dagger.Lazy<com.convx.storage.data.NetworkMusicRepository>
+
     override fun onCreate() {
         super.onCreate()
+        // The recovery activity runs in its own process. Do not reopen the database,
+        // preferences, native caches or playback integrations that may have crashed.
+        val processName = if (Build.VERSION.SDK_INT >= 28) {
+            Application.getProcessName()
+        } else {
+            (getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager)
+                .runningAppProcesses?.firstOrNull { it.pid == android.os.Process.myPid() }?.processName
+        }
+        if (processName == "$packageName:crash") return
+        com.convx.music.canvas.AppleMusicCatalog.cacheDir = filesDir.resolve("apple_catalog")
+        com.convx.music.core.UpdateNotificationHelper.cancelUpdateNotification(this)
+        // Eclipse addons identify clients by UA; they require "Convx/<app-version>".
+        com.music.spine.ModuleManager.userAgent = "Convx/${BuildConfig.VERSION_NAME}"
 
-        // Restored synchronously, before anything else can start: the async
-        // DataStore collector further down (applicationScope.launch { ... }
-        // .collect { YouTube.cookie = ... }) doesn't land its first value until
-        // some time after onCreate() returns. MusicService can start resolving
-        // playback before that — sees YouTube.cookie == null (its default, not
-        // "genuinely logged out"), takes the guest-session branch in
-        // BotDetectionMitigator, and PERSISTS a freshly-fetched guest
-        // visitorData over the real logged-in session's value in DataStore.
-        // Every cold start was a fresh chance to re-corrupt it.
-        YouTube.cookie = dataStore.get(InnerTubeCookieKey, "").takeIf { it.isNotBlank() && it != "null" }
-        YouTube.visitorData = dataStore.get(VisitorDataKey, "").takeIf { it.isNotBlank() && it != "null" }
-        YouTube.dataSyncId = dataStore.get(DataSyncIdKey, "").takeIf { it.isNotBlank() && it != "null" }
+        // StrictMode: debug-only, catches main-thread IO before it ships.
+        // Release untouched — zero behavior change there.
+        if (BuildConfig.DEBUG) {
+            StrictMode.setThreadPolicy(
+                StrictMode.ThreadPolicy.Builder()
+                    .detectDiskReads()
+                    .detectDiskWrites()
+                    .detectNetwork()
+                    .detectCustomSlowCalls()
+                    .penaltyLog()
+                    .build()
+            )
+            StrictMode.setVmPolicy(
+                StrictMode.VmPolicy.Builder()
+                    .detectLeakedClosableObjects()
+                    .detectActivityLeaks()
+                    .penaltyLog()
+                    .build()
+            )
+        }
 
-        // Install crash handler first
+        // Initialize MMKV before migrating preferences or restoring session state.
+        MMKV.initialize(this)
+        com.convx.music.ui.theme.colorengine.ColorEngine.init(this)
+        // Avoid per-artwork diagnostic work in release builds.
+        com.convx.music.ui.theme.colorengine.ColorEngine.setDebugEnabled(BuildConfig.DEBUG)
+        migrateSharedPreferencesToMMKV(this, "widget_config")
+        migrateSharedPreferencesToMMKV(this, "nanosonic_eq_profiles")
+        migrateSharedPreferencesToMMKV(this, "vivi_eq_prefs")
+        migrateSharedPreferencesToMMKV(this, "settings")
+
+        // Seed auth before DataStore emits. MusicService can start playback first; a null
+        // cookie would trigger guest fallback and overwrite the saved visitorData.
+        // authSeed() provides this synchronous read.
+        YouTube.cookie = authSeed(InnerTubeCookieKey)
+        YouTube.visitorData = authSeed(VisitorDataKey)
+        YouTube.dataSyncId = authSeed(DataSyncIdKey)
+
+        // Warm the preference mirror off Main so the first composition avoids its blocking read.
+        applicationScope.launch(Dispatchers.IO) { dataStore.warmPreferenceMirror() }
+        // Spotify's native engine: report whether it loaded, without ever failing startup over it.
+        applicationScope.launch(Dispatchers.IO) {
+            val loaded = runCatching { com.music.spotify.nativecore.NativeBridge.initContext(this@App) }
+            timber.log.Timber.tag("SpotifyEngine").i(
+                if (loaded.isSuccess) "native engine loaded" else "native engine unavailable: ${loaded.exceptionOrNull()}",
+            )
+        }
+
         CrashHandler.install(this)
 
-        // Initialize cipher deobfuscator for WEB_REMIX streaming
         CipherDeobfuscator.initialize(this)
 
         if (BuildConfig.DEBUG) {
@@ -99,18 +152,30 @@ class App : Application(), SingletonImageLoader.Factory {
             cachedCoilCacheSize = dataStore.data.map { it[MaxImageCacheSizeKey] ?: 512 }.first()
         }
 
-        // تهيئة إعدادات التطبيق عند الإقلاع
         applicationScope.launch {
             initializeSettings()
-
-            // Warm the cipher WebView off the first-play critical path
-            launch(Dispatchers.IO) {
-                delay(1500)
-                CipherDeobfuscator.prewarm()
-            }
-
             observeSettingsChanges()
         }
+    }
+
+    /** Mirrors session keys in MMKV to avoid a blocking DataStore read during startup. */
+    private val authCache: MMKV by lazy { MMKV.mmkvWithID(AUTH_CACHE_ID) }
+
+    /** Reads DataStore once when the MMKV mirror has no value yet, such as after an upgrade. */
+    private fun authSeed(key: Preferences.Key<String>): String? {
+        val raw = if (authCache.containsKey(key.name)) {
+            authCache.decodeString(key.name, "").orEmpty()
+        } else {
+            dataStore.get(key, "").also { authCache.encode(key.name, it) }
+        }
+        // A blank or literal "null" is a broken value, not a session — same test the
+        // collectors apply, kept identical so a restore and a live update agree.
+        return raw.takeIf { it.isNotBlank() && it != "null" }
+    }
+
+    /** Mirrors one session key into [authCache]. Called from the collectors. */
+    private fun cacheAuthValue(key: Preferences.Key<String>, value: String?) {
+        authCache.encode(key.name, value.orEmpty())
     }
 
     private suspend fun initializeSettings() {
@@ -132,7 +197,6 @@ class App : Application(), SingletonImageLoader.Factory {
             KuGou.useTraditionalChinese = true
         }
 
-        // Initialize LastFM with API keys from BuildConfig (GitHub Secrets)
         LastFM.initialize(
             apiKey = BuildConfig.LASTFM_API_KEY.takeIf { it.isNotEmpty() } ?: "",
             secret = BuildConfig.LASTFM_SECRET.takeIf { it.isNotEmpty() } ?: ""
@@ -166,7 +230,7 @@ class App : Application(), SingletonImageLoader.Factory {
         }
 
         YouTube.useLoginForBrowse = settings[UseLoginForBrowse] ?: true
-        YouTube.ipVersion = settings[IpVersionKey]?.toEnum(defaultValue = IpVersion.AUTO) ?: IpVersion.AUTO
+        YouTube.ipVersion = settings[IpVersionKey]?.toEnum(defaultValue = IpVersion.IPV4) ?: IpVersion.IPV4
 
         val channel = NotificationChannel(
             "updates",
@@ -194,6 +258,7 @@ class App : Application(), SingletonImageLoader.Factory {
                                 settings[VisitorDataKey] = newVisitorData
                             }
                         }
+                    cacheAuthValue(VisitorDataKey, YouTube.visitorData)
                 }
         }
 
@@ -202,13 +267,9 @@ class App : Application(), SingletonImageLoader.Factory {
                 .map { it[DataSyncIdKey] }
                 .distinctUntilChanged()
                 .collect { dataSyncId ->
-                    // Assigned raw: blank/"null"/"||" handling lives in
-                    // InnerTube.dataSyncId's setter so every path that assigns it
-                    // (login, this collector, channel switch, token import) gets the
-                    // same normalization. Truncating here — and keeping the wrong
-                    // half of "||" — is what silently reverted channel switches back
-                    // to primary, since this collector re-fires on every write.
+                    // Keep the full sync ID; truncating it resets channel selection.
                     YouTube.dataSyncId = dataSyncId
+                    cacheAuthValue(DataSyncIdKey, dataSyncId)
                 }
         }
 
@@ -219,6 +280,7 @@ class App : Application(), SingletonImageLoader.Factory {
                 .collect { cookie ->
                     try {
                         YouTube.cookie = cookie?.takeIf { it.isNotBlank() && it != "null" }
+                        cacheAuthValue(InnerTubeCookieKey, cookie)
                     } catch (e: Exception) {
                         Timber.e(e, "Could not parse cookie. Clearing existing cookie.")
                         forgetAccount(this@App)
@@ -271,15 +333,21 @@ class App : Application(), SingletonImageLoader.Factory {
                     YouTube.ipVersion = ipVersion?.toEnum(defaultValue = IpVersion.AUTO) ?: IpVersion.AUTO
                 }
         }
+
+        applicationScope.launch(Dispatchers.IO) {
+            dataStore.data
+                .map { (it[AppleArtworkKey] ?: true) && it[DataSaverEnabledKey] != true }
+                .distinctUntilChanged()
+                .collect { com.convx.music.utils.AppleArt.enabled = it }
+        }
     }
 
     @Volatile
     private var cachedCoilCacheSize: Int? = null
 
     override fun newImageLoader(context: PlatformContext): ImageLoader {
-        val cacheSize = cachedCoilCacheSize ?: runBlocking {
-            dataStore.data.map { it[MaxImageCacheSizeKey] ?: 512 }.first()
-        }
+        // Use the startup-seeded value to avoid a synchronous DataStore read on Main.
+        val cacheSize = cachedCoilCacheSize ?: 512
         return ImageLoader.Builder(this).apply {
             crossfade(false)
             // Use HARDWARE bitmap configuration for direct zero-copy GPU texture uploads
@@ -296,11 +364,19 @@ class App : Application(), SingletonImageLoader.Factory {
                 // User-supplied SVGs (player icons, DIY stickers). Vectors rasterise at the
                 // size they are drawn at, so a custom icon never goes soft when scaled up.
                 add(SvgDecoder.Factory())
+                // Steps YouTube artwork down a size when the requested filename 404s, so
+                // asking for maxresdefault is safe on the videos that do not have one.
+                add(ArtworkQualityInterceptor())
+                // Cover art that lives on an SMB or WebDAV source.
+                add(com.convx.music.utils.NetworkArtworkFetcher.Factory { networkRepository.get() })
             }
-            // Memory cache for fast image loading (prevents network requests on recomposition)
+            // Reuse decoded images while scrolling.
             memoryCache {
+                // Limit memory use more on low-RAM devices.
+                val activityManager = getSystemService(android.app.ActivityManager::class.java)
+                val percent = if (activityManager?.isLowRamDevice == true) 0.15 else 0.25
                 MemoryCache.Builder()
-                    .maxSizePercent(context, 0.35)
+                    .maxSizePercent(context, percent)
                     .build()
             }
             if (cacheSize == 0) {
@@ -308,14 +384,8 @@ class App : Application(), SingletonImageLoader.Factory {
             } else {
                 diskCache(
                     DiskCache.Builder()
-                        // filesDir, not cacheDir. cacheDir is reclaimable storage: the OS
-                        // empties it whenever the device runs low, and any "clear cache"
-                        // wipes it outright — which is why artwork kept vanishing after a
-                        // while, downloaded songs included, since DownloadUtil pre-caches
-                        // their thumbnails here too. Eviction there is driven by device
-                        // pressure, not by size, so raising maxSizeBytes never helped.
-                        // Growth is still bounded: Coil LRU-evicts against the cap below,
-                        // which StorageSettings exposes and can clear on demand.
+                        // Keep artwork in filesDir: Android can clear cacheDir under storage pressure,
+                        // including downloaded thumbnails. Coil still enforces the configured size cap.
                         .directory(filesDir.resolve("coil"))
                         .maxSizeBytes(cacheSize * 1024 * 1024L)
                         .build()
@@ -324,11 +394,22 @@ class App : Application(), SingletonImageLoader.Factory {
         }.build()
     }
 
+    // Best-effort memory relief. Coil re-fetches from disk cache — no state lost.
+    @Suppress("DEPRECATION")
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
+            runCatching { coil3.SingletonImageLoader.get(this).memoryCache?.clear() }
+        }
+    }
+
     companion object {
+        /** MMKV file backing [authSeed]. Cache only — DataStore owns these values. */
+        private const val AUTH_CACHE_ID = "auth_seed"
+
         suspend fun forgetAccount(context: Context) {
             Timber.d("forgetAccount: Starting logout process")
 
-            // Clear DataStore preferences
             Timber.d("forgetAccount: Clearing DataStore preferences")
             context.dataStore.edit { settings ->
                 settings.remove(InnerTubeCookieKey)
@@ -340,15 +421,13 @@ class App : Application(), SingletonImageLoader.Factory {
             }
             Timber.d("forgetAccount: DataStore preferences cleared")
 
-            // Immediately clear YouTube object's auth state
             Timber.d("forgetAccount: Clearing YouTube object auth state")
-            Timber.d("forgetAccount: Before - cookie=${YouTube.cookie?.take(50)}, visitorData=${YouTube.visitorData?.take(20)}, dataSyncId=${YouTube.dataSyncId?.take(20)}")
             YouTube.cookie = null
             YouTube.visitorData = null
             YouTube.dataSyncId = null
-            Timber.d("forgetAccount: After - cookie=${YouTube.cookie}, visitorData=${YouTube.visitorData}, dataSyncId=${YouTube.dataSyncId}")
+            Timber.d("forgetAccount: YouTube auth state cleared")
 
-            // Clear WebView cookies to prevent auto-relogin
+            // Remove WebView cookies so logout does not silently sign back in.
             Timber.d("forgetAccount: Clearing WebView CookieManager")
             withContext(Dispatchers.Main) {
                 android.webkit.CookieManager.getInstance().apply {

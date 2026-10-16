@@ -1,5 +1,5 @@
 /**
- * vivimusic Project (C) 2026
+ * convx Project (C) 2026
  * Licensed under GPL-3.0 | See git history for contributors
  */
 
@@ -24,7 +24,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.platform.LocalContext
@@ -63,19 +62,15 @@ fun CastButton(
         defaultValue = true
     )
     
-    // Get cast state from service
     val castHandler = playerConnection?.service?.castConnectionHandler
     val isCasting by castHandler?.isCasting?.collectAsState() ?: remember { mutableStateOf(false) }
     val isConnecting by castHandler?.isConnecting?.collectAsState() ?: remember { mutableStateOf(false) }
     val castDeviceName by castHandler?.castDeviceName?.collectAsState() ?: remember { mutableStateOf(null) }
     
-    // Get current media metadata
     val currentMetadata by playerConnection?.mediaMetadata?.collectAsState() ?: remember { mutableStateOf(null) }
 
-    // Check if Cast is available and disconnect if disabled while casting
     LaunchedEffect(enableGoogleCast) {
         if (!enableGoogleCast) {
-            // Disconnect from Cast if currently casting
             if (isCasting) {
                 playerConnection?.service?.castConnectionHandler?.disconnect()
             }
@@ -91,7 +86,6 @@ fun CastButton(
             routeSelector = MediaRouteSelector.Builder()
                 .addControlCategory(CastMediaControlIntent.categoryForCast(CastMediaControlIntent.DEFAULT_MEDIA_RECEIVER_APPLICATION_ID))
                 .build()
-            // Reinitialize the Cast handler to ensure it's ready
             playerConnection?.service?.castConnectionHandler?.initialize()
             castAvailable = true
         } catch (e: Exception) {
@@ -100,7 +94,6 @@ fun CastButton(
         }
     }
     
-    // Listen for route changes to discover devices
     DisposableEffect(mediaRouter, routeSelector) {
         val callback = object : MediaRouter.Callback() {
             override fun onRouteAdded(router: MediaRouter, route: MediaRouter.RouteInfo) {
@@ -118,7 +111,6 @@ fun CastButton(
         
         routeSelector?.let { selector ->
             mediaRouter?.addCallback(selector, callback, MediaRouter.CALLBACK_FLAG_REQUEST_DISCOVERY)
-            // Initial update
             updateRoutes(mediaRouter, selector) { availableRoutes = it }
         }
         
@@ -127,27 +119,10 @@ fun CastButton(
         }
     }
 
-    // Show the button if Cast is enabled and SDK is available
     if (enableGoogleCast && castAvailable) {
         Box(
             modifier = modifier
         ) {
-            // Shadow background for cast button
-            Box(
-                modifier = Modifier
-                    .size(56.dp)
-                    .align(Alignment.Center)
-                    .background(
-                        brush = Brush.radialGradient(
-                            colors = listOf(
-                                Color.Black.copy(alpha = 0.4f),
-                                Color.Transparent
-                            )
-                        )
-                    )
-            )
-            
-            // Cast button
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
@@ -160,7 +135,6 @@ fun CastButton(
                         return@clickable
                     }
                     
-                    // Get current connected route if casting
                     val currentRoute = if (isCasting) {
                         mediaRouter?.routes?.find { route ->
                             routeSelector?.let { selector -> 
@@ -169,7 +143,6 @@ fun CastButton(
                         }
                     } else null
                     
-                    // Show bottom sheet with cast picker
                     menuState.show {
                         CastPickerSheet(
                             routes = availableRoutes,

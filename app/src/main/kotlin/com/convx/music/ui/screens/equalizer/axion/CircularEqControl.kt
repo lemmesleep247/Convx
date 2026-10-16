@@ -6,7 +6,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
+import com.convx.music.ui.ios.compat.AppTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -43,11 +43,11 @@ fun CircularEqControl(
     modifier: Modifier = Modifier,
 ) {
     val textMeasurer = rememberTextMeasurer()
-    val primary = MaterialTheme.colorScheme.primary
-    val primaryContainer = MaterialTheme.colorScheme.primaryContainer
-    val outline = MaterialTheme.colorScheme.outline // Switched from outlineVariant
-    val onSurface = MaterialTheme.colorScheme.onSurface
-    val surfaceContainer = MaterialTheme.colorScheme.surfaceContainerLow // Switched from surfaceBright
+    val primary = AppTheme.colorScheme.primary
+    val primaryContainer = AppTheme.colorScheme.primaryContainer
+    val outline = AppTheme.colorScheme.outline // Switched from outlineVariant
+    val onSurface = AppTheme.colorScheme.onSurface
+    val surfaceContainer = AppTheme.colorScheme.surfaceContainerLow // Switched from surfaceBright
     val labelStyle = TextStyle(fontSize = 11.sp, color = onSurface)
     val valueStyle = TextStyle(fontSize = 13.sp, color = onSurface)
 

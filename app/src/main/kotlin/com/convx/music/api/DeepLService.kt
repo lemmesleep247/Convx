@@ -32,7 +32,6 @@ object DeepLService {
     ): Result<List<String>> = withContext(Dispatchers.IO) {
         var currentAttempt = 0
         
-        // Validate input
         if (text.isBlank()) {
             return@withContext Result.failure(Exception("Input text is empty"))
         }
@@ -51,7 +50,6 @@ object DeepLService {
             else -> targetLanguage.uppercase().take(2)
         }
         
-        // Determine if using free or pro API
         val baseUrl = if (apiKey.endsWith(":fx")) {
             "https://api-free.deepl.com/v2/translate"
         } else {
@@ -79,7 +77,7 @@ object DeepLService {
                     .build()
 
                 val response = client.newCall(request).execute()
-                val responseBody = response.body?.string()
+                val responseBody = response.body.string()
 
                 if (!response.isSuccessful) {
                     // Retry on server errors (5xx)
@@ -90,17 +88,11 @@ object DeepLService {
                     }
                     
                     val errorMsg = try {
-                        JSONObject(responseBody ?: "").optString("message") 
-                            ?: "HTTP ${response.code}: ${response.message}"
+                        JSONObject(responseBody).optString("message")
                     } catch (e: Exception) {
                         "HTTP ${response.code}: ${response.message}"
                     }
                     return@withContext Result.failure(Exception("Translation failed: $errorMsg"))
-                }
-
-                if (responseBody == null) {
-                    currentAttempt++
-                    continue
                 }
 
                 val jsonResponse = JSONObject(responseBody)
@@ -109,18 +101,8 @@ object DeepLService {
                     val translatedLines = (0 until translations.length()).map { i ->
                         translations.getJSONObject(i).optString("text", "")
                     }
-                    
-                    if (translatedLines.size == lineCount) {
-                        return@withContext Result.success(translatedLines)
-                    } else if (translatedLines.size > lineCount) {
-                        return@withContext Result.success(translatedLines.take(lineCount))
-                    } else {
-                        val paddedLines = translatedLines.toMutableList()
-                        while (paddedLines.size < lineCount) {
-                            paddedLines.add("")
-                        }
-                        return@withContext Result.success(paddedLines)
-                    }
+
+                    return@withContext Result.success(fitLineCount(translatedLines, lineCount))
                 }
             } catch (e: Exception) {
                 if (currentAttempt == maxRetries - 1) {
@@ -132,4 +114,5 @@ object DeepLService {
         }
         return@withContext Result.failure(Exception("Max retries exceeded"))
     }
+
 }

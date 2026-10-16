@@ -110,8 +110,10 @@ class WrappedManager(
         withContext(Dispatchers.IO) {
             val playlistMap = mutableMapOf<WrappedScreenType, String>()
 
-            // Intro Part: Random song from top 6-30
-            val introSongPool = topSongs.subList(5, topSongs.size)
+            // Intro Part: Random song from top 6-30. A library with fewer than
+            // 6 top songs has no "rest of the top 30" to pick from -- the pool
+            // is just empty then, not an out-of-range subList.
+            val introSongPool = topSongs.subList(minOf(5, topSongs.size), topSongs.size)
             val introSong = introSongPool.randomOrNull()?.id ?: topSongs.last().id
             playlistMap[WrappedScreenType.Welcome] = introSong
             playlistMap[WrappedScreenType.MinutesTease] = introSong
@@ -168,9 +170,11 @@ class WrappedManager(
             playlistMap[WrappedScreenType.TopArtistReveal] = artistSong
             playlistMap[WrappedScreenType.Top5Artists] = artistSong
 
-            // End Part
-            val endSongPool = topSongs.subList(2, 5)
-            val endSong = endSongPool.randomOrNull()?.id ?: topSongs[2].id
+            // End Part: same reasoning -- a library with fewer than 5 top
+            // songs still has to produce a valid, non-crashing (if smaller)
+            // range rather than assume there are at least 5.
+            val endSongPool = topSongs.subList(minOf(2, topSongs.size), minOf(5, topSongs.size))
+            val endSong = endSongPool.randomOrNull()?.id ?: topSongs.getOrNull(2)?.id ?: topSong.id
             playlistMap[WrappedScreenType.Playlist] = endSong
             playlistMap[WrappedScreenType.Conclusion] = "2-p9DM2Xvsc"
 

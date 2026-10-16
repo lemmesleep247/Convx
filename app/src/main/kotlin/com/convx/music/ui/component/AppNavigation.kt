@@ -25,14 +25,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.AppTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
-import androidx.compose.material3.Text
+import com.convx.music.ui.ios.compat.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
@@ -90,10 +90,13 @@ internal fun rememberStickySelectedRoute(
     val matched = navigationItems.firstOrNull {
         isRouteSelected(currentRoute, it.route, navigationItems)
     }?.route
-    var last by rememberSaveable { mutableStateOf<String?>(null) }
-    LaunchedEffect(matched) { if (matched != null) last = matched }
-    return matched ?: last
+    // Held outside composition state on purpose: the bar is rebuilt whenever search opens or closes, and a
+    // remembered copy was lost each time, leaving the selected slot empty on a page reached from search.
+    LaunchedEffect(matched) { if (matched != null) lastSelectedTabRoute = matched }
+    return matched ?: lastSelectedTabRoute
 }
+
+private var lastSelectedTabRoute: String? by mutableStateOf(null)
 
 @Composable
 fun AppNavigationRail(
@@ -104,7 +107,7 @@ fun AppNavigationRail(
     pureBlack: Boolean = false,
     onSearchLongClick: (() -> Unit)? = null
 ) {
-    val containerColor = if (pureBlack) Color.Black else MaterialTheme.colorScheme.surfaceContainer
+    val containerColor = if (pureBlack) Color.Black else AppTheme.colorScheme.surfaceContainer
     val haptics = LocalHapticFeedback.current
     val viewConfiguration = LocalViewConfiguration.current
 
@@ -122,11 +125,7 @@ fun AppNavigationRail(
 
             val isSearchItem = screen == Screens.Search && onSearchLongClick != null
             val interactionSource = remember { MutableInteractionSource() }
-            // LaunchedEffect(interactionSource) only launches once (interactionSource's
-            // identity never changes), so its collectLatest closure would otherwise
-            // freeze isSelected at whatever it was on that first launch — every tap
-            // afterward re-reads that stale value instead of the current route.
-            // rememberUpdatedState keeps it live.
+            // Keep selected state current inside this long-lived interaction collector.
             val currentIsSelected by rememberUpdatedState(isSelected)
 
             if (isSearchItem) {
@@ -193,17 +192,17 @@ fun AppLandscapeRail(
         useGlass -> Color.Transparent
         pureBlack -> Color.Black
         appBackgroundColorInt != 0 -> Color(appBackgroundColorInt)
-        else -> MaterialTheme.colorScheme.surfaceContainerHigh
+        else -> AppTheme.colorScheme.surfaceContainerLow
     }
 
     val selectedContentColor = com.convx.music.ui.theme.LocalAccentColor.current
     // Non-glass fell back to hardcoded white, which is invisible on a light
-    // theme. glassConfig.textColor is already the adaptive colour (computed from
-    // what the surface composites to); onSurface is its non-glass equivalent.
+    // theme. resolvedTextColor is the adaptive monochromatic chrome color;
+    // onSurface is its non-glass equivalent.
     val unselectedContentColor = when {
         appTextColorInt != 0 -> Color(appTextColorInt)
-        useGlass -> glassConfig.textColor
-        else -> MaterialTheme.colorScheme.onSurface
+        useGlass -> glassConfig.resolvedTextColor()
+        else -> AppTheme.colorScheme.onSurface
     }
 
     val railModifier = if (useGlass) {
@@ -250,7 +249,7 @@ fun AppLandscapeRail(
 
                 Text(
                     text = stringResource(screen.titleId),
-                    style = MaterialTheme.typography.labelLarge,
+                    style = AppTheme.typography.labelLarge,
                     color = if (isSelected) selectedContentColor else unselectedContentColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis

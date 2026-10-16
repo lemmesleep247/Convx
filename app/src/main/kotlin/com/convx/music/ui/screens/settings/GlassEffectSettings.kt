@@ -1,9 +1,19 @@
 package com.convx.music.ui.screens.settings
 
+import com.convx.music.ui.component.sf
+import com.convx.music.ui.component.SymbolIcon
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -24,15 +34,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.border
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.AppTheme
 import androidx.compose.foundation.clickable
-import androidx.compose.material3.Slider
-import com.convx.music.ui.component.GlassSwitchCompat as Switch
+import com.convx.music.ui.ios.compat.Slider
+import com.convx.music.ui.ios.compat.Switch
 import androidx.compose.material3.SwitchDefaults
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import com.convx.music.ui.ios.compat.Text
+import com.convx.music.ui.ios.compat.TextButton
+import com.convx.music.ui.ios.compat.TopAppBar
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -69,6 +79,7 @@ import com.convx.music.constants.HomeBackgroundPathKey
 import com.convx.music.constants.LiquidGlassChromaticAberrationKey
 import com.convx.music.constants.LiquidGlassDepthEffectKey
 import com.convx.music.constants.LiquidGlassBlurRadiusKey
+import com.convx.music.constants.MenuBackdropResolutionKey
 import com.convx.music.constants.LiquidGlassLensAmountKey
 import com.convx.music.constants.LiquidGlassLensHeightKey
 import com.convx.music.constants.LiquidGlassMiniPlayerEnabledKey
@@ -93,6 +104,7 @@ import com.convx.music.constants.LiquidGlassTextColorKey
 import com.convx.music.constants.LiquidGlassVibrancyKey
 import com.convx.music.models.MediaMetadata
 import com.convx.music.ui.component.GlassStyle
+import com.convx.music.ui.theme.GlassTintTokens
 import com.convx.music.ui.component.ColorPickerDialog
 import com.convx.music.ui.component.DefaultDialog
 import com.convx.music.ui.component.GlassEffectConfig
@@ -105,8 +117,8 @@ import com.convx.music.ui.component.isGlassAllowed
 import com.convx.music.ui.component.liquidGlass
 import com.convx.music.ui.component.shapes.ContinuousRoundedRectangle
 import com.convx.music.ui.component.IconButton as AppIconButton
-import com.convx.music.ui.component.Material3SettingsGroup
-import com.convx.music.ui.component.Material3SettingsItem
+import com.convx.music.ui.component.IosSettingsGroup
+import com.convx.music.ui.component.IosSettingsItem
 import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.utils.backToMain
 import com.convx.music.utils.rememberEnumPreference
@@ -114,6 +126,7 @@ import com.convx.music.utils.rememberPreference
 import kotlinx.coroutines.flow.MutableStateFlow
 import java.io.File
 import kotlin.math.roundToInt
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 /** Small current-color preview for a color-picker settings row's trailing content. */
 @Composable
@@ -123,7 +136,7 @@ private fun ColorSwatch(color: Color, modifier: Modifier = Modifier) {
             .size(24.dp)
             .clip(CircleShape)
             .background(color)
-            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f), CircleShape)
+            .border(1.dp, AppTheme.colorScheme.outline.copy(alpha = 0.4f), CircleShape)
     )
 }
 
@@ -132,18 +145,22 @@ private fun ColorSwatch(color: Color, modifier: Modifier = Modifier) {
 fun GlassEffectSettings(
     navController: NavController,
     scrollBehavior: TopAppBarScrollBehavior,
+    advanced: Boolean = false,
 ) {
     val (vibrancy, onVibrancyChange) = rememberPreference(
-        LiquidGlassVibrancyKey, defaultValue = 1.2f
+        LiquidGlassVibrancyKey, defaultValue = 2.0f
     )
     val (blurRadius, onBlurRadiusChange) = rememberPreference(
-        LiquidGlassBlurRadiusKey, defaultValue = 2f
+        LiquidGlassBlurRadiusKey, defaultValue = 3f
+    )
+    val (menuResolution, onMenuResolutionChange) = rememberPreference(
+        MenuBackdropResolutionKey, defaultValue = 1f
     )
     val (lensHeight, onLensHeightChange) = rememberPreference(
-        LiquidGlassLensHeightKey, defaultValue = 0.4f
+        LiquidGlassLensHeightKey, defaultValue = 0.60f
     )
     val (lensAmount, onLensAmountChange) = rememberPreference(
-        LiquidGlassLensAmountKey, defaultValue = 0.6f
+        LiquidGlassLensAmountKey, defaultValue = 0.69f
     )
     val (chromaticAberration, onChromaticAberrationChange) = rememberPreference(
         LiquidGlassChromaticAberrationKey, defaultValue = false
@@ -151,12 +168,7 @@ fun GlassEffectSettings(
     val (depthEffect, onDepthEffectChange) = rememberPreference(
         LiquidGlassDepthEffectKey, defaultValue = false
     )
-    // 0 marks the theme-adaptive default tint (see MainActivity); the picker then
-    // shows the color the current theme resolves to.
-    // 0, matching MainActivity. This used to default to a literal dark tint here
-    // while MainActivity defaulted to 0 (the adaptive sentinel), so on a fresh
-    // install the picker showed a fixed dark colour that the app was not actually
-    // using — and reading the two files gave opposite answers about the default.
+    // Zero means use the theme-adaptive tint shown by MainActivity.
     val (surfaceTintColorInt, onSurfaceTintColorChange) = rememberPreference(
         LiquidGlassSurfaceTintColorKey, defaultValue = 0
     )
@@ -173,15 +185,17 @@ fun GlassEffectSettings(
         LiquidGlassHighlightColorKey, defaultValue = 0
     )
     val (highlightOpacity, onHighlightOpacityChange) = rememberPreference(
-        LiquidGlassHighlightOpacityKey, defaultValue = 0.55f
+        LiquidGlassHighlightOpacityKey, defaultValue = 0.33f
     )
-    val adaptiveTintColor = if (MaterialTheme.colorScheme.surface.luminance() > 0.5f) {
+    val adaptiveTintColor = if (AppTheme.colorScheme.surface.luminance() > 0.5f) {
         Color(0xFFFAFAFA)
     } else {
         Color(0xFF4A4A4E)
     }
+    val settingsDark = AppTheme.colorScheme.surface.luminance() <= 0.5f
+    // Untouched (0) previews the per-theme spec default, matching MainActivity.
     val surfaceTintColor = if (surfaceTintColorInt == 0) {
-        adaptiveTintColor
+        if (settingsDark) GlassTintTokens.DefaultSurfaceDark else GlassTintTokens.DefaultSurfaceLight
     } else {
         Color(surfaceTintColorInt)
     }
@@ -196,7 +210,7 @@ fun GlassEffectSettings(
     val (adaptiveContrast, onAdaptiveContrastChange) = rememberPreference(
         LiquidGlassAdaptiveContrastKey, defaultValue = true
     )
-    val adaptiveTextColor = if (MaterialTheme.colorScheme.surface.luminance() > 0.5f) {
+    val adaptiveTextColor = if (AppTheme.colorScheme.surface.luminance() > 0.5f) {
         Color(0xFF1A1A1A)
     } else {
         Color.White
@@ -227,7 +241,7 @@ fun GlassEffectSettings(
         LiquidGlassSidePanelColorKey, defaultValue = 0
     )
     val (sidePanelSurfaceOpacity, onSidePanelSurfaceOpacityChange) = rememberPreference(
-        LiquidGlassSidePanelSurfaceOpacityKey, defaultValue = 0.5f
+        LiquidGlassSidePanelSurfaceOpacityKey, defaultValue = 0.75f
     )
     val (sidePanelTextColorInt, onSidePanelTextColorChange) = rememberPreference(
         LiquidGlassSidePanelTextColorKey, defaultValue = 0
@@ -235,11 +249,7 @@ fun GlassEffectSettings(
     val sidePanelTextColor = if (sidePanelTextColorInt == 0) adaptiveTextColor else Color(sidePanelTextColorInt)
     val sidePanelTintColor = if (sidePanelColorInt == 0) adaptiveTintColor else Color(sidePanelColorInt)
 
-    // Enabling the side panel override starts it as a copy of the current
-    // global values (rather than fixed defaults that may already differ from
-    // global), so the look doesn't jump and there's an actual starting point
-    // to dial independently from. Nav bar / mini bar has no override — it
-    // always mirrors the global settings directly.
+    // Start the side-panel override with current global values to avoid a visual jump.
     val toggleSidePanel: (Boolean) -> Unit = { enabling ->
         if (enabling) {
             onSidePanelVibrancyChange(vibrancy)
@@ -255,6 +265,7 @@ fun GlassEffectSettings(
 
     var showVibrancyDialog by rememberSaveable { mutableStateOf(false) }
     var showBlurRadiusDialog by rememberSaveable { mutableStateOf(false) }
+    var showMenuResolutionDialog by rememberSaveable { mutableStateOf(false) }
     var showLensHeightDialog by rememberSaveable { mutableStateOf(false) }
     var showLensAmountDialog by rememberSaveable { mutableStateOf(false) }
     var showSurfaceOpacityDialog by rememberSaveable { mutableStateOf(false) }
@@ -288,10 +299,12 @@ fun GlassEffectSettings(
         textColor = textColor,
     )
 
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
     Column(
         Modifier
+            .widthIn(max = 720.dp)
+            .fillMaxSize()
             .windowInsetsPadding(LocalPlayerAwareWindowInsets.current)
-            .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp),
     ) {
         GlassLivePreview(
@@ -300,70 +313,98 @@ fun GlassEffectSettings(
             // narrower than the bar it is previewing. Bleed most of that back out.
             modifier = Modifier
                 .bleedHorizontally(10.dp)
-                .padding(top = 8.dp, bottom = 16.dp),
+                .padding(top = 8.dp, bottom = 16.dp)
+                .animateContentSize(),
         )
 
-        Material3SettingsGroup(
+        Column(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "Blur strength",
+                    style = AppTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    text = "${blurRadius.roundToInt()}%",
+                    style = AppTheme.typography.bodyMedium,
+                    color = AppTheme.colorScheme.secondary,
+                )
+            }
+            Slider(
+                value = blurRadius.coerceIn(0f, 100f),
+                onValueChange = onBlurRadiusChange,
+                valueRange = 0f..100f,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+
+        Column(
+            Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState()),
+        ) {
+        AnimatedVisibility(
+            visible = advanced,
+            enter = expandVertically(animationSpec = tween(240)) + fadeIn(animationSpec = tween(200)),
+            exit = shrinkVertically(animationSpec = tween(180)) + fadeOut(animationSpec = tween(140)),
+        ) {
+        Column {
+        Text(
+            text = "Advanced glass controls",
+            style = AppTheme.typography.titleMedium,
+            color = AppTheme.colorScheme.secondary,
+            modifier = Modifier.padding(start = 4.dp, bottom = 12.dp),
+        )
+        IosSettingsGroup(
             title = stringResource(R.string.liquid_glass_effects),
             items = listOf(
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.tune),
                     title = { Text(stringResource(R.string.liquid_glass_vibrancy)) },
                     description = { Text(stringResource(R.string.liquid_glass_vibrancy_desc)) },
                     onClick = { showVibrancyDialog = true }
                 ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.sliders),
                     title = { Text(stringResource(R.string.liquid_glass_blur_radius)) },
                     description = { Text(stringResource(R.string.liquid_glass_blur_radius_desc)) },
                     onClick = { showBlurRadiusDialog = true }
                 ),
-                Material3SettingsItem(
+                IosSettingsItem(
+                    icon = painterResource(R.drawable.tune),
+                    title = { Text(stringResource(R.string.menu_backdrop_resolution)) },
+                    description = { Text(stringResource(R.string.menu_backdrop_resolution_desc)) },
+                    onClick = { showMenuResolutionDialog = true }
+                ),
+                IosSettingsItem(
                     icon = painterResource(R.drawable.tune),
                     title = { Text(stringResource(R.string.liquid_glass_lens_height)) },
                     onClick = { showLensHeightDialog = true }
                 ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.tune),
                     title = { Text(stringResource(R.string.liquid_glass_lens_amount)) },
                     onClick = { showLensAmountDialog = true }
                 ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.tune),
                     title = { Text(stringResource(R.string.liquid_glass_chromatic_aberration)) },
                     trailingContent = {
                         Switch(
                             checked = chromaticAberration,
-                            onCheckedChange = onChromaticAberrationChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (chromaticAberration) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
+                            onCheckedChange = onChromaticAberrationChange
                         )
                     },
                     onClick = { onChromaticAberrationChange(!chromaticAberration) }
                 ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.tune),
                     title = { Text(stringResource(R.string.liquid_glass_depth_effect)) },
                     trailingContent = {
                         Switch(
                             checked = depthEffect,
-                            onCheckedChange = onDepthEffectChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (depthEffect) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
+                            onCheckedChange = onDepthEffectChange
                         )
                     },
                     onClick = { onDepthEffectChange(!depthEffect) }
@@ -373,23 +414,23 @@ fun GlassEffectSettings(
 
         Spacer(modifier = Modifier.height(27.dp))
 
-        Material3SettingsGroup(
+        IosSettingsGroup(
             title = stringResource(R.string.liquid_glass_appearance),
             items = listOfNotNull(
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.palette),
                     title = { Text(stringResource(R.string.liquid_glass_surface_tint)) },
                     description = { Text(stringResource(R.string.liquid_glass_surface_tint_desc)) },
                     trailingContent = { ColorSwatch(surfaceTintColor) },
                     onClick = { showSurfaceTintDialog = true }
                 ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.tune),
                     title = { Text(stringResource(R.string.liquid_glass_surface_opacity)) },
                     description = { Text(stringResource(R.string.liquid_glass_surface_opacity_desc)) },
                     onClick = { showSurfaceOpacityDialog = true }
                 ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.tune),
                     title = { Text(stringResource(R.string.liquid_glass_style)) },
                     description = {
@@ -405,47 +446,38 @@ fun GlassEffectSettings(
                     },
                     onClick = { showGlassStyleDialog = true }
                 ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.palette),
                     title = { Text(stringResource(R.string.liquid_glass_puck_color)) },
                     description = { Text(stringResource(R.string.liquid_glass_puck_color_desc)) },
                     onClick = { showPuckColorDialog = true }
                 ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.tune),
                     title = { Text(stringResource(R.string.liquid_glass_puck_opacity)) },
                     description = { Text(stringResource(R.string.liquid_glass_puck_opacity_desc)) },
                     onClick = { showPuckOpacityDialog = true }
                 ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.palette),
                     title = { Text(stringResource(R.string.liquid_glass_highlight_color)) },
                     description = { Text(stringResource(R.string.liquid_glass_highlight_color_desc)) },
                     onClick = { showHighlightColorDialog = true }
                 ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.tune),
                     title = { Text(stringResource(R.string.liquid_glass_highlight_opacity)) },
                     description = { Text(stringResource(R.string.liquid_glass_highlight_opacity_desc)) },
                     onClick = { showHighlightOpacityDialog = true }
                 ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.contrast),
                     title = { Text(stringResource(R.string.liquid_glass_adaptive_contrast)) },
                     description = { Text(stringResource(R.string.liquid_glass_adaptive_contrast_desc)) },
                     trailingContent = {
                         Switch(
                             checked = adaptiveContrast,
-                            onCheckedChange = onAdaptiveContrastChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (adaptiveContrast) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize),
-                                )
-                            }
+                            onCheckedChange = onAdaptiveContrastChange
                         )
                     },
                     onClick = { onAdaptiveContrastChange(!adaptiveContrast) }
@@ -455,7 +487,7 @@ fun GlassEffectSettings(
                 if (adaptiveContrast) {
                     null
                 } else {
-                    Material3SettingsItem(
+                    IosSettingsItem(
                         icon = painterResource(R.drawable.palette),
                         title = { Text(stringResource(R.string.liquid_glass_text_color)) },
                         description = { Text(stringResource(R.string.liquid_glass_text_color_desc)) },
@@ -468,66 +500,39 @@ fun GlassEffectSettings(
 
         Spacer(modifier = Modifier.height(27.dp))
 
-        Material3SettingsGroup(
+        IosSettingsGroup(
             title = stringResource(R.string.liquid_glass_per_component),
             items = listOf(
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.music_note),
                     title = { Text(stringResource(R.string.liquid_glass_mini_player)) },
                     trailingContent = {
                         Switch(
                             checked = miniPlayerEnabled,
-                            onCheckedChange = onMiniPlayerEnabledChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (miniPlayerEnabled) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
+                            onCheckedChange = onMiniPlayerEnabledChange
                         )
                     },
                     onClick = { onMiniPlayerEnabledChange(!miniPlayerEnabled) }
                 ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.nav_bar),
                     title = { Text(stringResource(R.string.liquid_glass_nav_bar)) },
                     trailingContent = {
                         Switch(
                             checked = navBarEnabled,
-                            onCheckedChange = onNavBarEnabledChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (navBarEnabled) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
+                            onCheckedChange = onNavBarEnabledChange
                         )
                     },
                     onClick = { onNavBarEnabledChange(!navBarEnabled) }
                 ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.nav_bar),
                     title = { Text(stringResource(R.string.liquid_glass_side_panel)) },
                     description = { Text(stringResource(R.string.liquid_glass_side_panel_desc)) },
                     trailingContent = {
                         Switch(
                             checked = sidePanelEnabled,
-                            onCheckedChange = toggleSidePanel,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (sidePanelEnabled) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
+                            onCheckedChange = toggleSidePanel
                         )
                     },
                     onClick = { toggleSidePanel(!sidePanelEnabled) }
@@ -538,42 +543,42 @@ fun GlassEffectSettings(
         if (sidePanelEnabled) {
             Spacer(modifier = Modifier.height(27.dp))
 
-            Material3SettingsGroup(
+            IosSettingsGroup(
                 title = stringResource(R.string.liquid_glass_side_panel_overrides),
                 items = listOf(
-                    Material3SettingsItem(
+                    IosSettingsItem(
                         icon = painterResource(R.drawable.tune),
                         title = { Text(stringResource(R.string.liquid_glass_vibrancy)) },
                         onClick = { showSidePanelVibrancyDialog = true }
                     ),
-                    Material3SettingsItem(
+                    IosSettingsItem(
                         icon = painterResource(R.drawable.sliders),
                         title = { Text(stringResource(R.string.liquid_glass_blur_radius)) },
                         onClick = { showSidePanelBlurRadiusDialog = true }
                     ),
-                    Material3SettingsItem(
+                    IosSettingsItem(
                         icon = painterResource(R.drawable.tune),
                         title = { Text(stringResource(R.string.liquid_glass_lens_height)) },
                         onClick = { showSidePanelLensHeightDialog = true }
                     ),
-                    Material3SettingsItem(
+                    IosSettingsItem(
                         icon = painterResource(R.drawable.tune),
                         title = { Text(stringResource(R.string.liquid_glass_lens_amount)) },
                         onClick = { showSidePanelLensAmountDialog = true }
                     ),
-                    Material3SettingsItem(
+                    IosSettingsItem(
                         icon = painterResource(R.drawable.palette),
                         title = { Text(stringResource(R.string.liquid_glass_surface_tint)) },
                         description = { Text(stringResource(R.string.liquid_glass_side_panel_surface_tint_desc)) },
                         trailingContent = { ColorSwatch(sidePanelTintColor) },
                         onClick = { showSidePanelColorDialog = true }
                     ),
-                    Material3SettingsItem(
+                    IosSettingsItem(
                         icon = painterResource(R.drawable.tune),
                         title = { Text(stringResource(R.string.liquid_glass_surface_opacity)) },
                         onClick = { showSidePanelSurfaceOpacityDialog = true }
                     ),
-                    Material3SettingsItem(
+                    IosSettingsItem(
                         icon = painterResource(R.drawable.palette),
                         title = { Text(stringResource(R.string.liquid_glass_text_color)) },
                         description = { Text(stringResource(R.string.liquid_glass_side_panel_text_color_desc)) },
@@ -586,6 +591,29 @@ fun GlassEffectSettings(
 
 
         Spacer(modifier = Modifier.height(16.dp))
+        }
+        }
+        AnimatedVisibility(
+            visible = !advanced,
+            enter = expandVertically(animationSpec = tween(220)) + fadeIn(animationSpec = tween(180)),
+            exit = shrinkVertically(animationSpec = tween(180)) + fadeOut(animationSpec = tween(140)),
+        ) {
+            Column {
+            IosSettingsGroup(
+                title = "More controls",
+                items = listOf(
+                    IosSettingsItem(
+                        icon = painterResource(R.drawable.tune),
+                        title = { Text("Advanced glass settings") },
+                        description = { Text("Style, color, highlights and per-component effects") },
+                        onClick = { navController.navigate("settings/appearance/liquidglass/advanced") },
+                    ),
+                ),
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            }
+        }
+    }
     }
 
     if (showVibrancyDialog) {
@@ -593,15 +621,15 @@ fun GlassEffectSettings(
         DefaultDialog(
             onDismiss = { tempValue = vibrancy; showVibrancyDialog = false },
             buttons = {
-                TextButton(onClick = { tempValue = 1f }) { Text(stringResource(R.string.reset)) }
+                TextButton(onClick = { tempValue = 2.0f }) { Text(stringResource(R.string.reset)) }
                 Spacer(modifier = Modifier.weight(1f))
                 TextButton(onClick = { tempValue = vibrancy; showVibrancyDialog = false }) { Text(stringResource(android.R.string.cancel)) }
                 TextButton(onClick = { onVibrancyChange(tempValue); showVibrancyDialog = false }) { Text(stringResource(android.R.string.ok)) }
             }
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(16.dp)) {
-                Text(text = stringResource(R.string.liquid_glass_vibrancy), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 16.dp))
-                Text(text = "%.2f".format(tempValue), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(bottom = 16.dp))
+                Text(text = stringResource(R.string.liquid_glass_vibrancy), style = AppTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 16.dp))
+                Text(text = "%.2f".format(tempValue), style = AppTheme.typography.bodyLarge, modifier = Modifier.padding(bottom = 16.dp))
                 Slider(value = tempValue, onValueChange = { tempValue = it }, valueRange = 0f..2f, modifier = Modifier.fillMaxWidth())
             }
         }
@@ -612,16 +640,35 @@ fun GlassEffectSettings(
         DefaultDialog(
             onDismiss = { tempValue = blurRadius; showBlurRadiusDialog = false },
             buttons = {
-                TextButton(onClick = { tempValue = 8f }) { Text(stringResource(R.string.reset)) }
+                TextButton(onClick = { tempValue = 3f }) { Text(stringResource(R.string.reset)) }
                 Spacer(modifier = Modifier.weight(1f))
                 TextButton(onClick = { tempValue = blurRadius; showBlurRadiusDialog = false }) { Text(stringResource(android.R.string.cancel)) }
                 TextButton(onClick = { onBlurRadiusChange(tempValue); showBlurRadiusDialog = false }) { Text(stringResource(android.R.string.ok)) }
             }
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(16.dp)) {
-                Text(text = stringResource(R.string.liquid_glass_blur_radius), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 16.dp))
-                Text(text = "%.0f".format(tempValue), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(bottom = 16.dp))
+                Text(text = stringResource(R.string.liquid_glass_blur_radius), style = AppTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 16.dp))
+                Text(text = "%.0f".format(tempValue), style = AppTheme.typography.bodyLarge, modifier = Modifier.padding(bottom = 16.dp))
                 Slider(value = tempValue, onValueChange = { tempValue = it }, valueRange = 0f..100f, modifier = Modifier.fillMaxWidth())
+            }
+        }
+    }
+
+    if (showMenuResolutionDialog) {
+        var tempValue by remember { mutableFloatStateOf(menuResolution) }
+        DefaultDialog(
+            onDismiss = { tempValue = menuResolution; showMenuResolutionDialog = false },
+            buttons = {
+                TextButton(onClick = { tempValue = 1f }) { Text(stringResource(R.string.reset)) }
+                Spacer(modifier = Modifier.weight(1f))
+                TextButton(onClick = { tempValue = menuResolution; showMenuResolutionDialog = false }) { Text(stringResource(android.R.string.cancel)) }
+                TextButton(onClick = { onMenuResolutionChange(tempValue); showMenuResolutionDialog = false }) { Text(stringResource(android.R.string.ok)) }
+            }
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(16.dp)) {
+                Text(text = stringResource(R.string.menu_backdrop_resolution), style = AppTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 16.dp))
+                Text(text = "%d%%".format((tempValue * 100).toInt()), style = AppTheme.typography.bodyLarge, modifier = Modifier.padding(bottom = 16.dp))
+                Slider(value = tempValue, onValueChange = { tempValue = it }, valueRange = 0.3f..1f, modifier = Modifier.fillMaxWidth())
             }
         }
     }
@@ -631,15 +678,15 @@ fun GlassEffectSettings(
         DefaultDialog(
             onDismiss = { tempValue = lensHeight; showLensHeightDialog = false },
             buttons = {
-                TextButton(onClick = { tempValue = 0.5f }) { Text(stringResource(R.string.reset)) }
+                TextButton(onClick = { tempValue = 0.60f }) { Text(stringResource(R.string.reset)) }
                 Spacer(modifier = Modifier.weight(1f))
                 TextButton(onClick = { tempValue = lensHeight; showLensHeightDialog = false }) { Text(stringResource(android.R.string.cancel)) }
                 TextButton(onClick = { onLensHeightChange(tempValue); showLensHeightDialog = false }) { Text(stringResource(android.R.string.ok)) }
             }
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(16.dp)) {
-                Text(text = stringResource(R.string.liquid_glass_lens_height), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 16.dp))
-                Text(text = "%.2f".format(tempValue), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(bottom = 16.dp))
+                Text(text = stringResource(R.string.liquid_glass_lens_height), style = AppTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 16.dp))
+                Text(text = "%.2f".format(tempValue), style = AppTheme.typography.bodyLarge, modifier = Modifier.padding(bottom = 16.dp))
                 // Range runs past 1.0: 1.0 is the old maximum (LENS_MAX_DP), and the
                 // glass could not be pushed any thicker than that no matter how far
                 // the slider went. Values above 1 scale beyond it.
@@ -653,15 +700,15 @@ fun GlassEffectSettings(
         DefaultDialog(
             onDismiss = { tempValue = lensAmount; showLensAmountDialog = false },
             buttons = {
-                TextButton(onClick = { tempValue = 0.5f }) { Text(stringResource(R.string.reset)) }
+                TextButton(onClick = { tempValue = 0.69f }) { Text(stringResource(R.string.reset)) }
                 Spacer(modifier = Modifier.weight(1f))
                 TextButton(onClick = { tempValue = lensAmount; showLensAmountDialog = false }) { Text(stringResource(android.R.string.cancel)) }
                 TextButton(onClick = { onLensAmountChange(tempValue); showLensAmountDialog = false }) { Text(stringResource(android.R.string.ok)) }
             }
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(16.dp)) {
-                Text(text = stringResource(R.string.liquid_glass_lens_amount), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 16.dp))
-                Text(text = "%.2f".format(tempValue), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(bottom = 16.dp))
+                Text(text = stringResource(R.string.liquid_glass_lens_amount), style = AppTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 16.dp))
+                Text(text = "%.2f".format(tempValue), style = AppTheme.typography.bodyLarge, modifier = Modifier.padding(bottom = 16.dp))
                 // See the lens-height dialog above for why this runs to 2.
                 Slider(value = tempValue, onValueChange = { tempValue = it }, valueRange = 0f..2f, modifier = Modifier.fillMaxWidth())
             }
@@ -680,8 +727,8 @@ fun GlassEffectSettings(
             }
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(16.dp)) {
-                Text(text = stringResource(R.string.liquid_glass_vibrancy), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 16.dp))
-                Text(text = "%.2f".format(tempValue), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(bottom = 16.dp))
+                Text(text = stringResource(R.string.liquid_glass_vibrancy), style = AppTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 16.dp))
+                Text(text = "%.2f".format(tempValue), style = AppTheme.typography.bodyLarge, modifier = Modifier.padding(bottom = 16.dp))
                 Slider(value = tempValue, onValueChange = { tempValue = it }, valueRange = 0f..2f, modifier = Modifier.fillMaxWidth())
             }
         }
@@ -699,8 +746,8 @@ fun GlassEffectSettings(
             }
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(16.dp)) {
-                Text(text = stringResource(R.string.liquid_glass_blur_radius), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 16.dp))
-                Text(text = "%.0f".format(tempValue), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(bottom = 16.dp))
+                Text(text = stringResource(R.string.liquid_glass_blur_radius), style = AppTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 16.dp))
+                Text(text = "%.0f".format(tempValue), style = AppTheme.typography.bodyLarge, modifier = Modifier.padding(bottom = 16.dp))
                 Slider(value = tempValue, onValueChange = { tempValue = it }, valueRange = 0f..100f, modifier = Modifier.fillMaxWidth())
             }
         }
@@ -718,8 +765,8 @@ fun GlassEffectSettings(
             }
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(16.dp)) {
-                Text(text = stringResource(R.string.liquid_glass_lens_height), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 16.dp))
-                Text(text = "%.2f".format(tempValue), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(bottom = 16.dp))
+                Text(text = stringResource(R.string.liquid_glass_lens_height), style = AppTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 16.dp))
+                Text(text = "%.2f".format(tempValue), style = AppTheme.typography.bodyLarge, modifier = Modifier.padding(bottom = 16.dp))
                 // Range runs past 1.0: 1.0 is the old maximum (LENS_MAX_DP), and the
                 // glass could not be pushed any thicker than that no matter how far
                 // the slider went. Values above 1 scale beyond it.
@@ -740,8 +787,8 @@ fun GlassEffectSettings(
             }
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(16.dp)) {
-                Text(text = stringResource(R.string.liquid_glass_lens_amount), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 16.dp))
-                Text(text = "%.2f".format(tempValue), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(bottom = 16.dp))
+                Text(text = stringResource(R.string.liquid_glass_lens_amount), style = AppTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 16.dp))
+                Text(text = "%.2f".format(tempValue), style = AppTheme.typography.bodyLarge, modifier = Modifier.padding(bottom = 16.dp))
                 // See the lens-height dialog above for why this runs to 2.
                 Slider(value = tempValue, onValueChange = { tempValue = it }, valueRange = 0f..2f, modifier = Modifier.fillMaxWidth())
             }
@@ -760,8 +807,8 @@ fun GlassEffectSettings(
             }
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(16.dp)) {
-                Text(text = stringResource(R.string.liquid_glass_surface_opacity), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 16.dp))
-                Text(text = "%.2f".format(tempValue), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(bottom = 16.dp))
+                Text(text = stringResource(R.string.liquid_glass_surface_opacity), style = AppTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 16.dp))
+                Text(text = "%.2f".format(tempValue), style = AppTheme.typography.bodyLarge, modifier = Modifier.padding(bottom = 16.dp))
                 Slider(value = tempValue, onValueChange = { tempValue = it }, valueRange = 0f..1f, modifier = Modifier.fillMaxWidth())
             }
         }
@@ -801,15 +848,15 @@ fun GlassEffectSettings(
         DefaultDialog(
             onDismiss = { tempValue = surfaceOpacity; showSurfaceOpacityDialog = false },
             buttons = {
-                TextButton(onClick = { tempValue = 0.3f }) { Text(stringResource(R.string.reset)) }
+                TextButton(onClick = { tempValue = if (settingsDark) GlassTintTokens.DefaultSurfaceOpacityDark else GlassTintTokens.DefaultSurfaceOpacityLight }) { Text(stringResource(R.string.reset)) }
                 Spacer(modifier = Modifier.weight(1f))
                 TextButton(onClick = { tempValue = surfaceOpacity; showSurfaceOpacityDialog = false }) { Text(stringResource(android.R.string.cancel)) }
                 TextButton(onClick = { onSurfaceOpacityChange(tempValue); showSurfaceOpacityDialog = false }) { Text(stringResource(android.R.string.ok)) }
             }
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(16.dp)) {
-                Text(text = stringResource(R.string.liquid_glass_surface_opacity), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 16.dp))
-                Text(text = "%.2f".format(tempValue), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(bottom = 16.dp))
+                Text(text = stringResource(R.string.liquid_glass_surface_opacity), style = AppTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 16.dp))
+                Text(text = "%.2f".format(tempValue), style = AppTheme.typography.bodyLarge, modifier = Modifier.padding(bottom = 16.dp))
                 Slider(value = tempValue, onValueChange = { tempValue = it }, valueRange = 0f..1f, modifier = Modifier.fillMaxWidth())
             }
         }
@@ -826,7 +873,7 @@ fun GlassEffectSettings(
             Column(modifier = Modifier.padding(16.dp)) {
                 Text(
                     text = stringResource(R.string.liquid_glass_style),
-                    style = MaterialTheme.typography.headlineSmall,
+                    style = AppTheme.typography.headlineSmall,
                     modifier = Modifier.padding(bottom = 12.dp),
                 )
                 GlassStyle.entries.forEach { style ->
@@ -846,14 +893,14 @@ fun GlassEffectSettings(
                     ) {
                         Text(
                             text = stringResource(label),
-                            style = MaterialTheme.typography.titleMedium,
-                            color = if (style == glassStyle) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.onSurface,
+                            style = AppTheme.typography.titleMedium,
+                            color = if (style == glassStyle) AppTheme.colorScheme.primary
+                                else AppTheme.colorScheme.onSurface,
                         )
                         Text(
                             text = stringResource(desc),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = AppTheme.typography.bodySmall,
+                            color = AppTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
@@ -863,7 +910,11 @@ fun GlassEffectSettings(
 
     if (showPuckColorDialog) {
         ColorPickerDialog(
-            initialColor = if (puckColorInt == 0) Color(0xFF1C1B1C) else Color(puckColorInt),
+            initialColor = if (puckColorInt == 0) {
+                if (settingsDark) GlassTintTokens.DefaultPuckDark else GlassTintTokens.DefaultPuckLight
+            } else {
+                Color(puckColorInt)
+            },
             title = stringResource(R.string.liquid_glass_puck_color),
             onDismiss = { showPuckColorDialog = false },
             onConfirm = { color ->
@@ -883,15 +934,15 @@ fun GlassEffectSettings(
         DefaultDialog(
             onDismiss = { tempValue = puckOpacity; showPuckOpacityDialog = false },
             buttons = {
-                TextButton(onClick = { tempValue = 0.8f }) { Text(stringResource(R.string.reset)) }
+                TextButton(onClick = { tempValue = if (settingsDark) GlassTintTokens.DefaultPuckOpacityDark else GlassTintTokens.DefaultPuckOpacityLight }) { Text(stringResource(R.string.reset)) }
                 Spacer(modifier = Modifier.weight(1f))
                 TextButton(onClick = { tempValue = puckOpacity; showPuckOpacityDialog = false }) { Text(stringResource(android.R.string.cancel)) }
                 TextButton(onClick = { onPuckOpacityChange(tempValue); showPuckOpacityDialog = false }) { Text(stringResource(android.R.string.ok)) }
             }
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(16.dp)) {
-                Text(text = stringResource(R.string.liquid_glass_puck_opacity), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 16.dp))
-                Text(text = "%.2f".format(tempValue), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(bottom = 16.dp))
+                Text(text = stringResource(R.string.liquid_glass_puck_opacity), style = AppTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 16.dp))
+                Text(text = "%.2f".format(tempValue), style = AppTheme.typography.bodyLarge, modifier = Modifier.padding(bottom = 16.dp))
                 Slider(value = tempValue, onValueChange = { tempValue = it }, valueRange = 0f..1f, modifier = Modifier.fillMaxWidth())
             }
         }
@@ -899,7 +950,11 @@ fun GlassEffectSettings(
 
     if (showHighlightColorDialog) {
         ColorPickerDialog(
-            initialColor = if (highlightColorInt == 0) Color.White else Color(highlightColorInt),
+            initialColor = if (highlightColorInt == 0) {
+                if (settingsDark) GlassTintTokens.DefaultHighlightDark else GlassTintTokens.DefaultHighlightLight
+            } else {
+                Color(highlightColorInt)
+            },
             title = stringResource(R.string.liquid_glass_highlight_color),
             onDismiss = { showHighlightColorDialog = false },
             onConfirm = { color ->
@@ -918,15 +973,15 @@ fun GlassEffectSettings(
         DefaultDialog(
             onDismiss = { tempValue = highlightOpacity; showHighlightOpacityDialog = false },
             buttons = {
-                TextButton(onClick = { tempValue = 0.55f }) { Text(stringResource(R.string.reset)) }
+                TextButton(onClick = { tempValue = if (settingsDark) GlassTintTokens.DefaultHighlightOpacityDark else GlassTintTokens.DefaultHighlightOpacityLight }) { Text(stringResource(R.string.reset)) }
                 Spacer(modifier = Modifier.weight(1f))
                 TextButton(onClick = { tempValue = highlightOpacity; showHighlightOpacityDialog = false }) { Text(stringResource(android.R.string.cancel)) }
                 TextButton(onClick = { onHighlightOpacityChange(tempValue); showHighlightOpacityDialog = false }) { Text(stringResource(android.R.string.ok)) }
             }
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(16.dp)) {
-                Text(text = stringResource(R.string.liquid_glass_highlight_opacity), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 16.dp))
-                Text(text = "%.2f".format(tempValue), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(bottom = 16.dp))
+                Text(text = stringResource(R.string.liquid_glass_highlight_opacity), style = AppTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 16.dp))
+                Text(text = "%.2f".format(tempValue), style = AppTheme.typography.bodyLarge, modifier = Modifier.padding(bottom = 16.dp))
                 Slider(value = tempValue, onValueChange = { tempValue = it }, valueRange = 0f..1f, modifier = Modifier.fillMaxWidth())
             }
         }
@@ -962,6 +1017,8 @@ fun GlassEffectSettings(
         )
     }
 
+    }
+
     TopAppBar(
             windowInsets = appTopBarWindowInsets(),
         title = { Text(stringResource(R.string.liquid_glass_settings)) },
@@ -970,25 +1027,18 @@ fun GlassEffectSettings(
                 onClick = navController::navigateUp,
                 onLongClick = navController::backToMain,
             ) {
-                Icon(
-                    painterResource(R.drawable.arrow_back),
-                    contentDescription = null,
-                )
+                SymbolIcon(symbol = sf("arrow.left"), contentDescription = null)
             }
         }
     )
 }
 
 /**
- * Live sample of the current glass settings: a mock nav bar over real content.
+ * Live preview of the glass settings: a mock nav bar over real content.
  *
- * The glass surfaces sample [previewBackdrop], which captures ONLY the image panel
- * they sit over. That sibling relationship is load-bearing, not stylistic: a glass
- * surface may sample an attached backdrop only when it is NOT inside that backdrop's
- * layer. Sampling the ambient [LocalAppBackdrop] here would make the app-wide capture
- * include these pills, which re-enters RenderNode::prepareTreeImpl and hard-crashes
- * the renderer — the same cycle that used to kill the artist and playlist screens.
- * So the panel is captured on its own and the bar is drawn next to it, never within it.
+ * Glass surfaces must sit outside the backdrop layer they sample. Capture only the
+ * image panel here; sampling [LocalAppBackdrop] would include the pills and recurse
+ * into `RenderNode::prepareTreeImpl`, crashing the renderer.
  */
 @Composable
 private fun GlassLivePreview(
@@ -1003,7 +1053,7 @@ private fun GlassLivePreview(
     val playerConnection = LocalPlayerConnection.current
     val mediaMetadata by remember(playerConnection) {
         playerConnection?.mediaMetadata ?: MutableStateFlow<MediaMetadata?>(null)
-    }.collectAsState()
+    }.collectAsStateWithLifecycle()
 
     // Failing a playing song, the user's own home background — it is literally what
     // sits behind the real nav bar, so it is the most honest thing to preview over.

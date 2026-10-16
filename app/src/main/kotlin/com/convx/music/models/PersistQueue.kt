@@ -21,10 +21,21 @@ data class PersistQueue(
 
 @Immutable
 sealed class QueueType : Serializable {
-    object LIST : QueueType()
-    object YOUTUBE : QueueType()
-    object YOUTUBE_ALBUM_RADIO : QueueType()
-    object LOCAL_ALBUM_RADIO : QueueType()
+    object LIST : QueueType() {
+        private fun readResolve(): Any = LIST
+    }
+
+    object YOUTUBE : QueueType() {
+        private fun readResolve(): Any = YOUTUBE
+    }
+
+    object YOUTUBE_ALBUM_RADIO : QueueType() {
+        private fun readResolve(): Any = YOUTUBE_ALBUM_RADIO
+    }
+
+    object LOCAL_ALBUM_RADIO : QueueType() {
+        private fun readResolve(): Any = LOCAL_ALBUM_RADIO
+    }
 }
 
 @Stable

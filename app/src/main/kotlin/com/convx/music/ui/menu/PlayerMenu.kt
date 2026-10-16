@@ -5,10 +5,19 @@
 
 package com.convx.music.ui.menu
 
+import com.convx.music.ui.component.DownloadRingIcon
+import com.convx.music.ui.component.sf
+import com.convx.music.ui.component.SymbolIcon
+import com.convx.music.ui.component.menuBottomInset
 import android.content.Context
 import android.content.res.Configuration
 import android.widget.Toast
 import androidx.annotation.DrawableRes
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.composables.sfsymbols.SfSymbols
+import com.composables.sfsymbols.monochrome.SFGaugeWithNeedle
+import com.composables.sfsymbols.monochrome.SFSliderHorizontal3
+import com.composables.sfsymbols.monochrome.SFBellFill
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -29,22 +38,23 @@ import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import com.convx.music.ui.component.shapes.ContinuousCapsule
+import com.convx.music.ui.component.shapes.ContinuousRoundedRectangle
+import com.convx.music.ui.ios.compat.AlertDialog
+import com.convx.music.ui.ios.compat.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import com.convx.music.ui.ios.compat.CircularProgressIndicator
+import com.convx.music.ui.ios.compat.FilledTonalButton
+import com.convx.music.ui.ios.compat.HorizontalDivider
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.IconButton
+import com.convx.music.ui.ios.compat.LinearProgressIndicator
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.convx.music.ui.ios.compat.Surface
+import com.convx.music.ui.ios.compat.Text
+import com.convx.music.ui.ios.compat.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -87,21 +97,23 @@ import com.convx.music.listentogether.MAX_ROOM_CODE_LENGTH
 import com.convx.music.listentogether.MIN_ROOM_CODE_LENGTH
 import com.convx.music.models.MediaMetadata
 import com.convx.music.playback.ExoDownloadService
+import com.convx.music.core.AudioDeviceMenu
 import com.convx.music.ui.component.BottomSheetState
 import com.convx.music.ui.component.ListDialog
-import com.convx.music.ui.component.Material3MenuGroup
-import com.convx.music.ui.component.Material3MenuItemData
+import com.convx.music.ui.component.IosMenuGroup
+import com.convx.music.ui.component.IosMenuItemData
 import com.convx.music.ui.component.NewAction
 import com.convx.music.ui.component.NewActionGrid
-import com.convx.music.ui.component.VolumeSlider
-import com.convx.music.ui.theme.rememberGlobalAccentColors
 import com.convx.music.constants.EnableSaavnStreamingKey
 import com.convx.music.utils.rememberPreference
+import com.convx.music.ui.player.rememberSleepTimerState
+import com.convx.music.ui.player.SleepTimerDialogHost
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlin.math.log2
 import kotlin.math.pow
 import kotlin.math.round
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @Composable
 fun PlayerMenu(
@@ -115,27 +127,17 @@ fun PlayerMenu(
     mediaMetadata ?: return
     val context = LocalContext.current
     val ringtoneViewModel = com.convx.music.LocalRingtoneViewModel.current
-    val database = LocalDatabase.current
+    val database = LocalDatabase.current.get()
     val playerConnection = LocalPlayerConnection.current ?: return
-    val playerVolume = playerConnection.service.playerVolume.collectAsState()
-    
-    // Cast state for volume control - safely access castConnectionHandler to prevent crashes
-    val castHandler = remember(playerConnection) {
-        try {
-            playerConnection.service.castConnectionHandler
-        } catch (e: Exception) {
-            null
-        }
-    }
-    val isCasting by castHandler?.isCasting?.collectAsState() ?: remember { mutableStateOf(false) }
-    val castVolume by castHandler?.castVolume?.collectAsState() ?: remember { mutableFloatStateOf(1f) }
-    val castDeviceName by castHandler?.castDeviceName?.collectAsState() ?: remember { mutableStateOf<String?>(null) }
-    
+    val sleepTimer = rememberSleepTimerState(playerConnection)
+    SleepTimerDialogHost(playerConnection, sleepTimer)
+    var showAudioDevices by remember { mutableStateOf(false) }
+    if (showAudioDevices) AudioDeviceMenu(onDismiss = { showAudioDevices = false })
     val librarySong by database.song(mediaMetadata.id).collectAsState(initial = null)
     val coroutineScope = rememberCoroutineScope()
     val (saavnEnabled) = rememberPreference(EnableSaavnStreamingKey, defaultValue = false)
 
-    val download by LocalDownloadUtil.current.getDownload(mediaMetadata.id)
+    val download by LocalDownloadUtil.current.get().getDownload(mediaMetadata.id)
         .collectAsState(initial = null)
 
     val artists =
@@ -188,7 +190,7 @@ fun PlayerMenu(
         ListDialog(
             onDismiss = { showSelectArtistDialog = false },
         ) {
-            items(artists) { artist ->
+            items(artists, key = { it.id!! }) { artist ->
                 Box(
                     contentAlignment = Alignment.CenterStart,
                     modifier =
@@ -225,55 +227,6 @@ fun PlayerMenu(
         )
     }
 
-    if (isQueueTrigger != true) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp)
-                .padding(top = 24.dp, bottom = 6.dp),
-        ) {
-            // Show Cast indicator when casting
-            if (isCasting && castDeviceName != null) {
-                Row(
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 16.dp)
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.cast),
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Text(
-                        text = stringResource(R.string.casting_to, castDeviceName ?: ""),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
-            
-            // "Hide Volume Bar" only affects the player's own inline volume
-            // row now — this menu copy is the only volume control left once
-            // that row is hidden, so it always shows regardless of the setting.
-            VolumeSlider(
-                value = if (isCasting) castVolume else playerVolume.value,
-                onValueChange = { volume ->
-                    if (isCasting) {
-                        castHandler?.setVolume(volume)
-                    } else {
-                        playerConnection.service.playerVolume.value = volume
-                    }
-                },
-                modifier = Modifier.fillMaxWidth(),
-                accentColor = rememberGlobalAccentColors().first
-            )
-        }
-    }
-
     Spacer(modifier = Modifier.height(20.dp))
 
     HorizontalDivider()
@@ -288,22 +241,17 @@ fun PlayerMenu(
             start = 0.dp,
             top = 0.dp,
             end = 0.dp,
-            bottom = 8.dp + WindowInsets.systemBars.asPaddingValues().calculateBottomPadding(),
+            bottom = 8.dp + menuBottomInset(),
         ),
     ) {
         item {
             val startingRadioText = stringResource(R.string.starting_radio)
             NewActionGrid(
                 actions = listOfNotNull(
-                    if (!isListenTogetherGuest) {
+                    if (!isListenTogetherGuest && !mediaMetadata.isLocalFile) {
                         NewAction(
                             icon = {
-                                Icon(
-                                    painter = painterResource(R.drawable.radio),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(32.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                                SymbolIcon(symbol = sf("dot.radiowaves.left.and.right"), contentDescription = null, size = 32.dp)
                             },
                             text = stringResource(R.string.start_an_radio),
                             onClick = {
@@ -315,24 +263,14 @@ fun PlayerMenu(
                     } else null,
                     NewAction(
                         icon = {
-                            Icon(
-                                painter = painterResource(R.drawable.playlist_add),
-                                contentDescription = null,
-                                modifier = Modifier.size(32.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            SymbolIcon(symbol = sf("text.badge.plus"), contentDescription = null, size = 32.dp)
                         },
                         text = stringResource(R.string.add_to_an_playlist),
                         onClick = { showChoosePlaylistDialog = true }
                     ),
-                    NewAction(
+                    if (mediaMetadata.isLocalFile) null else NewAction(
                         icon = {
-                            Icon(
-                                painter = painterResource(R.drawable.share),
-                                contentDescription = null,
-                                modifier = Modifier.size(32.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            SymbolIcon(symbol = sf("square.and.arrow.up"), contentDescription = null, size = 32.dp)
                         },
                         text = stringResource(R.string.share),
                         onClick = {
@@ -355,12 +293,11 @@ fun PlayerMenu(
         }
 
         item {
-            Material3MenuGroup(
+            IosMenuGroup(
                 items = buildList {
-                    // ── Single smart Retry button ────────────────────────────
                     // Always visible. Re-triggers the full resolution chain.
                     add(
-                        Material3MenuItemData(
+                        IosMenuItemData(
                             title = { Text(text = stringResource(R.string.retry_stream)) },
                             description = {
                                 Text(
@@ -371,11 +308,7 @@ fun PlayerMenu(
                                 )
                             },
                             icon = {
-                                Icon(
-                                    painter = painterResource(R.drawable.replay),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(24.dp)
-                                )
+                                SymbolIcon(symbol = sf("arrow.counterclockwise"), contentDescription = null, size = 24.dp)
                             },
                             onClick = {
                                 val player = playerConnection.player
@@ -389,7 +322,7 @@ fun PlayerMenu(
 
                     if (artists.isNotEmpty()) {
                         add(
-                            Material3MenuItemData(
+                            IosMenuItemData(
                                 title = { Text(text = stringResource(R.string.view_artist)) },
                                 description = {
                                     Text(
@@ -399,11 +332,7 @@ fun PlayerMenu(
                                     )
                                 },
                                 icon = {
-                                    Icon(
-                                        painter = painterResource(R.drawable.artist),
-                                        contentDescription = null,
-                                        modifier = Modifier.size(24.dp)
-                                    )
+                                    SymbolIcon(symbol = sf("music.mic"), contentDescription = null, size = 24.dp)
                                 },
                                 onClick = {
                                     if (mediaMetadata.artists.size == 1) {
@@ -417,9 +346,29 @@ fun PlayerMenu(
                             )
                         )
                     }
+                    add(
+                        IosMenuItemData(
+                            title = { Text(text = stringResource(R.string.sleep_timer)) },
+                            icon = { SymbolIcon(symbol = sf("moon.zzz.fill"), contentDescription = null, size = 24.dp) },
+                            onClick = {
+                                onDismiss()
+                                sleepTimer.showDialog.value = true
+                            },
+                        )
+                    )
+                    add(
+                        IosMenuItemData(
+                            title = { Text(text = stringResource(R.string.audio_devices)) },
+                            icon = { SymbolIcon(symbol = sf("airplayaudio"), contentDescription = null, size = 24.dp) },
+                            onClick = {
+                                onDismiss()
+                                showAudioDevices = true
+                            },
+                        )
+                    )
                     if (mediaMetadata.album != null) {
                         add(
-                            Material3MenuItemData(
+                            IosMenuItemData(
                                 title = { Text(text = stringResource(R.string.view_album)) },
                                 description = {
                                     Text(
@@ -429,11 +378,7 @@ fun PlayerMenu(
                                     )
                                 },
                                 icon = {
-                                    Icon(
-                                        painter = painterResource(R.drawable.album),
-                                        contentDescription = null,
-                                        modifier = Modifier.size(24.dp)
-                                    )
+                                    SymbolIcon(symbol = sf("square.stack"), contentDescription = null, size = 24.dp)
                                 },
                                 onClick = {
                                     navController.navigate("album/${mediaMetadata.album.id}")
@@ -443,10 +388,9 @@ fun PlayerMenu(
                             )
                         )
                     }
-                    // Add to Library option
                     val isInLibrary = librarySong?.song?.inLibrary != null
                     add(
-                        Material3MenuItemData(
+                        IosMenuItemData(
                             title = { 
                                 Text(
                                     text = stringResource(
@@ -456,13 +400,10 @@ fun PlayerMenu(
                                 )
                             },
                             icon = {
-                                Icon(
-                                    painter = painterResource(
-                                        if (isInLibrary) R.drawable.library_add_check
-                                        else R.drawable.library_add
-                                    ),
+                                SymbolIcon(
+                                    symbol = if (isInLibrary) sf("text.badge.checkmark") else sf("text.badge.plus"),
                                     contentDescription = null,
-                                    modifier = Modifier.size(24.dp)
+                                    size = 24.dp,
                                 )
                             },
                             onClick = {
@@ -477,23 +418,19 @@ fun PlayerMenu(
 
         item { Spacer(modifier = Modifier.height(12.dp)) }
 
-        item {
-            Material3MenuGroup(
+        if (!mediaMetadata.isLocalFile) item {
+            IosMenuGroup(
                 items = listOf(
                     when (download?.state) {
                         Download.STATE_COMPLETED -> {
-                            Material3MenuItemData(
+                            IosMenuItemData(
                                 title = {
                                     Text(
                                         text = stringResource(R.string.remove_download)
                                     )
                                 },
                                 icon = {
-                                    Icon(
-                                        painter = painterResource(R.drawable.offline),
-                                        contentDescription = null,
-                                        modifier = Modifier.size(24.dp)
-                                    )
+                                    SymbolIcon(symbol = sf("arrow.down.circle"), contentDescription = null, size = 24.dp)
                                 },
                                 onClick = {
                                     DownloadService.sendRemoveDownload(
@@ -507,13 +444,10 @@ fun PlayerMenu(
                         }
 
                         Download.STATE_QUEUED, Download.STATE_DOWNLOADING -> {
-                            Material3MenuItemData(
+                            IosMenuItemData(
                                 title = { Text(text = stringResource(R.string.downloading)) },
                                 icon = {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(24.dp),
-                                        strokeWidth = 2.dp
-                                    )
+                                    DownloadRingIcon(download)
                                 },
                                 onClick = {
                                     DownloadService.sendRemoveDownload(
@@ -527,14 +461,10 @@ fun PlayerMenu(
                         }
 
                         else -> {
-                            Material3MenuItemData(
+                            IosMenuItemData(
                                 title = { Text(text = stringResource(R.string.action_download)) },
                                 icon = {
-                                    Icon(
-                                        painter = painterResource(R.drawable.download),
-                                        contentDescription = null,
-                                        modifier = Modifier.size(24.dp)
-                                    )
+                                    SymbolIcon(symbol = sf("arrow.down.circle"), contentDescription = null, size = 24.dp)
                                 },
                                 onClick = {
                                     database.transaction {
@@ -563,50 +493,42 @@ fun PlayerMenu(
         item { Spacer(modifier = Modifier.height(12.dp)) }
 
         item {
-            Material3MenuGroup(
+            IosMenuGroup(
                 items = buildList {
                     add(
-                        Material3MenuItemData(
+                        IosMenuItemData(
                             title = { Text(text = stringResource(R.string.listen_together)) },
                             icon = {
                                 // Show a small badge when there are pending suggestions
                                 Box {
-                                    Icon(
-                                        painter = painterResource(R.drawable.group),
-                                        contentDescription = null,
-                                        modifier = Modifier.size(24.dp)
-                                    )
+                                    SymbolIcon(symbol = sf("person.2.fill"), contentDescription = null, size = 24.dp)
                                     if (pendingSuggestions.isNotEmpty()) {
                                         Surface(
-                                            shape = RoundedCornerShape(12.dp),
-                                            color = MaterialTheme.colorScheme.primary,
+                                            shape = ContinuousRoundedRectangle(12.dp),
+                                            color = AppTheme.colorScheme.primary,
                                             modifier = Modifier
                                                 .offset(x = 8.dp, y = (-6).dp)
                                                 .align(Alignment.TopEnd)
                                         ) {
                                             Text(
                                                 text = pendingSuggestions.size.toString(),
-                                                color = MaterialTheme.colorScheme.onPrimary,
+                                                color = AppTheme.colorScheme.onPrimary,
                                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                                style = MaterialTheme.typography.labelSmall
+                                                style = AppTheme.typography.labelSmall
                                             )
                                         }
                                     }
                                 }
                             },
-                            onClick = { showListenTogetherDialog = true }
+                            onClick = { onDismiss(); navController.navigate("listen_together/party") }
                         )
                     )
                     if (isListenTogetherGuest) {
                         add(
-                            Material3MenuItemData(
+                            IosMenuItemData(
                                 title = { Text(text = stringResource(R.string.resync)) },
                                 icon = {
-                                    Icon(
-                                        painter = painterResource(R.drawable.replay),
-                                        contentDescription = null,
-                                        modifier = Modifier.size(24.dp)
-                                    )
+                                    SymbolIcon(symbol = sf("arrow.counterclockwise"), contentDescription = null, size = 24.dp)
                                 },
                                 onClick = {
                                     listenTogetherManager.requestSync()
@@ -622,18 +544,14 @@ fun PlayerMenu(
         item { Spacer(modifier = Modifier.height(12.dp)) }
 
         item {
-            Material3MenuGroup(
+            IosMenuGroup(
                 items = buildList {
                     add(
-                        Material3MenuItemData(
+                        IosMenuItemData(
                             title = { Text(text = stringResource(R.string.details)) },
                             description = { Text(text = stringResource(R.string.details_desc)) },
                             icon = {
-                                Icon(
-                                    painter = painterResource(R.drawable.info),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(24.dp)
-                                )
+                                SymbolIcon(symbol = sf("info.circle"), contentDescription = null, size = 24.dp)
                             },
                             onClick = {
                                 onShowDetailsDialog()
@@ -644,32 +562,24 @@ fun PlayerMenu(
 
                     if (isQueueTrigger != true) {
                         add(
-                            Material3MenuItemData(
+                            IosMenuItemData(
                                 title = { Text(text = stringResource(R.string.equalizer)) },
                                 description = { Text(text = stringResource(R.string.equalizer_desc)) },
                                 icon = {
-                                    Icon(
-                                        painter = painterResource(R.drawable.equalizer),
-                                        contentDescription = null,
-                                        modifier = Modifier.size(24.dp)
-                                    )
+                                    SymbolIcon(symbol = sf("slider.vertical.3"), contentDescription = null, size = 24.dp)
                                 },
                                 onClick = {
-                                    navController.navigate("equalizer")
+                                    navController.navigate("settings/equalizer")
                                     onDismiss()
                                 }
                             )
                         )
                         add(
-                            Material3MenuItemData(
+                            IosMenuItemData(
                                 title = { Text(text = stringResource(R.string.advanced)) },
                                 description = { Text(text = stringResource(R.string.advanced_desc)) },
                                 icon = {
-                                    Icon(
-                                        painter = painterResource(R.drawable.tune),
-                                        contentDescription = null,
-                                        modifier = Modifier.size(24.dp)
-                                    )
+                                    SymbolIcon(symbol = sf("slider.horizontal.3"), contentDescription = null, size = 24.dp)
                                 },
                                 onClick = {
                                     showPitchTempoDialog = true
@@ -678,39 +588,27 @@ fun PlayerMenu(
                         )
                     }
                     add(
-                        Material3MenuItemData(
+                        IosMenuItemData(
                             title = { Text(text = stringResource(R.string.set_as_ringtone)) },
                             icon = {
-                                Icon(
-                                    painter = painterResource(R.drawable.notification),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(24.dp)
-                                )
+                                SymbolIcon(symbol = sf("SFBellFill"), contentDescription = null, size = 24.dp)
                             },
                             onClick = {
-                                if (ringtoneViewModel.hasSettingsPermission(context)) {
-                                    ringtoneViewModel.showTrimmer(
-                                        mediaMetadata.id,
-                                        mediaMetadata.title,
-                                        mediaMetadata.artists.joinToString { it.name },
-                                        mediaMetadata.duration
-                                    )
-                                } else {
-                                    ringtoneViewModel.requestSettingsPermission(context)
-                                }
+                                ringtoneViewModel.showTrimmer(
+                                    mediaMetadata.id,
+                                    mediaMetadata.title,
+                                    mediaMetadata.artists.joinToString { it.name },
+                                    mediaMetadata.duration
+                                )
                                 onDismiss()
                             }
                         )
                     )
                     add(
-                        Material3MenuItemData(
+                        IosMenuItemData(
                             title = { Text(text = stringResource(R.string.ambient_mode)) },
                             icon = {
-                                Icon(
-                                    painter = painterResource(R.drawable.fullscreen),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(24.dp)
-                                )
+                                SymbolIcon(symbol = sf("arrow.up.left.and.arrow.down.right"), contentDescription = null, size = 24.dp)
                             },
                             onClick = {
                                 navController.navigate("ambient_mode")
@@ -769,7 +667,7 @@ fun TempoPitchDialog(onDismiss: () -> Unit) {
             Column {
                 if (!isInRoom) {
                     ValueAdjuster(
-                        icon = R.drawable.speed,
+                        icon = SfSymbols.Monochrome.SFGaugeWithNeedle,
                         currentValue = tempo,
                         values = (0..35).map { round((0.25f + it * 0.05f) * 100) / 100 },
                         onValueUpdate = {
@@ -781,7 +679,7 @@ fun TempoPitchDialog(onDismiss: () -> Unit) {
                     )
                 }
                 ValueAdjuster(
-                    icon = R.drawable.discover_tune,
+                    icon = SfSymbols.Monochrome.SFSliderHorizontal3,
                     currentValue = transposeValue,
                     values = (-12..12).toList(),
                     onValueUpdate = {
@@ -797,7 +695,7 @@ fun TempoPitchDialog(onDismiss: () -> Unit) {
 
 @Composable
 fun <T> ValueAdjuster(
-    @DrawableRes icon: Int,
+    icon: ImageVector,
     currentValue: T,
     values: List<T>,
     onValueUpdate: (T) -> Unit,
@@ -810,7 +708,7 @@ fun <T> ValueAdjuster(
         modifier = modifier,
     ) {
         Icon(
-            painter = painterResource(icon),
+            imageVector = icon,
             contentDescription = null,
             modifier = Modifier.size(28.dp),
         )
@@ -821,15 +719,12 @@ fun <T> ValueAdjuster(
                 onValueUpdate(values[values.indexOf(currentValue) - 1])
             },
         ) {
-            Icon(
-                painter = painterResource(R.drawable.remove),
-                contentDescription = null,
-            )
+            SymbolIcon(symbol = sf("minus"), contentDescription = null)
         }
 
         Text(
             text = valueText(currentValue),
-            style = MaterialTheme.typography.titleMedium,
+            style = AppTheme.typography.titleMedium,
             textAlign = TextAlign.Center,
             modifier = Modifier.width(80.dp),
         )
@@ -840,10 +735,7 @@ fun <T> ValueAdjuster(
                 onValueUpdate(values[values.indexOf(currentValue) + 1])
             },
         ) {
-            Icon(
-                painter = painterResource(R.drawable.add),
-                contentDescription = null,
-            )
+            SymbolIcon(symbol = sf("plus"), contentDescription = null)
         }
     }
 }
@@ -859,7 +751,6 @@ fun ListenTogetherDialog(
     val context = LocalContext.current
     val listenTogetherManager = com.convx.music.LocalListenTogetherManager.current
     
-    // Handle case where manager is not available
     if (listenTogetherManager == null) {
         ListDialog(onDismiss = onDismiss) {
             item {
@@ -869,31 +760,26 @@ fun ListenTogetherDialog(
                         .padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Icon(
-                        painter = painterResource(R.drawable.group),
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(48.dp)
-                    )
+                    SymbolIcon(symbol = sf("person.2.fill"), contentDescription = null, size = 48.dp, tint = AppTheme.colorScheme.primary)
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
                         text = stringResource(R.string.listen_together),
-                        style = MaterialTheme.typography.headlineSmall,
+                        style = AppTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
+                        color = AppTheme.colorScheme.primary
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = stringResource(R.string.listen_together_not_configured),
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = AppTheme.typography.bodyMedium,
                         textAlign = TextAlign.Center,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = AppTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(modifier = Modifier.height(24.dp))
                     Button(
                         onClick = onDismiss,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary
+                            containerColor = AppTheme.colorScheme.primary
                         )
                     ) {
                         Text(stringResource(android.R.string.ok))
@@ -904,13 +790,12 @@ fun ListenTogetherDialog(
         return
     }
     
-    val connectionState by listenTogetherManager.connectionState.collectAsState()
-    val roomState by listenTogetherManager.roomState.collectAsState()
-    val userId by listenTogetherManager.userId.collectAsState()
-    val pendingJoinRequests by listenTogetherManager.pendingJoinRequests.collectAsState()
-    val pendingSuggestions by listenTogetherManager.pendingSuggestions.collectAsState()
+    val connectionState by listenTogetherManager.connectionState.collectAsStateWithLifecycle()
+    val roomState by listenTogetherManager.roomState.collectAsStateWithLifecycle()
+    val userId by listenTogetherManager.userId.collectAsStateWithLifecycle()
+    val pendingJoinRequests by listenTogetherManager.pendingJoinRequests.collectAsStateWithLifecycle()
+    val pendingSuggestions by listenTogetherManager.pendingSuggestions.collectAsStateWithLifecycle()
     
-    // Load saved username
     var savedUsername by rememberPreference(com.convx.music.constants.ListenTogetherUsernameKey, "")
     var roomCodeInput by rememberSaveable { mutableStateOf("") }
     var usernameInput by rememberSaveable { mutableStateOf(savedUsername) }
@@ -945,24 +830,19 @@ fun ListenTogetherDialog(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Start
                 ) {
-                    Icon(
-                        painter = painterResource(R.drawable.group),
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(40.dp)
-                    )
+                    SymbolIcon(symbol = sf("person.2.fill"), contentDescription = null, size = 40.dp, tint = AppTheme.colorScheme.primary)
                     Spacer(modifier = Modifier.width(16.dp))
                     Column {
                         Text(
                             text = stringResource(R.string.manage_user),
-                            style = MaterialTheme.typography.headlineSmall,
+                            style = AppTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
+                            color = AppTheme.colorScheme.primary
                         )
                         Text(
                             text = selectedUsername ?: "",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            style = AppTheme.typography.bodyMedium,
+                            color = AppTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
@@ -970,7 +850,6 @@ fun ListenTogetherDialog(
             
             item { Spacer(modifier = Modifier.height(12.dp)) }
             
-            // Kick button
             item {
                 Surface(
                     modifier = Modifier
@@ -983,31 +862,26 @@ fun ListenTogetherDialog(
                             selectedUserForMenu = null
                             selectedUsername = null
                         },
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.errorContainer
+                    shape = ContinuousRoundedRectangle(12.dp),
+                    color = AppTheme.colorScheme.errorContainer
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.padding(16.dp)
                     ) {
-                        Icon(
-                            painter = painterResource(R.drawable.close),
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(24.dp)
-                        )
+                        SymbolIcon(symbol = sf("xmark"), contentDescription = null, size = 24.dp, tint = AppTheme.colorScheme.error)
                         Spacer(modifier = Modifier.width(16.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = stringResource(R.string.kick_user),
-                                style = MaterialTheme.typography.titleMedium,
+                                style = AppTheme.typography.titleMedium,
                                 fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.error
+                                color = AppTheme.colorScheme.error
                             )
                             Text(
                                 text = stringResource(R.string.kick_user_desc),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                style = AppTheme.typography.bodySmall,
+                                color = AppTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
@@ -1016,7 +890,6 @@ fun ListenTogetherDialog(
             
             item { Spacer(modifier = Modifier.height(8.dp)) }
             
-            // Permanently kick button
             item {
                 Surface(
                     modifier = Modifier
@@ -1032,31 +905,26 @@ fun ListenTogetherDialog(
                             selectedUserForMenu = null
                             selectedUsername = null
                         },
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant
+                    shape = ContinuousRoundedRectangle(12.dp),
+                    color = AppTheme.colorScheme.surfaceVariant
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.padding(16.dp)
                     ) {
-                        Icon(
-                            painter = painterResource(R.drawable.close),
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(24.dp)
-                        )
+                        SymbolIcon(symbol = sf("xmark"), contentDescription = null, size = 24.dp, tint = AppTheme.colorScheme.error)
                         Spacer(modifier = Modifier.width(16.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = stringResource(R.string.permanently_kick_user),
-                                style = MaterialTheme.typography.titleMedium,
+                                style = AppTheme.typography.titleMedium,
                                 fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurface
+                                color = AppTheme.colorScheme.onSurface
                             )
                             Text(
                                 text = stringResource(R.string.permanently_kick_user_desc),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                style = AppTheme.typography.bodySmall,
+                                color = AppTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
@@ -1065,7 +933,6 @@ fun ListenTogetherDialog(
             
             item { Spacer(modifier = Modifier.height(8.dp)) }
             
-            // Transfer ownership button
             item {
                 Surface(
                     modifier = Modifier
@@ -1078,8 +945,8 @@ fun ListenTogetherDialog(
                             selectedUserForMenu = null
                             selectedUsername = null
                         },
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer
+                    shape = ContinuousRoundedRectangle(12.dp),
+                    color = AppTheme.colorScheme.primaryContainer
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -1088,21 +955,21 @@ fun ListenTogetherDialog(
                         Icon(
                             painter = painterResource(R.drawable.crown),
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
+                            tint = AppTheme.colorScheme.primary,
                             modifier = Modifier.size(24.dp)
                         )
                         Spacer(modifier = Modifier.width(16.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = stringResource(R.string.transfer_ownership),
-                                style = MaterialTheme.typography.titleMedium,
+                                style = AppTheme.typography.titleMedium,
                                 fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.primary
+                                color = AppTheme.colorScheme.primary
                             )
                             Text(
                                 text = stringResource(R.string.transfer_ownership_desc),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                style = AppTheme.typography.bodySmall,
+                                color = AppTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
@@ -1154,12 +1021,10 @@ fun ListenTogetherDialog(
         }
     }
 
-    // Check if already in a room
     val isInRoom = listenTogetherManager.isInRoom
     val isHost = roomState?.hostId == userId
     
     ListDialog(onDismiss = onDismiss) {
-        // Header - Icon on left, text left-aligned
         item {
             Row(
                 modifier = Modifier
@@ -1168,12 +1033,7 @@ fun ListenTogetherDialog(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Start
             ) {
-                Icon(
-                    painter = painterResource(R.drawable.group),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(40.dp)
-                )
+                SymbolIcon(symbol = sf("person.2.fill"), contentDescription = null, size = 40.dp, tint = AppTheme.colorScheme.primary)
                 Spacer(modifier = Modifier.width(16.dp))
                 Text(
                     text = if (isInRoom) {
@@ -1181,9 +1041,9 @@ fun ListenTogetherDialog(
                     } else {
                         stringResource(R.string.listen_together)
                     },
-                    style = MaterialTheme.typography.headlineSmall,
+                    style = AppTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
+                    color = AppTheme.colorScheme.primary
                 )
             }
         }
@@ -1194,12 +1054,12 @@ fun ListenTogetherDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp),
-                shape = RoundedCornerShape(16.dp),
+                shape = ContinuousRoundedRectangle(16.dp),
                 color = when (connectionState) {
-                    ConnectionState.CONNECTED -> MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-                    ConnectionState.CONNECTING, ConnectionState.RECONNECTING -> MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f)
-                    ConnectionState.ERROR -> MaterialTheme.colorScheme.error.copy(alpha = 0.15f)
-                    ConnectionState.DISCONNECTED -> MaterialTheme.colorScheme.surfaceVariant
+                    ConnectionState.CONNECTED -> AppTheme.colorScheme.primary.copy(alpha = 0.15f)
+                    ConnectionState.CONNECTING, ConnectionState.RECONNECTING -> AppTheme.colorScheme.secondary.copy(alpha = 0.15f)
+                    ConnectionState.ERROR -> AppTheme.colorScheme.error.copy(alpha = 0.15f)
+                    ConnectionState.DISCONNECTED -> AppTheme.colorScheme.surfaceVariant
                 }
             ) {
                 Column(
@@ -1215,12 +1075,12 @@ fun ListenTogetherDialog(
                                 .size(10.dp)
                                 .background(
                                     color = when (connectionState) {
-                                        ConnectionState.CONNECTED -> MaterialTheme.colorScheme.primary
-                                        ConnectionState.CONNECTING, ConnectionState.RECONNECTING -> MaterialTheme.colorScheme.secondary
-                                        ConnectionState.ERROR -> MaterialTheme.colorScheme.error
-                                        ConnectionState.DISCONNECTED -> MaterialTheme.colorScheme.outline
+                                        ConnectionState.CONNECTED -> AppTheme.colorScheme.primary
+                                        ConnectionState.CONNECTING, ConnectionState.RECONNECTING -> AppTheme.colorScheme.secondary
+                                        ConnectionState.ERROR -> AppTheme.colorScheme.error
+                                        ConnectionState.DISCONNECTED -> AppTheme.colorScheme.outline
                                     },
-                                    shape = RoundedCornerShape(50)
+                                    shape = ContinuousCapsule()
                                 )
                         )
                         Spacer(modifier = Modifier.width(8.dp))
@@ -1232,13 +1092,13 @@ fun ListenTogetherDialog(
                                 ConnectionState.ERROR -> stringResource(R.string.listen_together_error)
                                 ConnectionState.DISCONNECTED -> stringResource(R.string.listen_together_disconnected)
                             },
-                            style = MaterialTheme.typography.titleMedium,
+                            style = AppTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = when (connectionState) {
-                                ConnectionState.CONNECTED -> MaterialTheme.colorScheme.primary
-                                ConnectionState.CONNECTING, ConnectionState.RECONNECTING -> MaterialTheme.colorScheme.secondary
-                                ConnectionState.ERROR -> MaterialTheme.colorScheme.error
-                                ConnectionState.DISCONNECTED -> MaterialTheme.colorScheme.onSurfaceVariant
+                                ConnectionState.CONNECTED -> AppTheme.colorScheme.primary
+                                ConnectionState.CONNECTING, ConnectionState.RECONNECTING -> AppTheme.colorScheme.secondary
+                                ConnectionState.ERROR -> AppTheme.colorScheme.error
+                                ConnectionState.DISCONNECTED -> AppTheme.colorScheme.onSurfaceVariant
                             }
                         )
                     }
@@ -1247,7 +1107,7 @@ fun ListenTogetherDialog(
                         Spacer(modifier = Modifier.height(12.dp))
                         LinearProgressIndicator(
                             modifier = Modifier.fillMaxWidth(),
-                            color = MaterialTheme.colorScheme.primary
+                            color = AppTheme.colorScheme.primary
                         )
                     }
                     
@@ -1262,7 +1122,7 @@ fun ListenTogetherDialog(
                                 onClick = { listenTogetherManager.connect() },
                                 modifier = Modifier.weight(1f),
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.primary
+                                    containerColor = AppTheme.colorScheme.primary
                                 )
                             ) {
                                 Text(stringResource(R.string.connect), fontWeight = FontWeight.SemiBold)
@@ -1272,7 +1132,7 @@ fun ListenTogetherDialog(
                                 onClick = { listenTogetherManager.disconnect() },
                                 modifier = Modifier.weight(1f),
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.primary
+                                    containerColor = AppTheme.colorScheme.primary
                                 )
                             ) {
                                 Text(stringResource(R.string.disconnect), fontWeight = FontWeight.SemiBold)
@@ -1295,8 +1155,8 @@ fun ListenTogetherDialog(
             item {
                 Text(
                     text = stringResource(R.string.listen_together_background_disconnect_note),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = AppTheme.typography.bodySmall,
+                    color = AppTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 24.dp),
                     textAlign = TextAlign.Center
                 )
@@ -1312,8 +1172,8 @@ fun ListenTogetherDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp),
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                        shape = ContinuousRoundedRectangle(16.dp),
+                        color = AppTheme.colorScheme.primary.copy(alpha = 0.1f)
                     ) {
                         Column(
                             modifier = Modifier.padding(16.dp),
@@ -1321,8 +1181,8 @@ fun ListenTogetherDialog(
                         ) {
                             Text(
                                 text = stringResource(R.string.room_code),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary
+                                style = AppTheme.typography.labelMedium,
+                                color = AppTheme.colorScheme.primary
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Row(
@@ -1331,8 +1191,8 @@ fun ListenTogetherDialog(
                             ) {
                                 Text(
                                     text = room.roomCode,
-                                    style = MaterialTheme.typography.headlineLarge,
-                                    color = MaterialTheme.colorScheme.primary,
+                                    style = AppTheme.typography.headlineLarge,
+                                    color = AppTheme.colorScheme.primary,
                                     fontWeight = FontWeight.Bold,
                                     letterSpacing = 6.sp
                                 )
@@ -1354,11 +1214,7 @@ fun ListenTogetherDialog(
                                             Toast.makeText(context, R.string.copied_to_clipboard, Toast.LENGTH_SHORT).show()
                                         }
                                     ) {
-                                        Icon(
-                                            painter = painterResource(R.drawable.link),
-                                            contentDescription = stringResource(R.string.copy_link),
-                                            modifier = Modifier.size(18.dp)
-                                        )
+                                        SymbolIcon(symbol = sf("link"), contentDescription = stringResource(R.string.copy_link), size = 18.dp)
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Text(stringResource(R.string.copy_link))
                                     }
@@ -1373,11 +1229,7 @@ fun ListenTogetherDialog(
                                             Toast.makeText(context, R.string.copied_to_clipboard, Toast.LENGTH_SHORT).show()
                                         }
                                     ) {
-                                        Icon(
-                                            painter = painterResource(R.drawable.content_copy),
-                                            contentDescription = stringResource(R.string.copy_code),
-                                            modifier = Modifier.size(18.dp)
-                                        )
+                                        SymbolIcon(symbol = sf("doc.on.doc"), contentDescription = stringResource(R.string.copy_code), size = 18.dp)
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Text(stringResource(R.string.copy_code))
                                     }
@@ -1400,19 +1252,17 @@ fun ListenTogetherDialog(
                     ) {
                         Text(
                             text = stringResource(R.string.connected_users, connectedUsers.size),
-                            style = MaterialTheme.typography.titleSmall,
+                            style = AppTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary,
+                            color = AppTheme.colorScheme.primary,
                             modifier = Modifier.padding(bottom = 12.dp)
                         )
                         
-                        // Horizontal scrollable row for users
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             connectedUsers.forEach { user ->
-                                // User avatar card
                                 Column(
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     modifier = Modifier
@@ -1425,19 +1275,18 @@ fun ListenTogetherDialog(
                                             }
                                         )
                                 ) {
-                                    // Circular avatar
                                     Box(
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Surface(
                                             modifier = Modifier.size(52.dp),
-                                            shape = RoundedCornerShape(50),
+                                            shape = ContinuousCapsule(),
                                             color = if (user.isHost) {
-                                                MaterialTheme.colorScheme.primary
+                                                AppTheme.colorScheme.primary
                                             } else if (user.userId == userId) {
-                                                MaterialTheme.colorScheme.secondary
+                                                AppTheme.colorScheme.secondary
                                             } else {
-                                                MaterialTheme.colorScheme.surfaceVariant
+                                                AppTheme.colorScheme.surfaceVariant
                                             }
                                         ) {
                                             Box(
@@ -1446,14 +1295,14 @@ fun ListenTogetherDialog(
                                             ) {
                                                 Text(
                                                     text = user.username.take(1).uppercase(),
-                                                    style = MaterialTheme.typography.titleLarge,
+                                                    style = AppTheme.typography.titleLarge,
                                                     fontWeight = FontWeight.Bold,
                                                     color = if (user.isHost) {
-                                                        MaterialTheme.colorScheme.onPrimary
+                                                        AppTheme.colorScheme.onPrimary
                                                     } else if (user.userId == userId) {
-                                                        MaterialTheme.colorScheme.onSecondary
+                                                        AppTheme.colorScheme.onSecondary
                                                     } else {
-                                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                                        AppTheme.colorScheme.onSurfaceVariant
                                                     }
                                                 )
                                             }
@@ -1466,8 +1315,8 @@ fun ListenTogetherDialog(
                                                     .align(Alignment.BottomEnd)
                                                     .offset(x = 4.dp, y = 4.dp)
                                                     .size(18.dp),
-                                                shape = RoundedCornerShape(50),
-                                                color = if (user.isHost) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
+                                                shape = ContinuousCapsule(),
+                                                color = if (user.isHost) AppTheme.colorScheme.primary else AppTheme.colorScheme.secondary
                                             ) {
                                                 Box(
                                                     contentAlignment = Alignment.Center,
@@ -1478,7 +1327,7 @@ fun ListenTogetherDialog(
                                                             if (user.isHost) R.drawable.crown else R.drawable.person
                                                         ),
                                                         contentDescription = null,
-                                                        tint = MaterialTheme.colorScheme.onPrimary,
+                                                        tint = AppTheme.colorScheme.onPrimary,
                                                         modifier = Modifier.size(12.dp)
                                                     )
                                                 }
@@ -1488,33 +1337,31 @@ fun ListenTogetherDialog(
                                     
                                     Spacer(modifier = Modifier.height(6.dp))
                                     
-                                    // Username
                                     Text(
                                         text = user.username,
-                                        style = MaterialTheme.typography.labelMedium,
+                                        style = AppTheme.typography.labelMedium,
                                         fontWeight = if (user.userId == userId) FontWeight.Bold else FontWeight.Medium,
                                         color = if (user.isHost) {
-                                            MaterialTheme.colorScheme.primary
+                                            AppTheme.colorScheme.primary
                                         } else {
-                                            MaterialTheme.colorScheme.onSurface
+                                            AppTheme.colorScheme.onSurface
                                         },
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                         textAlign = TextAlign.Center
                                     )
                                     
-                                    // Role label
                                     if (user.isHost) {
                                         Text(
                                             text = stringResource(R.string.host_label),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
+                                            style = AppTheme.typography.labelSmall,
+                                            color = AppTheme.colorScheme.primary.copy(alpha = 0.8f)
                                         )
                                     } else if (user.userId == userId) {
                                         Text(
                                             text = stringResource(R.string.you_label),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.8f)
+                                            style = AppTheme.typography.labelSmall,
+                                            color = AppTheme.colorScheme.secondary.copy(alpha = 0.8f)
                                         )
                                     }
                                 }
@@ -1531,21 +1378,21 @@ fun ListenTogetherDialog(
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
                             text = stringResource(R.string.pending_requests),
-                            style = MaterialTheme.typography.titleSmall,
+                            style = AppTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary,
+                            color = AppTheme.colorScheme.primary,
                             modifier = Modifier.padding(horizontal = 16.dp)
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                     }
                     
-                    items(pendingJoinRequests) { request ->
+                    items(pendingJoinRequests, key = { it.userId }) { request ->
                         Surface(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 16.dp, vertical = 4.dp),
-                            shape = RoundedCornerShape(12.dp),
-                            color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f)
+                            shape = ContinuousRoundedRectangle(12.dp),
+                            color = AppTheme.colorScheme.secondary.copy(alpha = 0.15f)
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -1559,8 +1406,8 @@ fun ListenTogetherDialog(
                                 ) {
                                     Surface(
                                         modifier = Modifier.size(36.dp),
-                                        shape = RoundedCornerShape(50),
-                                        color = MaterialTheme.colorScheme.secondary
+                                        shape = ContinuousCapsule(),
+                                        color = AppTheme.colorScheme.secondary
                                     ) {
                                         Box(
                                             contentAlignment = Alignment.Center,
@@ -1568,17 +1415,17 @@ fun ListenTogetherDialog(
                                         ) {
                                             Text(
                                                 text = request.username.take(1).uppercase(),
-                                                style = MaterialTheme.typography.titleMedium,
+                                                style = AppTheme.typography.titleMedium,
                                                 fontWeight = FontWeight.Bold,
-                                                color = MaterialTheme.colorScheme.onSecondary
+                                                color = AppTheme.colorScheme.onSecondary
                                             )
                                         }
                                     }
                                     Text(
                                         text = request.username,
-                                        style = MaterialTheme.typography.bodyLarge,
+                                        style = AppTheme.typography.bodyLarge,
                                         fontWeight = FontWeight.Medium,
-                                        color = MaterialTheme.colorScheme.onSurface
+                                        color = AppTheme.colorScheme.onSurface
                                     )
                                 }
                                 
@@ -1586,22 +1433,12 @@ fun ListenTogetherDialog(
                                     IconButton(
                                         onClick = { listenTogetherManager.approveJoin(request.userId) }
                                     ) {
-                                        Icon(
-                                            painter = painterResource(R.drawable.check),
-                                            contentDescription = stringResource(R.string.approve),
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(24.dp)
-                                        )
+                                        SymbolIcon(symbol = sf("checkmark"), contentDescription = stringResource(R.string.approve), size = 24.dp, tint = AppTheme.colorScheme.primary)
                                     }
                                     IconButton(
                                         onClick = { listenTogetherManager.rejectJoin(request.userId, "Rejected by host") }
                                     ) {
-                                        Icon(
-                                            painter = painterResource(R.drawable.close),
-                                            contentDescription = stringResource(R.string.reject),
-                                            tint = MaterialTheme.colorScheme.error,
-                                            modifier = Modifier.size(24.dp)
-                                        )
+                                        SymbolIcon(symbol = sf("xmark"), contentDescription = stringResource(R.string.reject), size = 24.dp, tint = AppTheme.colorScheme.error)
                                     }
                                 }
                             }
@@ -1617,21 +1454,21 @@ fun ListenTogetherDialog(
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
                             text = stringResource(R.string.pending_suggestions),
-                            style = MaterialTheme.typography.titleSmall,
+                            style = AppTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary,
+                            color = AppTheme.colorScheme.primary,
                             modifier = Modifier.padding(horizontal = 16.dp)
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                     }
 
-                    items(pendingSuggestions) { suggestion ->
+                    items(pendingSuggestions, key = { it.suggestionId }) { suggestion ->
                         Surface(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 16.dp, vertical = 4.dp),
-                            shape = RoundedCornerShape(12.dp),
-                            color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f)
+                            shape = ContinuousRoundedRectangle(12.dp),
+                            color = AppTheme.colorScheme.secondary.copy(alpha = 0.15f)
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -1643,25 +1480,20 @@ fun ListenTogetherDialog(
                                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Icon(
-                                        painter = painterResource(R.drawable.queue_music),
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(24.dp)
-                                    )
+                                    SymbolIcon(symbol = sf("music.note.list"), contentDescription = null, size = 24.dp, tint = AppTheme.colorScheme.primary)
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
                                             text = suggestion.trackInfo.title,
-                                            style = MaterialTheme.typography.bodyMedium,
+                                            style = AppTheme.typography.bodyMedium,
                                             fontWeight = FontWeight.Medium,
-                                            color = MaterialTheme.colorScheme.onSurface,
+                                            color = AppTheme.colorScheme.onSurface,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
                                         Text(
                                             text = suggestion.fromUsername,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            style = AppTheme.typography.bodySmall,
+                                            color = AppTheme.colorScheme.onSurfaceVariant,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
@@ -1672,22 +1504,12 @@ fun ListenTogetherDialog(
                                     IconButton(
                                         onClick = { listenTogetherManager.approveSuggestion(suggestion.suggestionId) }
                                     ) {
-                                        Icon(
-                                            painter = painterResource(R.drawable.check),
-                                            contentDescription = stringResource(R.string.approve),
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(24.dp)
-                                        )
+                                        SymbolIcon(symbol = sf("checkmark"), contentDescription = stringResource(R.string.approve), size = 24.dp, tint = AppTheme.colorScheme.primary)
                                     }
                                     IconButton(
                                         onClick = { listenTogetherManager.rejectSuggestion(suggestion.suggestionId, "Rejected by host") }
                                     ) {
-                                        Icon(
-                                            painter = painterResource(R.drawable.close),
-                                            contentDescription = stringResource(R.string.reject),
-                                            tint = MaterialTheme.colorScheme.error,
-                                            modifier = Modifier.size(24.dp)
-                                        )
+                                        SymbolIcon(symbol = sf("xmark"), contentDescription = stringResource(R.string.reject), size = 24.dp, tint = AppTheme.colorScheme.error)
                                     }
                                 }
                             }
@@ -1695,7 +1517,6 @@ fun ListenTogetherDialog(
                     }
                 }
                 
-                // Leave room button
                 item {
                     Spacer(modifier = Modifier.height(20.dp))
                     Row(
@@ -1720,14 +1541,10 @@ fun ListenTogetherDialog(
                             },
                             modifier = Modifier.weight(1f),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.error
+                                containerColor = AppTheme.colorScheme.error
                             )
                         ) {
-                            Icon(
-                                painter = painterResource(R.drawable.logout),
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
+                            SymbolIcon(symbol = sf("rectangle.portrait.and.arrow.right"), contentDescription = null, size = 18.dp)
                             Spacer(Modifier.width(8.dp))
                             Text(stringResource(R.string.leave_room), fontWeight = FontWeight.SemiBold)
                         }
@@ -1742,8 +1559,8 @@ fun ListenTogetherDialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    shape = ContinuousRoundedRectangle(16.dp),
+                    color = AppTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                 ) {
                     Column(
                         modifier = Modifier.padding(20.dp),
@@ -1751,8 +1568,8 @@ fun ListenTogetherDialog(
                     ) {
                         Text(
                             text = stringResource(R.string.listen_together_description),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = AppTheme.typography.bodyMedium,
+                            color = AppTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center
                         )
                         
@@ -1762,25 +1579,21 @@ fun ListenTogetherDialog(
                             label = { Text(stringResource(R.string.username)) },
                             placeholder = { Text(stringResource(R.string.enter_username)) },
                             leadingIcon = {
-                                Icon(
-                                    painterResource(R.drawable.person),
-                                    null,
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
+                                SymbolIcon(symbol = sf("person.fill"), contentDescription = null, tint = AppTheme.colorScheme.primary)
                             },
                             trailingIcon = {
                                 if (usernameInput.isNotBlank()) {
                                     IconButton(onClick = { usernameInput = "" }) {
-                                        Icon(painterResource(R.drawable.close), null)
+                                        SymbolIcon(symbol = sf("xmark"), contentDescription = null)
                                     }
                                 }
                             },
                             singleLine = true,
-                            shape = RoundedCornerShape(12.dp),
+                            shape = ContinuousRoundedRectangle(12.dp),
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = MaterialTheme.colorScheme.primary,
-                                unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-                                focusedLabelColor = MaterialTheme.colorScheme.primary
+                                focusedBorderColor = AppTheme.colorScheme.primary,
+                                unfocusedBorderColor = AppTheme.colorScheme.outline,
+                                focusedLabelColor = AppTheme.colorScheme.primary
                             ),
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -1789,9 +1602,9 @@ fun ListenTogetherDialog(
                         
                         Text(
                             text = stringResource(R.string.join_existing_room),
-                            style = MaterialTheme.typography.titleSmall,
+                            style = AppTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
+                            color = AppTheme.colorScheme.primary
                         )
                         
                         OutlinedTextField(
@@ -1802,23 +1615,23 @@ fun ListenTogetherDialog(
                             supportingText = {
                                 Text(
                                     text = "${roomCodeInput.length}/8",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    style = AppTheme.typography.labelSmall,
+                                    color = AppTheme.colorScheme.onSurfaceVariant
                                 )
                             },
                             leadingIcon = {
                                 Icon(
                                     painterResource(R.drawable.token),
                                     null,
-                                    tint = MaterialTheme.colorScheme.primary
+                                    tint = AppTheme.colorScheme.primary
                                 )
                             },
                             singleLine = true,
-                            shape = RoundedCornerShape(12.dp),
+                            shape = ContinuousRoundedRectangle(12.dp),
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = MaterialTheme.colorScheme.primary,
-                                unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-                                focusedLabelColor = MaterialTheme.colorScheme.primary
+                                focusedBorderColor = AppTheme.colorScheme.primary,
+                                unfocusedBorderColor = AppTheme.colorScheme.outline,
+                                focusedLabelColor = AppTheme.colorScheme.primary
                             ),
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -1833,13 +1646,13 @@ fun ListenTogetherDialog(
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(18.dp),
                                     strokeWidth = 2.dp,
-                                    color = MaterialTheme.colorScheme.primary
+                                    color = AppTheme.colorScheme.primary
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
                                     text = waitingForApprovalText,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.primary,
+                                    style = AppTheme.typography.bodyMedium,
+                                    color = AppTheme.colorScheme.primary,
                                     fontWeight = FontWeight.Medium
                                 )
                             }
@@ -1848,25 +1661,20 @@ fun ListenTogetherDialog(
                         joinErrorMessage?.let { msg ->
                             Surface(
                                 modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(8.dp),
-                                color = MaterialTheme.colorScheme.error.copy(alpha = 0.1f)
+                                shape = ContinuousRoundedRectangle(8.dp),
+                                color = AppTheme.colorScheme.error.copy(alpha = 0.1f)
                             ) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.Center,
                                     modifier = Modifier.padding(12.dp)
                                 ) {
-                                    Icon(
-                                        painterResource(R.drawable.error),
-                                        contentDescription = null,
-                                        modifier = Modifier.size(18.dp),
-                                        tint = MaterialTheme.colorScheme.error
-                                    )
+                                    SymbolIcon(symbol = sf("exclamationmark.circle"), contentDescription = null, size = 18.dp, tint = AppTheme.colorScheme.error)
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
                                         text = msg,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.error,
+                                        style = AppTheme.typography.bodyMedium,
+                                        color = AppTheme.colorScheme.error,
                                         fontWeight = FontWeight.Medium
                                     )
                                 }
@@ -1876,7 +1684,6 @@ fun ListenTogetherDialog(
                 }
             }
             
-            // Action buttons
             item {
                 Spacer(modifier = Modifier.height(20.dp))
                 Column(
@@ -1889,7 +1696,6 @@ fun ListenTogetherDialog(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        // Create Room button (left side)
                         Button(
                             onClick = {
                                 val username = usernameInput.takeIf { it.isNotBlank() } ?: savedUsername
@@ -1912,19 +1718,14 @@ fun ListenTogetherDialog(
                             modifier = Modifier.weight(1f),
                             enabled = (usernameInput.trim().isNotBlank() || savedUsername.isNotBlank()),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primary
+                                containerColor = AppTheme.colorScheme.primary
                             )
                         ) {
-                            Icon(
-                                painter = painterResource(R.drawable.add),
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
+                            SymbolIcon(symbol = sf("plus"), contentDescription = null, size = 18.dp)
                             Spacer(Modifier.width(8.dp))
                             Text(stringResource(R.string.create_room), fontWeight = FontWeight.SemiBold)
                         }
                         
-                        // Join Room button (right side - only visible when room code is complete)
                         if (roomCodeInput.trim().length >= MIN_ROOM_CODE_LENGTH) {
                             Button(
                                 onClick = {
@@ -1948,14 +1749,10 @@ fun ListenTogetherDialog(
                                 modifier = Modifier.weight(1f),
                                 enabled = (usernameInput.trim().isNotBlank() || savedUsername.isNotBlank()),
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.secondary
+                                    containerColor = AppTheme.colorScheme.secondary
                                 )
                             ) {
-                                Icon(
-                                    painter = painterResource(R.drawable.login),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp)
-                                )
+                                SymbolIcon(symbol = sf("arrow.right.to.line"), contentDescription = null, size = 18.dp)
                                 Spacer(Modifier.width(8.dp))
                                 Text(stringResource(R.string.join_room), fontWeight = FontWeight.SemiBold)
                             }
@@ -1969,7 +1766,7 @@ fun ListenTogetherDialog(
                         Text(
                             stringResource(R.string.cancel),
                             fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = AppTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }

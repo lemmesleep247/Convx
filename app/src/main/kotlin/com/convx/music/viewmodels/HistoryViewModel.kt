@@ -5,7 +5,6 @@
 
 package com.convx.music.viewmodels
 
-import kotlinx.coroutines.flow.combine
 import androidx.compose.runtime.Immutable
 import android.content.Context
 import androidx.lifecycle.ViewModel
@@ -17,7 +16,7 @@ import com.convx.music.constants.DataSaverEnabledKey
 import com.convx.music.constants.HistorySource
 import com.convx.music.constants.InnerTubeCookieKey
 import com.music.innertube.utils.parseCookieString
-import com.convx.music.db.MusicDatabase
+import com.convx.music.history.HistoryLocalDataSource
 import com.convx.music.utils.dataStore
 import com.convx.music.utils.reportException
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -25,17 +24,19 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
+import com.convx.music.db.entities.EventWithSong
 import javax.inject.Inject
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -44,7 +45,7 @@ class HistoryViewModel
 @Inject
 constructor(
     @ApplicationContext private val context: Context,
-    val database: MusicDatabase,
+    private val historyDataSource: HistoryLocalDataSource,
 ) : ViewModel() {
     var historySource = MutableStateFlow(HistorySource.LOCAL)
 
@@ -54,80 +55,66 @@ constructor(
 
     val historyPage = MutableStateFlow<HistoryPage?>(null)
 
-    val events =
-        context.dataStore.data
-            .map { (it[HideVideoSongsKey] ?: false) || (it[DataSaverEnabledKey] ?: false) }
-            .distinctUntilChanged()
-            .flatMapLatest { hideVideoSongs ->
-                database
-                    .events()
-                    .map { events ->
-                        events
-                            .filter { !hideVideoSongs || !it.song.song.isVideo }
-                            .groupBy {
-                                val date = it.event.timestamp.toLocalDate()
-                                val daysAgo = ChronoUnit.DAYS.between(date, today).toInt()
-                                when {
-                                    daysAgo == 0 -> DateAgo.Today
-                                    daysAgo == 1 -> DateAgo.Yesterday
-                                    date >= thisMonday -> DateAgo.ThisWeek
-                                    date >= lastMonday -> DateAgo.LastWeek
-                                    else -> DateAgo.Other(date.withDayOfMonth(1))
-                                }
-                            }.toSortedMap(
-                                compareBy { dateAgo ->
-                                    when (dateAgo) {
-                                        DateAgo.Today -> 0L
-                                        DateAgo.Yesterday -> 1L
-                                        DateAgo.ThisWeek -> 2L
-                                        DateAgo.LastWeek -> 3L
-                                        is DateAgo.Other -> ChronoUnit.DAYS.between(dateAgo.date, today)
-                                    }
-                                },
-                            ).mapValues { entry ->
-                                entry.value.distinctBy { it.song.id }
-                            }
-                    }
-            }
-            .flowOn(Dispatchers.Default)
-            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
-
-    val flatEvents = events
-        .map { map -> map.values.flatten() }
-        .flowOn(Dispatchers.Default)
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
-
     val searchQuery = MutableStateFlow("")
+    private val _events = MutableStateFlow<Map<DateAgo, List<EventWithSong>>>(emptyMap())
+    val filteredEvents = _events.asStateFlow()
+    private val _flatEvents = MutableStateFlow<List<EventWithSong>>(emptyList())
+    val filteredFlatEvents = _flatEvents.asStateFlow()
+    private var pageOffset = 0
+    private var reachedEnd = false
+    private var hideVideoSongs = false
+    private var localLoadJob: kotlinx.coroutines.Job? = null
 
-    val filteredEvents = combine(events, searchQuery) { eventsMap, queryText ->
-        if (queryText.isEmpty()) {
-            eventsMap
-        } else {
-            eventsMap.mapValues { (_, songs) ->
-                songs.filter { event ->
-                    event.song.song.title.contains(queryText, ignoreCase = true) ||
-                            event.song.artists.any {
-                                it.name.contains(queryText, ignoreCase = true)
-                            }
-                }
-            }.filterValues { it.isNotEmpty() }
-        }
-    }.flowOn(Dispatchers.Default)
-     .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+    private fun groupEvents(events: List<EventWithSong>) =
+        events.groupBy {
+            val date = it.event.timestamp.toLocalDate()
+            val daysAgo = ChronoUnit.DAYS.between(date, today).toInt()
+            when {
+                daysAgo == 0 -> DateAgo.Today
+                daysAgo == 1 -> DateAgo.Yesterday
+                date >= thisMonday -> DateAgo.ThisWeek
+                date >= lastMonday -> DateAgo.LastWeek
+                else -> DateAgo.Other(date.withDayOfMonth(1))
+            }
+        }.toSortedMap(compareBy { dateAgo ->
+            when (dateAgo) {
+                DateAgo.Today -> 0L
+                DateAgo.Yesterday -> 1L
+                DateAgo.ThisWeek -> 2L
+                DateAgo.LastWeek -> 3L
+                is DateAgo.Other -> ChronoUnit.DAYS.between(dateAgo.date, today)
+            }
+        }).mapValues { (_, items) -> items.distinctBy { it.song.id } }
 
-    val filteredFlatEvents = combine(flatEvents, searchQuery) { flatList, queryText ->
-        if (queryText.isEmpty()) {
-            flatList
-        } else {
-            flatList.filter { event ->
-                event.song.song.title.contains(queryText, ignoreCase = true) ||
-                        event.song.artists.any {
-                            it.name.contains(queryText, ignoreCase = true)
-                        }
+    fun loadMoreEvents() {
+        if (reachedEnd || localLoadJob?.isActive == true) return
+        localLoadJob = viewModelScope.launch {
+            val page = historyDataSource.loadEvents(PAGE_SIZE, pageOffset, hideVideoSongs, searchQuery.value)
+            pageOffset += page.size
+            reachedEnd = page.size < PAGE_SIZE
+            if (page.isNotEmpty()) {
+                val combined = (_flatEvents.value + page).distinctBy { it.event.id }
+                _flatEvents.value = combined
+                _events.value = groupEvents(combined)
             }
         }
-    }.flowOn(Dispatchers.Default)
-     .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    }
+
+    private fun resetLocalHistory(hideVideos: Boolean, query: String) {
+        localLoadJob?.cancel()
+        hideVideoSongs = hideVideos
+        pageOffset = 0
+        reachedEnd = false
+        _flatEvents.value = emptyList()
+        _events.value = emptyMap()
+        localLoadJob = viewModelScope.launch {
+            val page = historyDataSource.loadEvents(PAGE_SIZE, pageOffset, hideVideoSongs, query)
+            pageOffset = page.size
+            reachedEnd = page.size < PAGE_SIZE
+            _flatEvents.value = page
+            _events.value = groupEvents(page)
+        }
+    }
 
     val filteredRemoteContent = combine(historyPage, searchQuery) { page, queryText ->
         if (queryText.isEmpty()) {
@@ -147,6 +134,14 @@ constructor(
 
 
     init {
+        viewModelScope.launch {
+            val hideVideos = context.dataStore.data
+                .map { (it[HideVideoSongsKey] ?: false) || (it[DataSaverEnabledKey] ?: false) }
+                .distinctUntilChanged()
+            combine(hideVideos, searchQuery) { hide, query -> hide to query }
+                .distinctUntilChanged()
+                .collect { (hide, query) -> resetLocalHistory(hide, query) }
+        }
         fetchRemoteHistory()
         // Auto-clear remote history when user logs out
         viewModelScope.launch(Dispatchers.IO) {
@@ -170,6 +165,10 @@ constructor(
                 reportException(it)
             }
         }
+    }
+
+    private companion object {
+        const val PAGE_SIZE = 50
     }
 }
 

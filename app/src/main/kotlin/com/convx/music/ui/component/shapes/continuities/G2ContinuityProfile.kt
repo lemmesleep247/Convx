@@ -77,6 +77,17 @@ data class G2ContinuityProfile(
                 arcCurvatureScale = 1.0
             )
 
+        /**
+         * Maps a smoothing value from 0 to 1 to the extended corner and remaining arc.
+         */
+        fun figmaSmoothing(smoothing: Double): G2ContinuityProfile =
+            G2ContinuityProfile(
+                extendedFraction = smoothing,
+                arcFraction = 1.0 - smoothing,
+                bezierCurvatureScale = 1.0,
+                arcCurvatureScale = 1.0
+            )
+
         val G1Equivalent: G2ContinuityProfile =
             G2ContinuityProfile(
                 extendedFraction = 0.0,

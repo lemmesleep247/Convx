@@ -20,17 +20,19 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.AlertDialogDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.LocalContentColor
-import androidx.compose.material3.MaterialTheme
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.LocalContentColor
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.ProvideTextStyle
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
+import com.convx.music.ui.ios.compat.ProvideTextStyle
+import com.convx.music.ui.ios.compat.Surface
+import com.convx.music.ui.ios.compat.Text
+import com.convx.music.ui.ios.compat.TextButton
+import androidx.compose.foundation.border
+import androidx.compose.ui.graphics.Color
+import com.convx.music.ui.ios.compat.OutlinedTextField as TextField
+import com.convx.music.ui.component.shapes.ContinuousRoundedRectangle
+import com.convx.music.ui.ios.foundation.IosTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -40,8 +42,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import com.convx.music.ui.utils.Motion
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
@@ -68,10 +76,16 @@ fun DefaultDialog(
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Surface(
-            modifier = Modifier.padding(24.dp),
-            shape = AlertDialogDefaults.shape,
-            color = AlertDialogDefaults.containerColor,
-            tonalElevation = AlertDialogDefaults.TonalElevation
+            modifier = Modifier
+                .padding(24.dp)
+                .dialogEnter()
+                .border(
+                    width = 0.5.dp,
+                    color = Color.White.copy(alpha = 0.15f),
+                    shape = ContinuousRoundedRectangle(30.dp)
+                ),
+            shape = ContinuousRoundedRectangle(30.dp),
+            color = IosTheme.colors.secondarySystemGroupedBackground,
         ) {
             Column(
                 horizontalAlignment = horizontalAlignment,
@@ -79,7 +93,7 @@ fun DefaultDialog(
                     .padding(24.dp)
             ) {
                 if (icon != null) {
-                    CompositionLocalProvider(LocalContentColor provides AlertDialogDefaults.iconContentColor) {
+                    CompositionLocalProvider(LocalContentColor provides IosTheme.tint) {
                         Box(
                             Modifier.align(Alignment.CenterHorizontally)
                         ) {
@@ -90,10 +104,9 @@ fun DefaultDialog(
                     Spacer(Modifier.height(16.dp))
                 }
                 if (title != null) {
-                    CompositionLocalProvider(LocalContentColor provides AlertDialogDefaults.titleContentColor) {
-                        ProvideTextStyle(MaterialTheme.typography.headlineSmall) {
+                    CompositionLocalProvider(LocalContentColor provides IosTheme.colors.label) {
+                        ProvideTextStyle(IosTheme.typography.headline) {
                             Box(
-                                // Align the title to the center when an icon is present.
                                 Modifier.align(if (icon == null) Alignment.Start else Alignment.CenterHorizontally)
                             ) {
                                 title()
@@ -112,9 +125,9 @@ fun DefaultDialog(
                     FlowRow(
                         modifier = Modifier.align(Alignment.End)
                     ) {
-                        CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.primary) {
+                        CompositionLocalProvider(LocalContentColor provides IosTheme.tint) {
                             ProvideTextStyle(
-                                value = MaterialTheme.typography.labelLarge
+                                value = IosTheme.typography.headline
                             ) {
                                 buttons()
                             }
@@ -149,7 +162,7 @@ fun ActionPromptDialog(
                     text = title,
                     overflow = TextOverflow.Ellipsis,
                     maxLines = 1,
-                    style = MaterialTheme.typography.headlineSmall,
+                    style = IosTheme.typography.headline,
                 )
             }
         } else null,
@@ -194,10 +207,16 @@ fun ListDialog(
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
         Surface(
-            modifier = Modifier.padding(24.dp),
-            shape = AlertDialogDefaults.shape,
-            color = AlertDialogDefaults.containerColor,
-            tonalElevation = AlertDialogDefaults.TonalElevation,
+            modifier = Modifier
+                .padding(24.dp)
+                .dialogEnter()
+                .border(
+                    width = 0.5.dp,
+                    color = Color.White.copy(alpha = 0.15f),
+                    shape = ContinuousRoundedRectangle(30.dp)
+                ),
+            shape = ContinuousRoundedRectangle(30.dp),
+            color = IosTheme.colors.systemBackground,
         ) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -218,15 +237,10 @@ fun InfoLabel(
     verticalAlignment = Alignment.CenterVertically,
     modifier = Modifier.padding(horizontal = 8.dp)
 ) {
-    Icon(
-        painter = painterResource(id = R.drawable.info),
-        contentDescription = null,
-        tint = MaterialTheme.colorScheme.secondary,
-        modifier = Modifier.padding(4.dp)
-    )
+    SymbolIcon(symbol = sf("info.circle"), contentDescription = null, modifier = Modifier.padding(4.dp), tint = IosTheme.colors.secondaryLabel)
     Text(
         text = text,
-        style = MaterialTheme.typography.bodySmall,
+        style = IosTheme.typography.footnote,
         modifier = Modifier.padding(horizontal = 4.dp)
     )
 }
@@ -245,7 +259,6 @@ fun TextFieldDialog(
     keyboardType: KeyboardType = KeyboardType.Text,
     onDone: (String) -> Unit = {},
 
-    // new multi-field support
     textFields: List<Pair<String, TextFieldValue>>? = null,
     onTextFieldsChange: ((Int, TextFieldValue) -> Unit)? = null,
     onDoneMultiple: ((List<String>) -> Unit)? = null,
@@ -350,4 +363,30 @@ fun TextFieldDialog(
             extraContent?.invoke()
         }
     }
+}
+
+/**
+ * Dialog entrance: scale 0.96 -> 1 + fade on [Motion.appear]. Entry-only — the
+ * platform Dialog window is torn down on dismiss, so no exit can be animated.
+ */
+@Composable
+private fun Modifier.dialogEnter(): Modifier {
+    var entered by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { entered = true }
+    val scale by animateFloatAsState(
+        targetValue = if (entered) 1f else 0.96f,
+        animationSpec = Motion.appear(),
+        label = "DialogEnterScale",
+    )
+    val alpha by animateFloatAsState(
+        targetValue = if (entered) 1f else 0f,
+        animationSpec = Motion.appear(),
+        label = "DialogEnterAlpha",
+    )
+    return this
+        .graphicsLayer {
+            scaleX = scale
+            scaleY = scale
+        }
+        .alpha(alpha)
 }

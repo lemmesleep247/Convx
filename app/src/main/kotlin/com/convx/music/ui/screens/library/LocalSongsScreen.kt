@@ -4,9 +4,14 @@
  */
 package com.convx.music.ui.screens.library
 
+import androidx.compose.foundation.background
+import com.convx.music.ui.component.sf
+import com.convx.music.ui.component.SymbolIcon
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -14,10 +19,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.IconButton
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.Text
+import com.composables.sfsymbols.SfSymbols
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -43,6 +49,9 @@ import com.convx.music.extensions.toMediaItem
 import com.convx.music.playback.queues.ListQueue
 import com.convx.music.ui.component.HideOnScrollFAB
 import com.convx.music.ui.component.LargeScreenTitle
+import com.convx.music.ui.component.TopFadeBlur
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeSource
 import com.convx.music.ui.component.ListScrollRail
 import com.convx.music.ui.component.LocalMenuState
 import com.convx.music.ui.component.SongListItem
@@ -103,19 +112,45 @@ fun LocalSongsScreen(
 
     // Entering the tab is the natural moment to pick up files added since last time.
     // force = false, so bouncing to the player and back does not re-sweep MediaStore.
-    LaunchedEffect(Unit) { viewModel.scanDevice(context, force = false) }
-
-    val lazyListState = rememberLazyListState()
-
-    Box(modifier = Modifier.fillMaxSize()) {
-        LazyColumn(
-            state = lazyListState,
-            contentPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues(),
-        ) {
-            item(key = "title", contentType = "header") {
-                LargeScreenTitle(title = stringResource(R.string.songs))
+    val audioPermission = com.convx.music.ui.component.rememberLocalAudioPermission { }
+    LaunchedEffect(audioPermission.granted) {
+        if (audioPermission.granted) viewModel.scanDevice(context, force = false)
+    }
+    val visibleSongs = if (audioPermission.granted) sortedSongs else emptyList()
+    val sectionIndexMap = remember(sortedSongs, sortType) {
+        when (sortType) {
+            SongSortType.NAME -> buildAlphabetSectionIndex(sortedSongs) { it.title }
+            SongSortType.ARTIST -> buildAlphabetSectionIndex(sortedSongs) { song ->
+                song.artists.firstOrNull()?.name.orEmpty()
             }
 
+            else -> null
+        }
+    }
+
+    val lazyListState = rememberLazyListState()
+    // Progressive top blur so the list dissolves under the status bar instead
+    // of cutting off hard — same technique as the rest of the app's screens.
+    val hazeState = remember { HazeState() }
+    val pageInsets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
+    val sideInset = pageInsets.calculateStartPadding(androidx.compose.ui.platform.LocalLayoutDirection.current)
+
+    // The list reads its order at tap time, not from whatever index a row was composed with, so a sort
+    // change can never start the queue from the previous order.
+    val currentSongs by androidx.compose.runtime.rememberUpdatedState(sortedSongs)
+
+    // This tab has no page behind it in local mode, so it paints its own light or dark background.
+    Box(modifier = Modifier.fillMaxSize().background(AppTheme.colorScheme.background)) {
+        LazyColumn(
+            state = lazyListState,
+            modifier = Modifier.fillMaxSize().hazeSource(hazeState),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                start = sideInset,
+                top = maxOf(pageInsets.calculateTopPadding(), if (sideInset > 0.dp) 96.dp else 116.dp),
+                end = pageInsets.calculateEndPadding(androidx.compose.ui.platform.LocalLayoutDirection.current),
+                bottom = pageInsets.calculateBottomPadding(),
+            ),
+        ) {
             item(key = "header", contentType = "header") {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -123,8 +158,8 @@ fun LocalSongsScreen(
                 ) {
                     Text(
                         text = pluralStringResource(R.plurals.n_song, songs.size, songs.size),
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.secondary,
+                        style = AppTheme.typography.titleSmall,
+                        color = AppTheme.colorScheme.secondary,
                     )
 
                     Spacer(Modifier.weight(1f))
@@ -139,14 +174,25 @@ fun LocalSongsScreen(
                 }
             }
 
-            if (songs.isEmpty()) {
+            if (!audioPermission.granted) {
+                item(key = "permission", contentType = "local_access") {
+                    com.convx.music.ui.screens.library.apple.LocalAccessCard(
+                        blocked = audioPermission.blocked,
+                        onAllow = audioPermission.request,
+                    )
+                }
+            } else if (songs.isEmpty() && !isScanning) {
+                item(key = "empty", contentType = "local_access") {
+                    com.convx.music.ui.component.LocalMusicEmptyState(onScan = { viewModel.scanDevice(context) })
+                }
+            } else if (songs.isEmpty()) {
                 item(key = "empty", contentType = "header") {
                     Text(
                         text = stringResource(
                             if (isScanning) R.string.scanning_local_files else R.string.no_local_files,
                         ),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = AppTheme.typography.bodyMedium,
+                        color = AppTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -156,7 +202,7 @@ fun LocalSongsScreen(
             }
 
             itemsIndexed(
-                items = sortedSongs,
+                items = visibleSongs,
                 key = { _, song -> song.id },
                 contentType = { _, _ -> "song" },
             ) { index, song ->
@@ -180,10 +226,7 @@ fun LocalSongsScreen(
                                 }
                             },
                         ) {
-                            Icon(
-                                painter = painterResource(R.drawable.more_vert),
-                                contentDescription = null,
-                            )
+                            SymbolIcon(bounceOnEnter = true, symbol = sf("ellipsis"), contentDescription = null)
                         }
                     },
                     modifier = Modifier
@@ -192,11 +235,12 @@ fun LocalSongsScreen(
                             if (song.id == mediaMetadata?.id) {
                                 playerConnection.togglePlayPause()
                             } else {
+                                val ordered = currentSongs
                                 playerConnection.playQueue(
                                     ListQueue(
                                         title = context.getString(R.string.songs),
-                                        items = sortedSongs.map { it.toMediaItem() },
-                                        startIndex = index,
+                                        items = ordered.map { it.toMediaItem() },
+                                        startIndex = ordered.indexOfFirst { it.id == song.id }.coerceAtLeast(0),
                                     ),
                                 )
                             }
@@ -207,26 +251,12 @@ fun LocalSongsScreen(
 
         ListScrollRail(
             lazyListState = lazyListState,
-            itemCount = sortedSongs.size,
-            sectionIndexMap = when (sortType) {
-                SongSortType.NAME ->
-                    remember(sortedSongs) {
-                        buildAlphabetSectionIndex(sortedSongs) { it.title }
-                    }
-
-                SongSortType.ARTIST ->
-                    remember(sortedSongs) {
-                        buildAlphabetSectionIndex(sortedSongs) { song ->
-                            song.artists.firstOrNull()?.name.orEmpty()
-                        }
-                    }
-
-                else -> null
-            },
+            itemCount = visibleSongs.size,
+            sectionIndexMap = sectionIndexMap,
         )
 
         HideOnScrollFAB(
-            visible = sortedSongs.isNotEmpty(),
+            visible = visibleSongs.isNotEmpty(),
             lazyListState = lazyListState,
             icon = R.drawable.shuffle,
             onClick = {
@@ -237,6 +267,7 @@ fun LocalSongsScreen(
                     ),
                 )
             },
+            hazeState = hazeState,
         )
     }
 }

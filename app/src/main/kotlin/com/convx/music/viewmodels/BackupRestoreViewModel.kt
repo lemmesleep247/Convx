@@ -22,7 +22,10 @@ import com.convx.music.extensions.tryOrNull
 import com.convx.music.extensions.zipInputStream
 import com.convx.music.extensions.zipOutputStream
 import com.convx.music.playback.MusicService
+import com.convx.music.playback.MusicService.Companion.PERSISTENT_AUTOMIX_FILE
+import com.convx.music.playback.MusicService.Companion.PERSISTENT_PLAYBACK_SNAPSHOT_FILE
 import com.convx.music.playback.MusicService.Companion.PERSISTENT_QUEUE_FILE
+import com.convx.music.playback.MusicService.Companion.PERSISTENT_PLAYER_STATE_FILE
 import com.convx.music.utils.reportException
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -30,6 +33,7 @@ import kotlinx.coroutines.runBlocking
 import timber.log.Timber
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.InputStream
 import java.util.zip.ZipEntry
 import javax.inject.Inject
 import kotlin.system.exitProcess
@@ -67,14 +71,7 @@ class BackupRestoreViewModel @Inject constructor(
                         outputStream.putNextEntry(ZipEntry(InternalDatabase.DB_NAME))
                         inputStream.copyTo(outputStream)
                     }
-                    // The Home background image/video itself is a plain file in
-                    // filesDir, not a DataStore value — settings.preferences_pb
-                    // above only carries the *path string* pointing at it. Without
-                    // this, a restore on a fresh install left HomeBackgroundPathKey
-                    // pointing at a file that no longer exists, so the background
-                    // (and whatever color customization was derived from it)
-                    // silently failed to show even though every other setting
-                    // came back correctly.
+                    // Background media is stored as files; DataStore saves only its path.
                     context.filesDir.listFiles { file -> file.name.startsWith(HOME_BACKGROUND_FILE_PREFIX) }
                         ?.forEach { bgFile ->
                             bgFile.inputStream().use { inputStream ->
@@ -101,39 +98,7 @@ class BackupRestoreViewModel @Inject constructor(
                     var foundAny = false
                     while (entry != null) {
                         Timber.tag("RESTORE").i("Found zip entry: ${entry.name}")
-                        when (entry.name) {
-                            SETTINGS_FILENAME -> {
-                                Timber.tag("RESTORE").i("Restoring settings to datastore")
-                                foundAny = true
-                                (context.filesDir / "datastore" / SETTINGS_FILENAME).outputStream()
-                                    .use { outputStream ->
-                                        inputStream.copyTo(outputStream)
-                                    }
-                            }
-                            InternalDatabase.DB_NAME -> {
-                                Timber.tag("RESTORE").i("Restoring DB (entry = ${entry.name})")
-                                foundAny = true
-                                // capture path before closing DB to avoid reopening race
-                                val dbPath = database.openHelper.writableDatabase.path
-                                runBlocking(Dispatchers.IO) { database.checkpoint() }
-                                database.close()
-                                Timber.tag("RESTORE").i("Overwriting DB at path: $dbPath")
-                                FileOutputStream(dbPath).use { outputStream ->
-                                    inputStream.copyTo(outputStream)
-                                }
-                                Timber.tag("RESTORE").i("DB overwrite complete")
-                            }
-                            else -> if (entry.name.startsWith("$HOME_BACKGROUND_ZIP_DIR/")) {
-                                Timber.tag("RESTORE").i("Restoring home background file: ${entry.name}")
-                                foundAny = true
-                                val fileName = entry.name.removePrefix("$HOME_BACKGROUND_ZIP_DIR/")
-                                context.filesDir.resolve(fileName).outputStream().use { outputStream ->
-                                    inputStream.copyTo(outputStream)
-                                }
-                            } else {
-                                Timber.tag("RESTORE").i("Skipping unexpected entry: ${entry.name}")
-                            }
-                        }
+                        if (restoreArchiveEntry(entry.name, inputStream, context)) foundAny = true
                         entry = tryOrNull { inputStream.nextEntry } // prevent ZipException
                     }
                     if (!foundAny) {
@@ -146,6 +111,9 @@ class BackupRestoreViewModel @Inject constructor(
 
             context.stopService(Intent(context, MusicService::class.java))
             context.filesDir.resolve(PERSISTENT_QUEUE_FILE).delete()
+            context.filesDir.resolve(PERSISTENT_AUTOMIX_FILE).delete()
+            context.filesDir.resolve(PERSISTENT_PLAYER_STATE_FILE).delete()
+            context.filesDir.resolve(PERSISTENT_PLAYBACK_SNAPSHOT_FILE).delete()
             context.startActivity(Intent(context, MainActivity::class.java))
             exitProcess(0)
         }.onFailure {
@@ -155,27 +123,63 @@ class BackupRestoreViewModel @Inject constructor(
         }
     }
 
-    fun previewCsvFile(context: Context, uri: Uri): CsvImportState {
-        val previewRows = mutableListOf<List<String>>()
-        val csvState: CsvImportState
-        runCatching {
-            context.contentResolver.openInputStream(uri)?.use { stream ->
-                val lines = stream.bufferedReader().readLines()
-                val rowsToPreview = lines.take(6).map { parseCsvLine(it) }
-                previewRows.addAll(rowsToPreview)
-
-                val hasHeader = lines.isNotEmpty() && lines[0].contains(",")
-                csvState = CsvImportState(
-                    previewRows = previewRows,
-                    hasHeader = hasHeader,
-                )
-                return csvState
+    private fun restoreArchiveEntry(
+        entryName: String,
+        inputStream: InputStream,
+        context: Context,
+    ): Boolean = when (entryName) {
+        SETTINGS_FILENAME -> {
+            Timber.tag("RESTORE").i("Restoring settings to datastore")
+            (context.filesDir / "datastore" / SETTINGS_FILENAME).outputStream().use { outputStream ->
+                inputStream.copyTo(outputStream)
             }
-        }.onFailure {
-            reportException(it)
-            Toast.makeText(context, "Failed to preview CSV file", Toast.LENGTH_SHORT).show()
+            true
         }
-        return CsvImportState()
+
+        InternalDatabase.DB_NAME -> {
+            Timber.tag("RESTORE").i("Restoring DB (entry = $entryName)")
+            // Capture the path before closing Room.
+            val dbPath = database.openHelper.writableDatabase.path
+            runBlocking(Dispatchers.IO) { database.checkpoint() }
+            // Mark shutdown as expected so active Flow collectors do not report a crash.
+            com.convx.music.utils.CrashHandler.databaseCloseExpected = true
+            database.close()
+            Timber.tag("RESTORE").i("Overwriting DB at path: $dbPath")
+            FileOutputStream(dbPath).use { outputStream -> inputStream.copyTo(outputStream) }
+            Timber.tag("RESTORE").i("DB overwrite complete")
+            true
+        }
+
+        else -> {
+            if (!entryName.startsWith("$HOME_BACKGROUND_ZIP_DIR/")) {
+                Timber.tag("RESTORE").i("Skipping unexpected entry: $entryName")
+                false
+            } else {
+                Timber.tag("RESTORE").i("Restoring home background file: $entryName")
+                val fileName = entryName.removePrefix("$HOME_BACKGROUND_ZIP_DIR/")
+                context.filesDir.resolve(fileName).outputStream().use { outputStream ->
+                    inputStream.copyTo(outputStream)
+                }
+                true
+            }
+        }
+    }
+
+    fun previewCsvFile(context: Context, uri: Uri): CsvImportState {
+        val previewState = runCatching {
+            context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { reader ->
+                val lines = reader.lineSequence().take(6).toList()
+                CsvImportState(
+                    previewRows = lines.map(::parseCsvLine),
+                    hasHeader = lines.firstOrNull()?.contains(",") == true,
+                )
+            }
+        }.onFailure { error ->
+            reportException(error)
+            Toast.makeText(context, "Failed to preview CSV file", Toast.LENGTH_SHORT).show()
+        }.getOrNull()
+
+        return previewState ?: CsvImportState()
     }
 
     fun importPlaylistFromCsv(
@@ -195,47 +199,18 @@ class BackupRestoreViewModel @Inject constructor(
                 val totalLines = lines.size - startIndex
 
                 lines.drop(startIndex).forEachIndexed { index, line ->
-                    val parts = parseCsvLine(line)
-
-                    if (parts.isNotEmpty()) {
-                        if (columnMapping.artistColumnIndex < parts.size && columnMapping.titleColumnIndex < parts.size) {
-                            val title = parts[columnMapping.titleColumnIndex].trim()
-                            val artistStr = parts[columnMapping.artistColumnIndex].trim()
-                            val url = if (columnMapping.urlColumnIndex >= 0 && columnMapping.urlColumnIndex < parts.size) {
-                                parts[columnMapping.urlColumnIndex].trim()
-                            } else {
-                                ""
-                            }
-
-                            if (title.isNotEmpty() && artistStr.isNotEmpty()) {
-                                val artists = artistStr.split(";", ",").map { it.trim() }
-                                    .filter { it.isNotEmpty() }
-                                    .map { ArtistEntity(id = "", name = it) }
-
-                                val mockSong = Song(
-                                    song = SongEntity(
-                                        id = "",
-                                        title = title,
-                                    ),
-                                    artists = artists,
-                                )
-                                songs.add(mockSong)
-
-                                // Update log with last 3 songs
-                                val logEntry = ConvertedSongLog(
-                                    title = title,
-                                    artists = artists.joinToString(", ") { it.name },
-                                )
-                                recentLogs.add(0, logEntry)
-                                if (recentLogs.size > 3) {
-                                    recentLogs.removeAt(recentLogs.size - 1)
-                                }
-                                onLogUpdate(recentLogs.toList())
-                            }
-                        }
+                    val song = parseCsvSong(parseCsvLine(line), columnMapping)
+                    if (song != null) {
+                        songs.add(song)
+                        val logEntry = ConvertedSongLog(
+                            title = song.song.title,
+                            artists = song.artists.joinToString(", ") { it.name },
+                        )
+                        recentLogs.add(0, logEntry)
+                        if (recentLogs.size > 3) recentLogs.removeAt(recentLogs.lastIndex)
+                        onLogUpdate(recentLogs.toList())
                     }
 
-                    // Update progress
                     val progress = ((index + 1) * 100) / totalLines
                     onProgress(progress.coerceIn(0, 99))
                 }
@@ -260,8 +235,26 @@ class BackupRestoreViewModel @Inject constructor(
         return songs
     }
 
+    private fun parseCsvSong(parts: List<String>, mapping: CsvImportState): Song? {
+        if (parts.isEmpty()) return null
+        if (mapping.artistColumnIndex >= parts.size || mapping.titleColumnIndex >= parts.size) return null
+
+        val title = parts[mapping.titleColumnIndex].trim()
+        val artistNames = parts[mapping.artistColumnIndex].trim()
+        if (title.isEmpty() || artistNames.isEmpty()) return null
+
+        val artists = artistNames.split(";", ",")
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .map { ArtistEntity(id = "", name = it) }
+
+        return Song(
+            song = SongEntity(id = "", title = title),
+            artists = artists,
+        )
+    }
+
     fun importPlaylistFromCsv(context: Context, uri: Uri): ArrayList<Song> {
-        // Legacy method for compatibility
         return importPlaylistFromCsv(context, uri, CsvImportState())
     }
 
@@ -291,30 +284,14 @@ class BackupRestoreViewModel @Inject constructor(
         val songs = ArrayList<Song>()
 
         runCatching {
-            context.applicationContext.contentResolver.openInputStream(uri)?.use { stream ->
-                val lines = stream.bufferedReader().readLines()
-                if (lines.first().startsWith("#EXTM3U")) {
-                    lines.forEachIndexed { _, rawLine ->
-                        if (rawLine.startsWith("#EXTINF:")) {
-                            // maybe later write this to be more efficient
-                            val artists =
-                                rawLine.substringAfter("#EXTINF:").substringAfter(',').substringBefore(" - ").split(';')
-                            val title = rawLine.substringAfter("#EXTINF:").substringAfter(',').substringAfter(" - ")
-
-                            val mockSong = Song(
-                                song = SongEntity(
-                                    id = "",
-                                    title = title,
-                                ),
-                                artists = artists.map { ArtistEntity("", it) },
-                            )
-                            songs.add(mockSong)
-
-                        }
+            context.applicationContext.contentResolver.openInputStream(uri)?.bufferedReader()?.use { reader ->
+                if (reader.readLine()?.startsWith("#EXTM3U") == true) {
+                    reader.forEachLine { line ->
+                        parseM3uEntry(line)?.let(songs::add)
                     }
                 }
             }
-        }
+        }.onFailure { reportException(it) }
 
         if (songs.isEmpty()) {
             Toast.makeText(
@@ -326,11 +303,22 @@ class BackupRestoreViewModel @Inject constructor(
         return songs
     }
 
+    private fun parseM3uEntry(line: String): Song? {
+        if (!line.startsWith("#EXTINF:")) return null
+
+        val metadata = line.substringAfter("#EXTINF:").substringAfter(',')
+        val artists = metadata.substringBefore(" - ").split(';')
+        val title = metadata.substringAfter(" - ")
+        return Song(
+            song = SongEntity(id = "", title = title),
+            artists = artists.map { ArtistEntity("", it) },
+        )
+    }
+
     companion object {
         const val SETTINGS_FILENAME = "settings.preferences_pb"
 
-        // Matches HomeBackgroundSettings.kt's copyBackgroundMedia filename convention
-        // ("home_background_<timestamp>.<ext>").
+        // Keep this prefix in sync with HomeBackgroundSettings.copyBackgroundMedia().
         private const val HOME_BACKGROUND_FILE_PREFIX = "home_background_"
         private const val HOME_BACKGROUND_ZIP_DIR = "home_background_files"
     }

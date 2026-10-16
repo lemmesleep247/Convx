@@ -20,26 +20,17 @@ rootProject.name = "convx"
 include(":app")
 include(":canvas")
 include(":innertube")
-include(":kugou")
-include(":lrclib")
-include(":kizzy")
-include(":lastfm")
-include(":betterlyrics")
-include(":simpmusic")
-include(":youlyplus")
-include(":shazamkit")
-include(":artistvideo")
-include(":applecanvas")
-include(":vivimusiccanvas")
-include(":paxsenixlyrics")
-include(":musixmatchlyrics")
-include(":jiosaavn")
+include(":lyrics")
+include(":integrations")
 include(":spotify")
+include(":artwork")
+include(":network-storage")
 include(":spine")
+include(":hig")
 
 
 // Use a local copy of NewPipe Extractor by uncommenting the lines below.
-// We assume, that vivimusic and NewPipe Extractor have the same parent directory.
+// We assume, that convx and NewPipe Extractor have the same parent directory.
 // If this is not the case, please change the path in includeBuild().
 //
 // For this to work you also need to change the implementation in innertube/build.gradle.kts

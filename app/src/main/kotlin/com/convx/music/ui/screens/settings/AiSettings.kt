@@ -5,98 +5,56 @@
 
 package com.convx.music.ui.screens.settings
 
+import com.convx.music.ui.component.sf
+import com.convx.music.ui.component.SymbolIcon
 import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.Spacer
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.height
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.only
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.padding
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.size
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.windowInsetsPadding
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.rememberScrollState
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.verticalScroll
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.AlertDialog
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import com.convx.music.ui.ios.compat.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.Icon
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.IconButton
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.MaterialTheme
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.Text
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.TextButton
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.TopAppBar
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.IconButton
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.Text
+import com.convx.music.ui.ios.compat.TextButton
 import androidx.compose.material3.TopAppBarScrollBehavior
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.Composable
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.mutableStateOf
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.saveable.rememberSaveable
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.setValue
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.res.painterResource
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.res.stringResource
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.text.input.TextFieldValue
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.unit.dp
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.navigation.NavController
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.LocalPlayerAwareWindowInsets
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.R
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.AiProviderKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.DeeplApiKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.DeeplFormalityKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.LanguageCodeToName
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.OpenRouterApiKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.OpenRouterBaseUrlKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.OpenRouterModelKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.TranslateLanguageKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.TranslateModeKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.component.EnumDialog
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.ui.component.Material3SettingsGroup
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.ui.component.Material3SettingsItem
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import com.convx.music.ui.component.IosSettingsGroup
+import com.convx.music.ui.component.IosSettingsItem
 import com.convx.music.ui.component.TextFieldDialog
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.utils.rememberPreference
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -108,7 +66,7 @@ fun AiSettings(
     var aiProvider by rememberPreference(AiProviderKey, "OpenRouter")
     var openRouterApiKey by rememberPreference(OpenRouterApiKey, "")
     var openRouterBaseUrl by rememberPreference(OpenRouterBaseUrlKey, "https://openrouter.ai/api/v1/chat/completions")
-    var openRouterModel by rememberPreference(OpenRouterModelKey, "google/gemini-2.5-flash-lite")
+    var openRouterModel by rememberPreference(OpenRouterModelKey, "google/gemini-3.1-flash-lite")
     var translateLanguage by rememberPreference(TranslateLanguageKey, "en")
     var translateMode by rememberPreference(TranslateModeKey, "Literal")
     var deeplApiKey by rememberPreference(DeeplApiKey, "")
@@ -116,6 +74,7 @@ fun AiSettings(
 
     val aiProviders = mapOf(
         "OpenRouter" to "https://openrouter.ai/api/v1/chat/completions",
+        "Groq" to "https://api.groq.com/openai/v1/chat/completions",
         "OpenAI" to "https://api.openai.com/v1/chat/completions",
         "Perplexity" to "https://api.perplexity.ai/chat/completions",
         "Claude" to "https://api.anthropic.com/v1/messages",
@@ -128,6 +87,7 @@ fun AiSettings(
 
     val providerHelpText = mapOf(
         "OpenRouter" to stringResource(R.string.ai_provider_openrouter_help),
+        "Groq" to stringResource(R.string.ai_provider_groq_help),
         "OpenAI" to stringResource(R.string.ai_provider_openai_help),
         "Perplexity" to stringResource(R.string.ai_provider_perplexity_help),
         "Claude" to stringResource(R.string.ai_provider_claude_help),
@@ -140,12 +100,20 @@ fun AiSettings(
 
     val modelsByProvider = mapOf(
         "OpenRouter" to listOf(
-            "google/gemini-2.5-flash-lite",
-            "google/gemini-2.5-flash",
-            "x-ai/grok-4.1-fast",
+            "google/gemini-3.1-flash-lite",
+            "google/gemini-3.5-flash",
+            "x-ai/grok-4.3",
             "deepseek/deepseek-v3.1-terminus:exacto",
             "openai/gpt-4o-mini",
-            "google/gemini-3-flash-preview"
+            "google/gemini-2.5-flash-lite"
+        ),
+        "Groq" to listOf(
+            // Free-tier accounts don't get every model Groq's own docs list —
+            // llama-3.3-70b-versatile and llama-3.1-8b-instant 404 as
+            // "does not exist or you do not have access to it" on a fresh key.
+            // gpt-oss verified working (200) against a real free-tier key.
+            "openai/gpt-oss-120b",
+            "openai/gpt-oss-20b",
         ),
         "OpenAI" to listOf(
             "gpt-4o-mini",
@@ -157,7 +125,6 @@ fun AiSettings(
             "claude-3-5-sonnet-latest",
             "claude-3-opus-latest"
         ),
-        //fixed issue with gemni
         "Gemini" to listOf(
             "gemini-2.5-flash-lite",
             "gemini-2.5-flash",
@@ -210,7 +177,7 @@ fun AiSettings(
                     Text(stringResource(android.R.string.ok))
                 }
             },
-            icon = { Icon(painterResource(R.drawable.info), null) },
+            icon = { SymbolIcon(symbol = sf("info.circle"), contentDescription = null) },
             title = { Text(stringResource(R.string.ai_provider_help)) },
             text = { 
                 Column {
@@ -218,7 +185,7 @@ fun AiSettings(
                         if (help.isNotEmpty()) {
                             Text(
                                 text = "$provider: $help",
-                                style = MaterialTheme.typography.bodyMedium,
+                                style = AppTheme.typography.bodyMedium,
                                 modifier = Modifier.padding(vertical = 4.dp)
                             )
                         }
@@ -236,28 +203,28 @@ fun AiSettings(
                     Text(stringResource(android.R.string.ok))
                 }
             },
-            icon = { Icon(painterResource(R.drawable.info), null) },
+            icon = { SymbolIcon(symbol = sf("info.circle"), contentDescription = null) },
             title = { Text(stringResource(R.string.ai_translation_mode)) },
             text = { 
                 Column {
                     Text(
                         text = "${stringResource(R.string.ai_translation_literal)}:",
-                        style = MaterialTheme.typography.titleSmall,
+                        style = AppTheme.typography.titleSmall,
                         modifier = Modifier.padding(top = 8.dp)
                     )
                     Text(
                         text = stringResource(R.string.ai_translation_literal_desc),
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = AppTheme.typography.bodyMedium,
                         modifier = Modifier.padding(bottom = 12.dp)
                     )
                     
                     Text(
                         text = "${stringResource(R.string.ai_translation_transcribed)}:",
-                        style = MaterialTheme.typography.titleSmall
+                        style = AppTheme.typography.titleSmall
                     )
                     Text(
                         text = stringResource(R.string.ai_translation_transcribed_desc),
-                        style = MaterialTheme.typography.bodyMedium
+                        style = AppTheme.typography.bodyMedium
                     )
                 }
             }
@@ -274,7 +241,6 @@ fun AiSettings(
                 } else {
                     openRouterBaseUrl = ""
                 }
-                // Set model to first available model for the selected provider
                 val modelsForProvider = modelsByProvider[it] ?: listOf()
                 openRouterModel = if (modelsForProvider.isNotEmpty()) {
                     modelsForProvider[0]
@@ -327,7 +293,7 @@ fun AiSettings(
     if (showApiKeyDialog) {
         TextFieldDialog(
             title = { Text(stringResource(R.string.ai_api_key)) },
-            icon = { Icon(painterResource(R.drawable.key), null) },
+            icon = { SymbolIcon(symbol = sf("key.fill"), contentDescription = null) },
             initialTextFieldValue = TextFieldValue(text = openRouterApiKey),
             onDone = {
                 openRouterApiKey = it
@@ -340,7 +306,7 @@ fun AiSettings(
     if (showDeeplApiKeyDialog) {
         TextFieldDialog(
             title = { Text("DeepL ${stringResource(R.string.ai_api_key)}") },
-            icon = { Icon(painterResource(R.drawable.key), null) },
+            icon = { SymbolIcon(symbol = sf("key.fill"), contentDescription = null) },
             initialTextFieldValue = TextFieldValue(text = deeplApiKey),
             onDone = {
                 deeplApiKey = it
@@ -374,7 +340,7 @@ fun AiSettings(
     if (showBaseUrlDialog && aiProvider == "Custom") {
         TextFieldDialog(
             title = { Text(stringResource(R.string.ai_base_url)) },
-            icon = { Icon(painterResource(R.drawable.link), null) },
+            icon = { SymbolIcon(symbol = sf("link"), contentDescription = null) },
             initialTextFieldValue = TextFieldValue(text = openRouterBaseUrl),
             onDone = {
                 openRouterBaseUrl = it
@@ -408,7 +374,7 @@ fun AiSettings(
     if (showCustomModelInput) {
         TextFieldDialog(
             title = { Text(stringResource(R.string.ai_model)) },
-            icon = { Icon(painterResource(R.drawable.discover_tune), null) },
+            icon = { SymbolIcon(symbol = sf("slider.horizontal.3"), contentDescription = null) },
             initialTextFieldValue = TextFieldValue(text = openRouterModel),
             onDone = {
                 openRouterModel = it
@@ -418,44 +384,28 @@ fun AiSettings(
         )
     }
 
-    Column(
-        Modifier
-            .windowInsetsPadding(
-                LocalPlayerAwareWindowInsets.current.only(
-                    WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom
-                )
-            )
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp)
+    SettingsPage(
+        navController = navController,
+        title = stringResource(R.string.ai_lyrics_translation),
+        pageColor = AppTheme.colorScheme.background,
+        horizontalPadding = 16.dp,
     ) {
-        Spacer(
-            Modifier.windowInsetsPadding(
-                LocalPlayerAwareWindowInsets.current.only(
-                    WindowInsetsSides.Top
-                )
-            )
-        )
-        
-        Material3SettingsGroup(
+        IosSettingsGroup(
             title = stringResource(R.string.ai_provider),
             items = listOf(
-                Material3SettingsItem(
+                IosSettingsItem(
                     icon = painterResource(R.drawable.explore_outlined),
                     title = { Text(stringResource(R.string.ai_provider)) },
                     description = { Text(aiProvider) },
                     onClick = { showProviderDialog = true },
                     trailingContent = {
                         IconButton(onClick = { showProviderHelpDialog = true }) {
-                            Icon(
-                                painterResource(R.drawable.info),
-                                contentDescription = stringResource(R.string.ai_provider_help),
-                                modifier = Modifier.size(20.dp)
-                            )
+                            SymbolIcon(symbol = sf("info.circle"), contentDescription = stringResource(R.string.ai_provider_help), size = 20.dp)
                         }
                     }
                 ),
                 if (aiProvider == "Custom") {
-                    Material3SettingsItem(
+                    IosSettingsItem(
                         icon = painterResource(R.drawable.link),
                         title = { Text(stringResource(R.string.ai_base_url)) },
                         description = { Text(openRouterBaseUrl.ifBlank { stringResource(R.string.not_set) }) },
@@ -469,12 +419,12 @@ fun AiSettings(
 
         Spacer(modifier = Modifier.height(27.dp))
 
-        Material3SettingsGroup(
+        IosSettingsGroup(
             title = stringResource(R.string.ai_setup_guide),
             items = buildList {
                 if (aiProvider == "DeepL") {
                     add(
-                        Material3SettingsItem(
+                        IosSettingsItem(
                             icon = painterResource(R.drawable.key),
                             title = { Text("DeepL ${stringResource(R.string.ai_api_key)}") },
                             description = { 
@@ -489,7 +439,7 @@ fun AiSettings(
                         )
                     )
                     add(
-                        Material3SettingsItem(
+                        IosSettingsItem(
                             icon = painterResource(R.drawable.tune),
                             title = { Text(stringResource(R.string.ai_deepl_formality)) },
                             description = { 
@@ -507,7 +457,7 @@ fun AiSettings(
                     )
                 } else {
                     add(
-                        Material3SettingsItem(
+                        IosSettingsItem(
                             icon = painterResource(R.drawable.key),
                             title = { Text(stringResource(R.string.ai_api_key)) },
                             description = { 
@@ -523,7 +473,7 @@ fun AiSettings(
                     )
                     if (aiProvider != "Custom") {
                         add(
-                            Material3SettingsItem(
+                            IosSettingsItem(
                                 icon = painterResource(R.drawable.discover_tune),
                                 title = { Text(stringResource(R.string.ai_model)) },
                                 description = { Text(openRouterModel.ifBlank { stringResource(R.string.not_set) }) },
@@ -537,12 +487,12 @@ fun AiSettings(
 
         Spacer(modifier = Modifier.height(27.dp))
 
-        Material3SettingsGroup(
+        IosSettingsGroup(
             title = stringResource(R.string.ai_translation_mode),
             items = buildList {
                 if (aiProvider != "DeepL") {
                     add(
-                        Material3SettingsItem(
+                        IosSettingsItem(
                             icon = painterResource(R.drawable.translate),
                             title = { Text(stringResource(R.string.ai_translation_mode)) },
                             description = {
@@ -557,18 +507,14 @@ fun AiSettings(
                             onClick = { showTranslateModeDialog = true },
                             trailingContent = {
                                 IconButton(onClick = { showTranslateModeHelpDialog = true }) {
-                                    Icon(
-                                        painterResource(R.drawable.info),
-                                        contentDescription = null,
-                                        modifier = Modifier.size(20.dp)
-                                    )
+                                    SymbolIcon(symbol = sf("info.circle"), contentDescription = null, size = 20.dp)
                                 }
                             }
                         )
                     )
                 }
                 add(
-                    Material3SettingsItem(
+                    IosSettingsItem(
                         icon = painterResource(R.drawable.language),
                         title = { Text(stringResource(R.string.ai_target_language)) },
                         description = { Text(LanguageCodeToName[translateLanguage] ?: translateLanguage) },
@@ -579,18 +525,6 @@ fun AiSettings(
         )
 
         Spacer(modifier = Modifier.height(16.dp))
+    
     }
-
-    TopAppBar(
-            windowInsets = appTopBarWindowInsets(),
-        title = { Text(stringResource(R.string.ai_lyrics_translation)) },
-        navigationIcon = {
-            IconButton(onClick = { navController.navigateUp() }) {
-                Icon(
-                    painterResource(R.drawable.arrow_back),
-                    contentDescription = null
-                )
-            }
-        }
-    )
 }

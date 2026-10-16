@@ -21,11 +21,7 @@ import com.convx.music.constants.SearchSource
  */
 @Immutable
 data class NavSearchState(
-    // Whether the nav bar should render its search-mode chrome. Owned by
-    // MainActivity rather than derived purely from the current route inside
-    // the nav bar, so entering/exiting search can hold this true/false for a
-    // beat before the actual navigation lands — the shrink/expand animation
-    // plays out first, then the route changes.
+    // Remains active during the transition before navigation changes routes.
     val visualActive: Boolean = false,
     val keyboardActive: Boolean = false,
     val query: TextFieldValue = TextFieldValue(),

@@ -58,5 +58,6 @@ data class ItemSectionRenderer(
     @Serializable
     data class Content(
         val musicResponsiveListItemRenderer: MusicResponsiveListItemRenderer?,
+        val musicShelfRenderer: MusicShelfRenderer? = null,
     )
 }

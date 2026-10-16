@@ -1,116 +1,63 @@
 package com.convx.music.ui.screens.settings
 
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import com.convx.music.ui.component.sf
+import com.convx.music.ui.component.SymbolIcon
+import com.convx.music.ui.ios.compat.AppTheme
+
 import android.webkit.CookieManager
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import android.webkit.WebResourceRequest
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import android.webkit.WebView
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import android.webkit.WebViewClient
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.animation.AnimatedVisibility
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.animation.animateColorAsState
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.animation.core.LinearEasing
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.animation.core.RepeatMode
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.animation.core.animateFloat
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.animation.core.infiniteRepeatable
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.animation.core.rememberInfiniteTransition
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.animation.core.tween
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.background
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.graphics.graphicsLayer
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.*
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.foundation.lazy.LazyColumn
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.foundation.rememberScrollState
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.shape.CircleShape
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.shape.RoundedCornerShape
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.foundation.verticalScroll
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.*
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.TopAppBarScrollBehavior
+import com.convx.music.ui.ios.compat.Button
+import com.convx.music.ui.ios.compat.OutlinedButton
+import com.convx.music.ui.ios.compat.TextButton
+import com.convx.music.ui.ios.compat.Text
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.LinearProgressIndicator
+import com.convx.music.ui.ios.compat.ModalBottomSheet
+import com.convx.music.ui.ios.compat.Surface
+import com.convx.music.ui.ios.compat.rememberIosModalSheetState
 import androidx.compose.runtime.*
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.runtime.saveable.rememberSaveable
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.Alignment
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.Modifier
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.draw.clip
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.graphics.Color
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.layout.ContentScale
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.platform.LocalContext
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.res.painterResource
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.res.stringResource
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.text.font.FontWeight
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.ui.text.style.TextOverflow
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.unit.dp
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.viewinterop.AndroidView
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.ui.window.Dialog
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.navigation.NavController
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import coil3.compose.AsyncImage
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.music.spotify.SpotifyAuth
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.music.spotify.SpotifyMapper
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.music.spotify.models.SpotifyPlaylist
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.LocalPlayerAwareWindowInsets
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import com.music.spotify.SpotifyHomeItem
+import com.music.spotify.SpotifyHomeShelf
 import com.convx.music.R
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.component.DefaultDialog
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.ui.component.IconButton
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.ui.component.Material3SettingsGroup
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.ui.component.Material3SettingsItem
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.ui.menu.LoadingScreen
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.ui.utils.backToMain
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.utils.rememberPreference
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import com.convx.music.ui.component.IosSettingsGroup
+import com.convx.music.ui.component.IosSettingsItem
 import com.convx.music.viewmodels.SpotifyImportViewModel
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import kotlinx.coroutines.launch
+import com.convx.music.viewmodels.SpotifyImportUiState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -143,35 +90,17 @@ fun SpotifyScreen(
         remember { mutableStateOf(0f) }
     }
 
-    Column(
-        modifier = Modifier
-            .windowInsetsPadding(
-                LocalPlayerAwareWindowInsets.current.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom)
-            )
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp)
+    SettingsPage(
+        navController = navController,
+        title = stringResource(R.string.spotify),
+        pageColor = AppTheme.colorScheme.background,
+        horizontalPadding = 24.dp,
     ) {
-        Spacer(
-            Modifier.windowInsetsPadding(
-                LocalPlayerAwareWindowInsets.current.only(WindowInsetsSides.Top)
-            )
-        )
-
-        Text(
-            text = stringResource(R.string.spotify),
-            style = MaterialTheme.typography.displaySmall.copy(
-                fontWeight = FontWeight.SemiBold
-            ),
-            color = MaterialTheme.colorScheme.onBackground,
-            modifier = Modifier.padding(start = 8.dp, top = 24.dp, bottom = 16.dp)
-        )
-
-        // Connection Card/Group
-        Material3SettingsGroup(
+        IosSettingsGroup(
             title = stringResource(R.string.spotify_account),
             items = listOf(
                 if (state.isAuthenticated) {
-                    Material3SettingsItem(
+                    IosSettingsItem(
                         leadingContent = if (!state.accountAvatarUrl.isNullOrBlank()) {
                             {
                                 AsyncImage(
@@ -189,16 +118,16 @@ fun SpotifyScreen(
                             Text(
                                 text = if (state.accountName.isNotBlank()) state.accountName
                                 else stringResource(R.string.spotify_account),
-                                color = MaterialTheme.colorScheme.primary,
-                                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold)
+                                color = AppTheme.colorScheme.primary,
+                                style = AppTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold)
                             )
                         },
                         trailingContent = {
                             OutlinedButton(
                                 onClick = { viewModel.logout() },
                                 colors = ButtonDefaults.outlinedButtonColors(
-                                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                                    contentColor = MaterialTheme.colorScheme.onSurface
+                                    containerColor = AppTheme.colorScheme.surfaceContainer,
+                                    contentColor = AppTheme.colorScheme.onSurface
                                 )
                             ) {
                                 Text(stringResource(R.string.action_logout))
@@ -207,7 +136,7 @@ fun SpotifyScreen(
                         onClick = {}
                     )
                 } else {
-                    Material3SettingsItem(
+                    IosSettingsItem(
                         title = { Text(stringResource(R.string.spotify_connect)) },
                         description = { Text(stringResource(R.string.spotify_not_connected)) },
                         icon = painterResource(R.drawable.spotify),
@@ -217,13 +146,25 @@ fun SpotifyScreen(
             )
         )
 
+        if (state.isAuthenticated) {
+            Spacer(modifier = Modifier.height(24.dp))
+            SpotifyHomeFeedSection(
+                state = state,
+                onRefresh = {
+                    viewModel.loadSources()
+                    viewModel.loadHomeFeed()
+                },
+                onImportPlaylist = viewModel::importHomePlaylist,
+            )
+        }
+
         Spacer(modifier = Modifier.height(24.dp))
 
         val totalPlaylists = state.playlists.size + if (state.likedSongsCount > 0) 1 else 0
-        Material3SettingsGroup(
+        IosSettingsGroup(
             title = stringResource(R.string.playlists),
             items = listOf(
-                Material3SettingsItem(
+                IosSettingsItem(
                     title = { Text(stringResource(R.string.spotify_select_sources)) },
                     description = {
                         Text(
@@ -239,7 +180,7 @@ fun SpotifyScreen(
                     enabled = state.isAuthenticated && totalPlaylists > 0 && !state.isLoading,
                     onClick = { showPlaylistsSheet = true }
                 ),
-                Material3SettingsItem(
+                IosSettingsItem(
                     title = { Text(stringResource(R.string.spotify_refresh)) },
                     leadingContent = {
                         Box(
@@ -247,73 +188,45 @@ fun SpotifyScreen(
                                 .size(40.dp)
                                 .clip(RoundedCornerShape(12.dp))
                                 .background(
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                                    AppTheme.colorScheme.primary.copy(alpha = 0.1f)
                                 ),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(
-                                painter = painterResource(R.drawable.sync),
-                                contentDescription = null,
-                                tint = if (!refreshEnabled) {
-                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                                } else {
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.9f)
-                                },
-                                modifier = Modifier
-                                    .size(24.dp)
+                            SymbolIcon(symbol = sf("arrow.triangle.2.circlepath"), contentDescription = null, size = 24.dp, modifier = Modifier
+                                    
                                     .graphicsLayer {
                                         rotationZ = rotationAngle
-                                    }
-                            )
+                                    }, tint = if (!refreshEnabled) {
+                                    AppTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                                } else {
+                                    AppTheme.colorScheme.primary.copy(alpha = 0.9f)
+                                })
                         }
                     },
                     enabled = refreshEnabled,
-                    onClick = { viewModel.loadSources() }
+                    onClick = {
+                        viewModel.loadSources()
+                        viewModel.loadHomeFeed()
+                    }
                 )
             )
         )
 
-        // Info block
         Row(
             modifier = Modifier.padding(top = 24.dp),
             verticalAlignment = Alignment.Top
         ) {
-            Icon(
-                painter = painterResource(R.drawable.info),
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(end = 8.dp)
-            )
+            SymbolIcon(symbol = sf("info.circle"), contentDescription = null, modifier = Modifier.padding(end = 8.dp), tint = AppTheme.colorScheme.onSurfaceVariant)
             Text(
                 text = stringResource(R.string.spotify_import_desc),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                style = AppTheme.typography.bodyMedium,
+                color = AppTheme.colorScheme.onSurfaceVariant
             )
         }
 
         Spacer(modifier = Modifier.height(36.dp))
+    
     }
-
-    TopAppBar(
-            windowInsets = appTopBarWindowInsets(),
-        title = {},
-        navigationIcon = {
-            IconButton(
-                onClick = navController::navigateUp,
-                onLongClick = navController::backToMain,
-            ) {
-                Icon(
-                    painterResource(R.drawable.arrow_back),
-                    contentDescription = null,
-                )
-            }
-        },
-        scrollBehavior = scrollBehavior,
-        colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = Color.Transparent,
-            scrolledContainerColor = Color.Transparent
-        )
-    )
 
     if (showSpotifyLogin) {
         SpotifyLoginSheet(
@@ -365,9 +278,9 @@ fun SpotifyScreen(
             ) {
                 Text(
                     text = stringResource(R.string.playlists) + ": " + progress.playlistName,
-                    style = MaterialTheme.typography.bodyLarge,
+                    style = AppTheme.typography.bodyLarge,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = AppTheme.colorScheme.onSurface
                 )
                 Text(
                     text = if (isFinished) {
@@ -375,8 +288,8 @@ fun SpotifyScreen(
                     } else {
                         stringResource(R.string.spotify_importing_songs_count, progress.currentSongIndex, progress.totalSongs)
                     },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    style = AppTheme.typography.bodyMedium,
+                    color = AppTheme.colorScheme.onSurfaceVariant
                 )
                 LinearProgressIndicator(
                     progress = { progress.percent },
@@ -384,8 +297,8 @@ fun SpotifyScreen(
                         .fillMaxWidth()
                         .height(12.dp)
                         .clip(RoundedCornerShape(6.dp)),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                    color = AppTheme.colorScheme.primary,
+                    trackColor = AppTheme.colorScheme.surfaceVariant
                 )
             }
         }
@@ -402,8 +315,8 @@ fun SpotifyScreen(
         ) {
             Text(
                 text = error,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                style = AppTheme.typography.bodyMedium,
+                color = AppTheme.colorScheme.onSurfaceVariant
             )
         }
     }
@@ -416,13 +329,127 @@ fun SpotifyScreen(
     }
 }
 
+@Composable
+private fun SpotifyHomeFeedSection(
+    state: SpotifyImportUiState,
+    onRefresh: () -> Unit,
+    onImportPlaylist: (SpotifyHomeItem) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                text = stringResource(R.string.spotify_home_title),
+                style = AppTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = AppTheme.colorScheme.onSurface,
+            )
+            TextButton(onClick = onRefresh, enabled = !state.isHomeFeedLoading) {
+                Text(stringResource(R.string.spotify_refresh))
+            }
+        }
+
+        when {
+            state.isHomeFeedLoading && state.homeShelves.isEmpty() -> {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
+            state.homeFeedErrorMessage != null && state.homeShelves.isEmpty() -> {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = stringResource(R.string.spotify_home_error),
+                        style = AppTheme.typography.bodyMedium,
+                        color = AppTheme.colorScheme.onSurfaceVariant,
+                    )
+                    TextButton(onClick = onRefresh) {
+                        Text(stringResource(R.string.spotify_home_retry))
+                    }
+                }
+            }
+            state.homeShelves.isEmpty() -> {
+                Text(
+                    text = stringResource(R.string.spotify_home_empty),
+                    style = AppTheme.typography.bodyMedium,
+                    color = AppTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            else -> {
+                state.homeShelves.forEach { shelf ->
+                    SpotifyHomeShelfRow(shelf = shelf, onImportPlaylist = onImportPlaylist)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SpotifyHomeShelfRow(
+    shelf: SpotifyHomeShelf,
+    onImportPlaylist: (SpotifyHomeItem) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+            text = shelf.title,
+            style = AppTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = AppTheme.colorScheme.onSurface,
+        )
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            items(shelf.items, key = SpotifyHomeItem::uri) { item ->
+                Surface(
+                    modifier = Modifier.width(148.dp),
+                    shape = RoundedCornerShape(18.dp),
+                    color = AppTheme.colorScheme.surfaceContainerLow,
+                    onClick = { onImportPlaylist(item) },
+                ) {
+                    Column(
+                        modifier = Modifier.padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        AsyncImage(
+                            model = item.artworkUrl,
+                            contentDescription = null,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .aspectRatio(1f)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(AppTheme.colorScheme.primary.copy(alpha = 0.08f)),
+                            contentScale = ContentScale.Crop,
+                            error = painterResource(R.drawable.spotify),
+                            placeholder = painterResource(R.drawable.spotify),
+                        )
+                        Text(
+                            text = item.title,
+                            style = AppTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = AppTheme.colorScheme.onSurface,
+                            maxLines = 2,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            minLines = 2,
+                        )
+                        Text(
+                            text = stringResource(R.string.spotify_home_import_hint),
+                            style = AppTheme.typography.labelSmall,
+                            color = AppTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SpotifyLoginSheet(
     onDismiss: () -> Unit,
     onCookiesCaptured: (spDc: String, spKey: String) -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState = rememberIosModalSheetState(skipPartiallyExpanded = true)
     var webView by remember { mutableStateOf<WebView?>(null) }
     var captured by remember { mutableStateOf(false) }
 
@@ -436,37 +463,40 @@ private fun SpotifyLoginSheet(
     }
 
     ModalBottomSheet(
-        modifier = Modifier.fillMaxHeight(),
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-        containerColor = MaterialTheme.colorScheme.surface,
+        containerColor = AppTheme.colorScheme.surface,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight()
+                .fillMaxHeight(0.9f)
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
                 text = stringResource(R.string.spotify_login_title),
-                style = MaterialTheme.typography.titleLarge,
+                style = AppTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
             )
             Text(
                 text = stringResource(R.string.spotify_waiting_for_login),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = AppTheme.typography.bodyMedium,
+                color = AppTheme.colorScheme.onSurfaceVariant,
             )
             AndroidView(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
-                    .clip(MaterialTheme.shapes.large),
+                    .clip(AppTheme.shapes.large),
                 factory = { context ->
                     WebView(context).apply {
+                        layoutParams = android.view.ViewGroup.LayoutParams(
+                            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                            android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                        )
                         val cookieManager = CookieManager.getInstance()
                         cookieManager.setAcceptCookie(true)
                         cookieManager.setAcceptThirdPartyCookies(this, true)
@@ -479,18 +509,29 @@ private fun SpotifyLoginSheet(
                             private fun captureCookies(url: String?): Boolean {
                                 if (captured) return true
                                 cookieManager.flush()
-                                val cookiesStr = cookieManager.getCookie("https://open.spotify.com") ?: ""
-                                val cookies = cookiesStr.split(";").associate {
-                                    val parts = it.split("=")
-                                    val key = parts.firstOrNull()?.trim().orEmpty()
-                                    val valStr = parts.drop(1).joinToString("=").trim()
-                                    key to valStr
+                                val domainsToCheck = listOfNotNull(
+                                    url,
+                                    "https://open.spotify.com",
+                                    "https://accounts.spotify.com",
+                                    "https://spotify.com",
+                                    ".spotify.com"
+                                )
+                                for (domain in domainsToCheck) {
+                                    val cookiesStr = cookieManager.getCookie(domain) ?: continue
+                                    val cookies = cookiesStr.split(";").associate {
+                                        val parts = it.split("=")
+                                        val key = parts.firstOrNull()?.trim().orEmpty()
+                                        val valStr = parts.drop(1).joinToString("=").trim()
+                                        key to valStr
+                                    }
+                                    val spDc = cookies["sp_dc"].orEmpty()
+                                    if (spDc.isNotBlank()) {
+                                        captured = true
+                                        onCookiesCaptured(spDc, cookies["sp_key"].orEmpty())
+                                        return true
+                                    }
                                 }
-                                val spDc = cookies["sp_dc"].orEmpty()
-                                if (spDc.isBlank()) return false
-                                captured = true
-                                onCookiesCaptured(spDc, cookies["sp_key"].orEmpty())
-                                return true
+                                return false
                             }
 
                             override fun shouldOverrideUrlLoading(
@@ -510,6 +551,7 @@ private fun SpotifyLoginSheet(
                                 captureCookies(url)
                             }
                         }
+                        webChromeClient = android.webkit.WebChromeClient()
                         webView = this
                         cookieManager.removeAllCookies(null)
                         cookieManager.flush()

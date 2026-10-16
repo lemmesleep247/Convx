@@ -5,45 +5,60 @@
 
 package com.convx.music.ui.utils
 
+private val youtubeThumbnailFilename =
+    Regex("(default|mqdefault|hqdefault|sddefault|maxresdefault)\\.jpg")
+private val googleusercontentArtworkUrl =
+    Regex("https://lh\\d\\.googleusercontent\\.com/.*")
+private val appleArtworkFilename = Regex("""/\d+x\d+[a-z]*\.(jpg|jpeg|png|webp)$""")
+
 fun String.resize(
     width: Int? = null,
     height: Int? = null,
 ): String {
     if (width == null && height == null) return this
 
-    // i.ytimg.com handling (YouTube video thumbnails)
-    // These URLs use a filename-based quality system:
-    // We use maxresdefault (1280x720) for the large player thumbnail (width >= 1200) for the best quality,
-    // and hqdefault (480x360) for lists and grids to ensure extremely fast loading and absolute reliability.
+    // YouTube thumbnails use fixed quality filenames. Request the smallest rung that fits;
+    // the quality interceptor falls back when maxres or sd thumbnails return 404.
     if (this.contains("i.ytimg.com")) {
-        val targetQuality = if (width != null && width >= 1200) "maxresdefault.jpg" else "hqdefault.jpg"
+        val target = maxOf(width ?: 0, height ?: 0)
+        val targetQuality = when {
+            target >= 1000 -> "maxresdefault.jpg" // 1280x720
+            target >= 400 -> "sddefault.jpg"      // 640x480
+            target >= 250 -> "hqdefault.jpg"      // 480x360
+            else -> "mqdefault.jpg"               // 320x180
+        }
         return this.replace(
-            Regex("(default|mqdefault|hqdefault|sddefault|maxresdefault)\\.jpg"),
+            youtubeThumbnailFilename,
             targetQuality
         )
     }
 
     // googleusercontent.com handling (includes lh3-lh6, yt3, etc.)
     if (this.contains("googleusercontent.com") && this.contains("=w")) {
-        val baseUrl = this.split("=w")[0]
+        val baseUrl = substringBefore("=w")
         val w = width ?: 0
         val h = height ?: width ?: 0
-        // Reverting to l90-rj (JPEG) for better compatibility while keeping high resolution
+        // Keep the full requested size and use the JPEG format these thumbnails support.
         return "$baseUrl=w$w-h$h-p-l90-rj"
     }
 
-    // yt3.ggpht.com handling (avatars)
     if (this.contains("yt3.ggpht.com")) {
-        // Correctly strip any existing size parameter (=s... or -s...) before appending the new one
-        val baseUrl = this.split("=")[0].split("-s")[0]
+        val baseUrl = substringBefore("=").substringBefore("-s")
         return "$baseUrl=s${width ?: height}"
     }
 
     // Fallback for other lh3-style URLs that might not have =w yet
-    "https://lh\\d\\.googleusercontent\\.com/.*".toRegex().matchEntire(this)?.let {
+    googleusercontentArtworkUrl.matchEntire(this)?.let {
         val w = width ?: 0
         val h = height ?: width ?: 0
-        return "${this.split("=")[0]}=w$w-h$h-p-l90-rj"
+        return "${substringBefore("=")}=w$w-h$h-p-l90-rj"
+    }
+
+    // Apple Music (mzstatic) artwork: the size is the filename, "bb" = fit inside the box
+    // keeping aspect, so a 16:9 editorial image asked for as a square is not cropped.
+    if (this.contains("mzstatic.com")) {
+        val px = maxOf(width ?: 0, height ?: 0)
+        return replace(appleArtworkFilename, "/${px}x${px}bb.jpg")
     }
 
     return this

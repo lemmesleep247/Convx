@@ -15,6 +15,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.convx.music.R
 
+/** SF Pro Text font files used for the app's Latin typography. */
+val SfProFontFamily = FontFamily(
+    Font(R.font.sf_pro_text_regular, FontWeight.Normal),
+    Font(R.font.sf_pro_text_medium, FontWeight.Medium),
+    Font(R.font.sf_pro_text_semibold, FontWeight.SemiBold),
+    Font(R.font.sf_pro_text_bold, FontWeight.Bold),
+)
+
 @OptIn(ExperimentalTextApi::class)
 val GoogleSansFontFamily = FontFamily(
     Font(
@@ -127,66 +135,59 @@ val PlusJakartaSansFontFamily = FontFamily(
     )
 )
 
-// TODO: Define or import actual M3 Expressive font families if needed.
-// For now, using default FontFamily as a placeholder.
+// TODO: Use M3 Expressive font families when the app adopts that type scale.
 
-// Define M3 Expressive Typography based on Material Design guidelines
-// https://m3.material.io/styles/typography/type-scale-tokens
-// Note: M3 Expressive might introduce subtle changes or new roles.
-// Referencing standard M3 roles for now, adjust if Expressive spec differs significantly.
-//
-// Takes the user's custom-installed font (see rememberCustomFontFamily in
-// Font.kt) so every text role in the app renders in it; falls back to the
-// system default when none is installed.
+// Uses the selected app font and applies tighter tracking to large display styles.
+// Smaller body and label styles keep Material's tracking values.
 fun AppTypography(fontFamily: FontFamily = FontFamily.Default) = Typography(
     displayLarge = TextStyle(
         fontFamily = fontFamily,
         fontWeight = FontWeight.Normal,
         fontSize = 57.sp,
         lineHeight = 64.sp,
-        letterSpacing = (-0.25).sp
+        letterSpacing = (-1.1).sp
     ),
     displayMedium = TextStyle(
         fontFamily = fontFamily,
         fontWeight = FontWeight.Normal,
         fontSize = 45.sp,
         lineHeight = 52.sp,
-        letterSpacing = 0.sp
+        letterSpacing = (-0.9).sp
     ),
     displaySmall = TextStyle(
         fontFamily = fontFamily,
         fontWeight = FontWeight.Normal,
         fontSize = 36.sp,
         lineHeight = 44.sp,
-        letterSpacing = 0.sp
+        letterSpacing = (-0.7).sp
     ),
     headlineLarge = TextStyle(
         fontFamily = fontFamily,
         fontWeight = FontWeight.Normal,
         fontSize = 32.sp,
         lineHeight = 40.sp,
-        letterSpacing = 0.sp
+        letterSpacing = (-0.6).sp
     ),
     headlineMedium = TextStyle(
         fontFamily = fontFamily,
         fontWeight = FontWeight.Normal,
         fontSize = 28.sp,
         lineHeight = 36.sp,
-        letterSpacing = 0.sp
+        letterSpacing = (-0.45).sp
     ),
     headlineSmall = TextStyle(
         fontFamily = fontFamily,
         fontWeight = FontWeight.Normal,
         fontSize = 24.sp,
         lineHeight = 32.sp,
-        letterSpacing = 0.sp
+        letterSpacing = (-0.3).sp
     ),
     titleLarge = TextStyle(
         fontFamily = fontFamily,
         fontWeight = FontWeight.Normal, // M3 uses Normal, M2 used Medium
         fontSize = 22.sp,
         lineHeight = 28.sp,
-        letterSpacing = 0.sp
+        letterSpacing = (-0.2).sp
     ),
     titleMedium = TextStyle(
         fontFamily = fontFamily,

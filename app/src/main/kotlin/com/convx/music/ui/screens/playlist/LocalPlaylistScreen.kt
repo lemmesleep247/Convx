@@ -5,25 +5,24 @@
 
 package com.convx.music.ui.screens.playlist
 
+import com.convx.music.ui.utils.sharedTitleTarget
+
+import com.convx.music.ui.component.sf
+import com.convx.music.ui.component.SymbolIcon
+import com.convx.music.ui.component.chromeShadow
 import com.convx.music.ui.utils.FloatingChromeSpacer
 import com.convx.music.ui.utils.appTopBarWindowInsets
 import android.annotation.SuppressLint
 import android.content.Context
-import android.content.Intent
-import android.graphics.Bitmap
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.datastore.preferences.core.edit
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -51,25 +50,31 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.Surface
+import com.convx.music.ui.ios.compat.Checkbox
+import com.convx.music.ui.ios.compat.Surface
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.FilledIconToggleButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LocalContentColor
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.PlainTooltip
-import androidx.compose.material3.SnackbarHost
+import com.convx.music.ui.ios.compat.FilledIconToggleButton
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.IconButton
+import com.convx.music.ui.ios.compat.LocalContentColor
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.OutlinedTextField
+import com.convx.music.ui.ios.compat.PlainTooltip
+import com.convx.music.ui.ios.compat.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
+import com.convx.music.ui.ios.compat.Text
+import com.convx.music.ui.ios.compat.TextButton
+import com.convx.music.ui.ios.compat.OutlinedTextField as TextField
+import com.composables.sfsymbols.SfSymbols
+import com.composables.sfsymbols.monochrome.SFLine3Horizontal
+import com.composables.sfsymbols.monochrome.SFLock
+import com.composables.sfsymbols.monochrome.SFLockOpen
+import com.composables.sfsymbols.monochrome.SFSquareAndPencil
+import com.composables.sfsymbols.monochrome.SFShuffle
+import com.composables.sfsymbols.monochrome.SFXmark
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TooltipAnchorPosition
 import androidx.compose.material3.TooltipBox
@@ -80,6 +85,7 @@ import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -103,10 +109,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import com.convx.music.ui.component.buildAlphabetSectionIndex
@@ -121,11 +127,11 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.fastAny
 import androidx.compose.ui.util.fastForEachIndexed
 import androidx.compose.ui.util.fastForEachReversed
 import androidx.compose.ui.util.fastSumBy
-import androidx.core.content.FileProvider
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.exoplayer.offline.Download
@@ -142,7 +148,6 @@ import com.convx.music.LocalPlayerAwareWindowInsets
 import com.convx.music.LocalPlayerConnection
 import com.convx.music.LocalSyncUtils
 import com.convx.music.R
-import com.convx.music.constants.DarkModeKey
 import com.convx.music.constants.PendingPlaylistDeletesKey
 import com.convx.music.constants.PlaylistEditLockKey
 import com.convx.music.constants.PlaylistSongSortDescendingKey
@@ -159,6 +164,7 @@ import com.convx.music.playback.queues.ListQueue
 import com.convx.music.ui.component.ActionPromptDialog
 import com.convx.music.ui.component.DefaultDialog
 import com.convx.music.ui.component.EmptyPlaceholder
+import com.convx.music.ui.component.ContrastCircleButton
 import com.convx.music.ui.component.GlassCircleButton
 import com.convx.music.ui.component.ChromeScrim
 import com.convx.music.ui.component.rememberChromeScrimProgress
@@ -166,15 +172,22 @@ import com.convx.music.ui.component.IconButton
 import com.convx.music.ui.component.LocalAppBackdrop
 import com.convx.music.ui.component.GlassComponent
 import com.convx.music.ui.component.LocalGlassEffectConfig
+import com.convx.music.ui.component.resolvedTextColor
+import com.convx.music.ui.component.withFixedStyle
 import com.convx.music.ui.component.backdrop.backdrops.layerBackdrop
 import com.convx.music.ui.component.backdrop.backdrops.rememberBackdropFreeze
 import com.convx.music.ui.component.LocalItemPrefs
 import com.convx.music.ui.component.backdrop.backdrops.rememberLayerBackdrop
 import com.convx.music.ui.component.LocalMenuState
 import com.convx.music.ui.component.OverlayEditButton
+import com.convx.music.ui.component.rememberPlaylistCoverPicker
 import com.convx.music.ui.component.SongListItem
 import com.convx.music.ui.component.SortHeader
 import com.convx.music.ui.component.isGlassAllowed
+import androidx.compose.ui.graphics.isSpecified
+import com.convx.music.LocalAmbientBackgroundColor
+import com.convx.music.ui.component.asSoftIconTint
+import com.convx.music.ui.utils.additiveChrome
 import com.convx.music.ui.component.liquidGlass
 import com.convx.music.ui.component.shapes.ContinuousRoundedRectangle
 import com.convx.music.ui.menu.CustomThumbnailMenu
@@ -182,8 +195,14 @@ import com.convx.music.ui.component.ExpandableText
 import com.convx.music.ui.menu.LocalPlaylistMenu
 import com.convx.music.ui.menu.SelectionSongMenu
 import com.convx.music.ui.menu.SongMenu
-import com.convx.music.ui.screens.settings.DarkMode
 import com.convx.music.ui.component.AlbumStyleHeroImage
+import com.convx.music.ui.player.MeshGradientBackground
+import com.convx.music.ui.player.dimmed
+import com.convx.music.ui.component.HeroTopBlur
+import com.convx.music.ui.component.ZeroScrollProgress
+import com.convx.music.ui.component.rememberHeroTopBlur
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeSource
 import com.convx.music.LocalTabView
 import com.convx.music.ui.utils.rememberHeroZoom
 import com.convx.music.ui.utils.heroPullZoom
@@ -200,10 +219,7 @@ import com.convx.music.utils.listItemShape
 import com.convx.music.utils.makeTimeString
 import com.convx.music.utils.rememberEnumPreference
 import com.convx.music.utils.rememberPreference
-import com.convx.music.utils.reportException
 import com.convx.music.viewmodels.LocalPlaylistViewModel
-import com.yalantis.ucrop.UCrop
-import io.ktor.client.plugins.ClientRequestException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -212,9 +228,17 @@ import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import java.time.LocalDateTime
 import com.convx.music.playback.DownloadTarget
+import com.convx.music.playback.combinedDownloadState
 import com.convx.music.playback.cancelDownloads
 import com.convx.music.playback.downloadSongs
 import com.convx.music.playback.removeDownloads
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
+/** A stable accent per playlist, so a cover-less one still gets its own colourful mesh. */
+private fun localPlaylistSeed(id: String): Int {
+    val accents = intArrayOf(0xFFFF375F.toInt(), 0xFF0A84FF.toInt(), 0xFFFF9F0A.toInt(), 0xFF30D158.toInt(), 0xFFBF5AF2.toInt(), 0xFF64D2FF.toInt())
+    return accents[(id.hashCode() and Int.MAX_VALUE) % accents.size]
+}
 
 @SuppressLint("RememberReturnType")
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -226,14 +250,14 @@ fun LocalPlaylistScreen(
 ) {
     val context = LocalContext.current
     val menuState = LocalMenuState.current
-    val database = LocalDatabase.current
+    val database = LocalDatabase.current.get()
     val haptic = LocalHapticFeedback.current
     val playerConnection = LocalPlayerConnection.current ?: return
-    val isPlaying by playerConnection.isEffectivelyPlaying.collectAsState()
-    val mediaMetadata by playerConnection.mediaMetadata.collectAsState()
+    val isPlaying by playerConnection.isEffectivelyPlaying.collectAsStateWithLifecycle()
+    val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
 
-    val playlist by viewModel.playlist.collectAsState()
-    val songs by viewModel.playlistSongs.collectAsState()
+    val playlist by viewModel.playlist.collectAsStateWithLifecycle()
+    val songs by viewModel.playlistSongs.collectAsStateWithLifecycle()
     val mutableSongs = remember { mutableStateListOf<PlaylistSong>() }
     val playlistLength =
         remember(songs) {
@@ -257,6 +281,13 @@ fun LocalPlaylistScreen(
     var query by rememberSaveable(stateSaver = TextFieldValue.Saver) {
         mutableStateOf(TextFieldValue())
     }
+    val focusManager = LocalFocusManager.current
+    val focusRequester = remember { FocusRequester() }
+    val exitSearch = {
+        focusManager.clearFocus()
+        isSearching = false
+        query = TextFieldValue()
+    }
 
     val filteredSongs =
         remember(songs, query) {
@@ -272,7 +303,6 @@ fun LocalPlaylistScreen(
             }
         }
 
-    val focusRequester = remember { FocusRequester() }
     LaunchedEffect(isSearching) {
         if (isSearching) {
             focusRequester.requestFocus()
@@ -292,15 +322,12 @@ fun LocalPlaylistScreen(
     }
 
     if (isSearching) {
-        BackHandler {
-            isSearching = false
-            query = TextFieldValue()
-        }
+        BackHandler(onBack = exitSearch)
     } else if (inSelectMode) {
         BackHandler(onBack = onExitSelectionMode)
     }
 
-    val downloadUtil = LocalDownloadUtil.current
+    val downloadUtil = LocalDownloadUtil.current.get()
     var downloadState by remember {
         mutableIntStateOf(Download.STATE_STOPPED)
     }
@@ -322,19 +349,7 @@ fun LocalPlaylistScreen(
         }
         if (songs.isEmpty()) return@LaunchedEffect
         downloadUtil.downloads.collect { downloads ->
-            downloadState =
-                if (songs.all { downloads[it.song.id]?.state == Download.STATE_COMPLETED }) {
-                    Download.STATE_COMPLETED
-                } else if (songs.all {
-                        downloads[it.song.id]?.state == Download.STATE_QUEUED ||
-                                downloads[it.song.id]?.state == Download.STATE_DOWNLOADING ||
-                                downloads[it.song.id]?.state == Download.STATE_COMPLETED
-                    }
-                ) {
-                    Download.STATE_DOWNLOADING
-                } else {
-                    Download.STATE_STOPPED
-                }
+            downloadState = combinedDownloadState(songs, downloads) { it.song.id }
         }
     }
 
@@ -384,7 +399,7 @@ fun LocalPlaylistScreen(
                 Column(modifier = Modifier.padding(horizontal = 24.dp)) {
                     Text(
                         text = stringResource(R.string.edit_playlist),
-                        style = MaterialTheme.typography.headlineSmall,
+                        style = AppTheme.typography.headlineSmall,
                         modifier = Modifier.padding(vertical = 16.dp),
                     )
                     OutlinedTextField(
@@ -421,9 +436,9 @@ fun LocalPlaylistScreen(
                 Text(
                     text = stringResource(
                         R.string.remove_download_playlist_confirm,
-                        playlist?.playlist!!.name
+                        playlist?.playlist?.name.orEmpty()
                     ),
-                    style = MaterialTheme.typography.bodyLarge,
+                    style = AppTheme.typography.bodyLarge,
                     modifier = Modifier.padding(horizontal = 18.dp),
                 )
             },
@@ -457,10 +472,10 @@ fun LocalPlaylistScreen(
     var showAiModifyDialog by remember {
         mutableStateOf(false)
     }
-    if (showAiModifyDialog && playlist != null) {
-        val currentPlaylist = playlist
+    val currentPlaylist = playlist
+    if (showAiModifyDialog && currentPlaylist != null) {
         AiModifyPlaylistDialog(
-            playlistId = currentPlaylist?.playlist?.id ?: return,
+            playlistId = currentPlaylist.playlist.id,
             currentSongs = songs,
             onDismiss = { showAiModifyDialog = false }
         )
@@ -472,9 +487,9 @@ fun LocalPlaylistScreen(
                 Text(
                     text = stringResource(
                         R.string.delete_playlist_confirm,
-                        playlist?.playlist!!.name
+                        playlist?.playlist?.name.orEmpty()
                     ),
-                    style = MaterialTheme.typography.bodyLarge,
+                    style = AppTheme.typography.bodyLarge,
                     modifier = Modifier.padding(horizontal = 18.dp)
                 )
             },
@@ -548,7 +563,7 @@ fun LocalPlaylistScreen(
                 }
 
                 // Sync order with YT Music
-                if (viewModel.playlist.value?.playlist?.browseId != null) {
+                viewModel.playlist.value?.playlist?.browseId?.let { browseId ->
                     viewModel.viewModelScope.launch(Dispatchers.IO) {
                         val playlistSongMap = database.playlistSongMaps(viewModel.playlistId, 0)
                         val successorIndex = if (from > to) to else to + 1
@@ -556,7 +571,7 @@ fun LocalPlaylistScreen(
 
                         playlistSongMap.getOrNull(from)?.setVideoId?.let { setVideoId ->
                             YouTube.moveSongPlaylist(
-                                viewModel.playlist.value?.playlist?.browseId!!,
+                                browseId,
                                 setVideoId,
                                 successorSetVideoId
                             )
@@ -583,47 +598,38 @@ fun LocalPlaylistScreen(
         delay(1500)
         heroUrl = rawHeroUrl
     }
+    // Instant seed: route thumb -> live tile thumb. Paints mesh bg frame one
+    // while the playlist row (and its debounced hero) loads.
+    val instantLocalThumb = com.convx.music.ui.component.detailSeed(
+        viewModel.thumbArg,
+        com.convx.music.ui.utils.pendingSharedArtworkThumbFor(viewModel.playlistId),
+        null,
+    )
+    val bgHeroUrl = instantLocalThumb ?: heroUrl
+    val localChrome = com.convx.music.ui.component.rememberDetailChromeEntrance(iconCount = 1)
 
-    val tint = rememberHeroTint(heroUrl)
-    val onTint = com.convx.music.ui.theme.AppleTokens.onColor(tint)
+    val appearance = com.convx.music.ui.component.rememberPlaylistAppearance(bgHeroUrl, localPlaylistSeed(viewModel.playlistId))
+    val tint = appearance.background
+    com.convx.music.PublishAmbientBackgroundColor(tint)
+    val onTint = appearance.foreground
 
-    val glassConfig = LocalGlassEffectConfig.current
+    // Keep top-bar glass fixed; the global preference controls the nav bar and mini player.
+    val glassConfig = LocalGlassEffectConfig.current.withFixedStyle()
     val useGlass = glassConfig.isEnabledFor(GlassComponent.NAV_BAR) && isGlassAllowed()
     val chromeShape = ContinuousRoundedRectangle(percent = 50)
-    val chromeContentColor = if (useGlass) glassConfig.textColor else onTint
+    val chromeContentColor = if (useGlass) glassConfig.resolvedTextColor() else onTint
 
-    // Unattached backdrop (never .layerBackdrop'd): glass chrome sampling it
-    // early-returns → translucent frosted surface, no RenderNode self-reference.
-    // See ArtistScreen.kt for the full explanation of the cycle this avoids.
+    // Keep the hero capture unattached so glass chrome cannot sample itself.
     val heroBackdrop = rememberLayerBackdrop()
 
-    // A SECOND, ATTACHED backdrop: .layerBackdrop'd onto the LazyColumn below
-    // (see its modifier), which is a *sibling* of the floating chrome row, not
-    // an ancestor — the chrome row samples a texture of already-drawn list
-    // content, it never captures its own draw pass, so no cycle. This is what
-    // lets the chrome buttons show real blurred list/hero content behind them
-    // instead of heroBackdrop's flat empty-capture fallback.
-    // Fills the screen tint into the capture BEFORE the content, exactly like
-    // MainActivity's appBackdrop does with its own background. Without it the
-    // list records onto a transparent canvas (the tint is painted by the outer
-    // Box, outside this capture), so the blurred result is itself part
-    // transparent and the sharp content shows straight through it — the glass
-    // read as a doubled/ghosted image, or as no glass at all where the list is
-    // sparse. This is the difference that made the nav bar look right and these
-    // screens look wrong.
-    val listBackdrop = rememberLayerBackdrop(
-        onDraw = remember(tint) {
-            val bg = tint
-            { drawRect(bg); drawContent() }
-        }
-    )
+    // This sibling capture lets floating chrome blur the drawn list. Include the
+    // tint in the capture so sparse areas do not show through as a transparent blur.
+    val listBackdrop = rememberLayerBackdrop()
     val backdropFreeze = rememberBackdropFreeze()
     val heroZoom = rememberHeroZoom()
 
-    val heroSource = rememberHeroSource(
-        staticArt = heroUrl,
-        songs = songs.map { it.song.song.thumbnailUrl to false },
-    )
+    // Shared by the hero merge and top blur layers.
+    val hazeState = remember { HazeState() }
 
     Box(
         modifier = Modifier
@@ -632,35 +638,22 @@ fun LocalPlaylistScreen(
     ) {
     HeroTintedContent(tint = tint, backdrop = heroBackdrop) {
         val chromeBackgroundModifier = if (useGlass) {
-            Modifier.liquidGlass(config = glassConfig, shape = chromeShape, highlightAlpha = 0.3f)
+            Modifier.chromeShadow(chromeShape).liquidGlass(config = glassConfig, shape = chromeShape)
         } else {
             Modifier.background(LocalContentColor.current.copy(alpha = 0.15f), chromeShape)
         }
-        // Capture from a plain Box wrapping the LazyColumn, not the LazyColumn's
-        // own modifier: LazyColumn promotes its items to their own RenderNodes
-        // for scroll recycling, which a capture attached directly to it doesn't
-        // reliably flatten (images came through, text/icons didn't). A plain
-        // Box one level up just sees "a fully-drawn child" and captures all of
-        // it, same as it would any other already-rendered composable.
+        // Capture through a plain Box; LazyColumn's recycled item layers do not flatten reliably.
         Box(modifier = Modifier
             .nestedScroll(backdropFreeze.connection)
 
-            // OUTER layer, and it must come BEFORE layerBackdrop: the layer has to
-            // enclose the backdrop node, or that node's draw re-runs whenever anything
-            // else in the window redraws. The mini player, the playing indicator and
-            // the position poll are all siblings that tick on their own schedule, and
-            // each tick was re-recording this entire list. MainActivity pairs an outer
-            // and inner layer for exactly this; the screen-local backdrops were left
-            // with only the inner half.
+            // Cache list content so sibling redraws do not re-record the backdrop.
             .graphicsLayer()
             .layerBackdrop(listBackdrop, frozen = backdropFreeze.frozen)
-            // Content becomes ONE cached RenderNode, so the backdrop's
-            // layer.record { drawContent() } records a single drawRenderNode
-            // instead of re-issuing every op in the list.
-            .graphicsLayer()) {
+            .graphicsLayer()
+            .hazeSource(hazeState)) {
+                com.convx.music.ui.component.ArtworkMeshBackground(bgHeroUrl, paused = { lazyListState.isScrollInProgress }, appearance = appearance)
         LazyColumn(
             state = lazyListState,
-            // No bounce here: the top pull drives the hero zoom instead.
             overscrollEffect = heroZoom.listOverscroll(),
             modifier = Modifier.heroPullZoom(heroZoom),
             contentPadding = LocalPlayerAwareWindowInsets.current
@@ -669,23 +662,8 @@ fun LocalPlaylistScreen(
                 .asPaddingValues(),
         ) {
             playlist?.let { playlist ->
-                if (playlist.songCount == 0 && playlist.playlist.remoteSongCount == 0) {
-                    item(key = "empty_placeholder") {
-                        EmptyPlaceholder(
-                            icon = R.drawable.music_note,
-                            text = stringResource(R.string.playlist_is_empty),
-                            modifier = Modifier.animateItem()
-                        )
-                    }
-                } else {
-                    if (isSearching) {
-                        // No hero header in search mode — reserve the floating chrome's
-                        // height so the first row doesn't start under the status bar.
-                        item(key = "search_chrome_spacer") { FloatingChromeSpacer() }
-                    }
-                    if (!isSearching) {
-                        item(key = "playlist_header") {
-                            LocalPlaylistHeader(
+                    item(key = "playlist_header") {
+                        LocalPlaylistHeader(
                                 playlist = playlist,
                                 songs = songs,
                                 onShowEditDialog = { showEditDialog = true },
@@ -695,11 +673,21 @@ fun LocalPlaylistScreen(
                                 onStartSearch = { isSearching = true },
                                 snackbarHostState = snackbarHostState,
                                 heroScale = heroZoom.scale,
+                                hazeState = hazeState,
+                                scrollBlurProgress = rememberHeroTopBlur(lazyListState),
+                                searchValue = query.takeIf { isSearching },
+                                onSearchValueChange = { query = it },
+                                onSearchImeAction = { focusManager.clearFocus() },
+                                searchFocusRequester = focusRequester,
                                 modifier = Modifier.animateItem()
-                            )
-                        }
+                        )
                     }
-
+                if (playlist.songCount == 0 && playlist.playlist.remoteSongCount == 0) {
+                    item(key = "empty_playlist_message") {
+                        Text(stringResource(R.string.playlist_is_empty), color = onTint.copy(alpha = .48f),
+                            modifier = Modifier.fillMaxWidth().padding(24.dp), textAlign = TextAlign.Center)
+                    }
+                } else {
                     item(key = "controls_row") {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -736,15 +724,9 @@ fun LocalPlaylistScreen(
                                         modifier = Modifier.padding(horizontal = 6.dp),
                                     ) {
                                         if (locked) {
-                                            Icon(
-                                                painter = painterResource(R.drawable.lock),
-                                                contentDescription = description,
-                                            )
+                                            SymbolIcon(symbol = sf("SFLock"), contentDescription = description)
                                         } else {
-                                            Icon(
-                                                painter = painterResource(R.drawable.lock_open),
-                                                contentDescription = description,
-                                            )
+                                            SymbolIcon(symbol = sf("SFLockOpen"), contentDescription = description)
                                         }
                                     }
                                 }
@@ -828,6 +810,9 @@ fun LocalPlaylistScreen(
                                 count = if (isSearching) filteredSongs.size else mutableSongs.size
                             ),
                             flat = true,
+                            secondaryAdditiveChrome = onTint == androidx.compose.ui.graphics.Color.White,
+                            subtitleAdditiveChrome = false,
+                            subtitleColor = onTint.copy(alpha = 0.78f),
                             trailingContent = {
                                 if (inSelectMode) {
                                     Checkbox(
@@ -848,10 +833,7 @@ fun LocalPlaylistScreen(
                                             }
                                         },
                                     ) {
-                                        Icon(
-                                            painter = painterResource(R.drawable.more_vert),
-                                            contentDescription = null,
-                                        )
+                                        SymbolIcon(symbol = sf("ellipsis"), contentDescription = null)
                                     }
 
                                     if (sortType == PlaylistSongSortType.CUSTOM && !locked && !inSelectMode && !isSearching && editable) {
@@ -859,10 +841,7 @@ fun LocalPlaylistScreen(
                                             onClick = { },
                                             modifier = Modifier.draggableHandle(),
                                         ) {
-                                            Icon(
-                                                painter = painterResource(R.drawable.drag_handle),
-                                                contentDescription = null,
-                                            )
+                                            SymbolIcon(symbol = sf("SFLine3Horizontal"), contentDescription = null)
                                         }
                                     }
                                 }
@@ -877,13 +856,15 @@ fun LocalPlaylistScreen(
                                         } else if (song.song.id == mediaMetadata?.id) {
                                             playerConnection.togglePlayPause()
                                         } else {
-                                            playerConnection.playQueue(
-                                                ListQueue(
-                                                    title = playlist!!.playlist.name,
-                                                    items = songs.map { it.song.toMediaItem() },
-                                                    startIndex = songs.indexOfFirst { it.map.id == song.map.id },
-                                                ),
-                                            )
+                                            playlist?.let { currentPlaylist ->
+                                                playerConnection.playQueue(
+                                                    ListQueue(
+                                                        title = currentPlaylist.playlist.name,
+                                                        items = songs.map { it.song.toMediaItem() },
+                                                        startIndex = songs.indexOfFirst { it.map.id == song.map.id },
+                                                    ),
+                                                )
+                                            }
                                         }
                                     },
                                     onLongClick = {
@@ -938,24 +919,21 @@ fun LocalPlaylistScreen(
             },
         )
 
-        // Floating glass chrome over the tinted background, replacing the
-        // Material TopAppBar — always visible, no title-bar-on-scroll behavior
-        // except the existing "reveal playlist name once scrolled" logic, which
-        // is preserved as-is. Select mode and in-place search keep their exact
-        // prior behavior, just restyled containers.
+        // Keep the current title reveal, selection, and in-place search behavior.
         CompositionLocalProvider(LocalAppBackdrop provides listBackdrop) {
-        // Built INSIDE the provider so liquidGlass captures listBackdrop (the
-        // LazyColumn's own recorded content, a sibling — see its declaration
-        // above), not the root appBackdrop — sampling appBackdrop here is the
-        // RenderNode cycle. listBackdrop is attached (unlike heroBackdrop), so
-        // this chrome actually shows blurred list/hero content, not just a
-        // flat tinted fallback.
+        // The sibling chrome samples the attached list backdrop without capturing its own draw pass.
         val chromeBackgroundModifier = if (useGlass) {
-            Modifier.liquidGlass(config = glassConfig, shape = chromeShape, highlightAlpha = 0.3f)
+            Modifier.chromeShadow(chromeShape).liquidGlass(config = glassConfig, shape = chromeShape)
         } else {
-            Modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.6f), chromeShape)
+            Modifier.background(AppTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.6f), chromeShape)
         }
         val chromeScrimProgress = rememberChromeScrimProgress(lazyListState)
+        // Draw the blur before the chrome row so it stays behind the buttons and scrim.
+        com.convx.music.ui.component.TopFadeBlur(
+            hazeState = hazeState,
+            pageColor = tint,
+            modifier = Modifier.align(Alignment.TopCenter),
+        )
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -972,15 +950,12 @@ fun LocalPlaylistScreen(
         ) {
             if (inSelectMode) {
                 GlassCircleButton(onClick = onExitSelectionMode) {
-                    Icon(
-                        painter = painterResource(R.drawable.close),
-                        contentDescription = null,
-                    )
+                    SymbolIcon(symbol = sf("SFXmark"), contentDescription = null)
                 }
 
                 Text(
                     text = pluralStringResource(R.plurals.n_selected, selection.size, selection.size),
-                    style = MaterialTheme.typography.titleMedium,
+                    style = AppTheme.typography.titleMedium,
                     color = chromeContentColor,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.weight(1f)
@@ -1006,6 +981,7 @@ fun LocalPlaylistScreen(
                             }
                         }
                     )
+                    val ambientColor = LocalAmbientBackgroundColor.current.value
                     IconButton(
                         enabled = selection.isNotEmpty(),
                         onClick = {
@@ -1023,75 +999,24 @@ fun LocalPlaylistScreen(
                             }
                         }
                     ) {
-                        Icon(
-                            painter = painterResource(R.drawable.more_vert),
-                            contentDescription = null
-                        )
+                        SymbolIcon(symbol = sf("ellipsis"), contentDescription = null, modifier = Modifier.additiveChrome(useGlass && ambientColor.isSpecified), tint = if (useGlass && ambientColor.isSpecified) ambientColor.asSoftIconTint() else chromeContentColor)
                     }
-                }
-            } else if (isSearching) {
-                GlassCircleButton(
-                    onClick = {
-                        isSearching = false
-                        query = TextFieldValue()
-                    },
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.arrow_back),
-                        contentDescription = null
-                    )
-                }
-
-                Row(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(48.dp)
-                        .clip(chromeShape)
-                        .then(chromeBackgroundModifier)
-                        .padding(horizontal = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    TextField(
-                        value = query,
-                        onValueChange = { query = it },
-                        placeholder = {
-                            Text(
-                                text = stringResource(R.string.search),
-                                style = MaterialTheme.typography.titleMedium,
-                                color = chromeContentColor.copy(alpha = 0.6f)
-                            )
-                        },
-                        singleLine = true,
-                        textStyle = MaterialTheme.typography.titleMedium.copy(color = chromeContentColor),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = Color.Transparent,
-                            unfocusedContainerColor = Color.Transparent,
-                            focusedIndicatorColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent,
-                            disabledIndicatorColor = Color.Transparent,
-                            cursorColor = chromeContentColor,
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .focusRequester(focusRequester)
-                    )
                 }
             } else {
                 GlassCircleButton(
-                    onClick = { navController.navigateUp() },
-                    onLongClick = { navController.backToMain() },
+                    onClick = { if (isSearching) exitSearch() else navController.navigateUp() },
+                    onLongClick = { if (isSearching) exitSearch() else navController.backToMain() },
+                    modifier = with(localChrome) {
+                        Modifier.backEnter().then(com.convx.music.ui.component.backExitModifier())
+                    },
                 ) {
-                    Icon(
-                        painter = painterResource(R.drawable.arrow_back),
-                        contentDescription = null
-                    )
+                    SymbolIcon(symbol = sf("chevron.left"), contentDescription = null)
                 }
 
                 if (showTopBarTitle) {
                     Text(
                         text = playlist?.playlist?.name.orEmpty(),
-                        style = MaterialTheme.typography.titleMedium,
+                        style = AppTheme.typography.titleMedium,
                         color = chromeContentColor,
                         textAlign = TextAlign.Center,
                         maxLines = 1,
@@ -1104,12 +1029,6 @@ fun LocalPlaylistScreen(
                     Spacer(Modifier.weight(1f))
                 }
 
-                GlassCircleButton(onClick = { isSearching = true }) {
-                    Icon(
-                        painter = painterResource(R.drawable.search),
-                        contentDescription = null
-                    )
-                }
             }
         }
         }
@@ -1138,328 +1057,52 @@ fun LocalPlaylistHeader(
     snackbarHostState: SnackbarHostState,
     modifier: Modifier,
     heroScale: Float = 1f,
+    hazeState: HazeState? = null,
+    scrollBlurProgress: State<Float> = ZeroScrollProgress,
+    searchValue: TextFieldValue? = null,
+    onSearchValueChange: (TextFieldValue) -> Unit = {},
+    onSearchImeAction: () -> Unit = {},
+    searchFocusRequester: FocusRequester? = null,
 ) {
     val playerConnection = LocalPlayerConnection.current ?: return
-    val isPlaying by playerConnection.isEffectivelyPlaying.collectAsState()
-    val mediaMetadata by playerConnection.mediaMetadata.collectAsState()
+    val isPlaying by playerConnection.isEffectivelyPlaying.collectAsStateWithLifecycle()
+    val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
+
     val context = LocalContext.current
-    val database = LocalDatabase.current
+    val database = LocalDatabase.current.get()
     val menuState = LocalMenuState.current
-    val syncUtils = LocalSyncUtils.current
     val scope = rememberCoroutineScope()
-
-    val playlistLength =
-        remember(songs) {
-            songs.fastSumBy { it.song.song.duration }
-        }
-
-    val downloadUtil = LocalDownloadUtil.current
-    // Collected rather than folded into a LaunchedEffect so the current state of each
-    // download is also available at click time — the download and cancel actions filter
-    // on it, see DownloadActions.
-    val downloads by downloadUtil.downloads.collectAsState()
-    val downloadState = remember(songs, downloads) {
-        when {
-            songs.isEmpty() -> Download.STATE_STOPPED
-            songs.all { downloads[it.song.id]?.state == Download.STATE_COMPLETED } ->
-                Download.STATE_COMPLETED
-
-            songs.all {
-                downloads[it.song.id]?.state == Download.STATE_QUEUED ||
-                    downloads[it.song.id]?.state == Download.STATE_DOWNLOADING ||
-                    downloads[it.song.id]?.state == Download.STATE_COMPLETED
-            } -> Download.STATE_DOWNLOADING
-
-            else -> Download.STATE_STOPPED
-        }
-    }
-
-    val liked = playlist.playlist.bookmarkedAt != null
-    val editable: Boolean = playlist.playlist.isEditable
-
-    val overrideThumbnail = remember {mutableStateOf<String?>(null)}
-    var isCustomThumbnail: Boolean = playlist.thumbnails.firstOrNull()?.let {
-        it.contains("studio_square_thumbnail") || it.contains("content://com.vivimusic.music")
-    } ?: false
-
-
-    val result = remember { mutableStateOf<Uri?>(null) }
-    var pendingCropDestUri by remember { mutableStateOf<Uri?>(null) }
-    var showEditNoteDialog by remember { mutableStateOf(false) }
-
-    val cropLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
-        if (res.resultCode == android.app.Activity.RESULT_OK) {
-            val output = res.data?.let { UCrop.getOutput(it) } ?: pendingCropDestUri
-            if (output != null) result.value = output
-        }
-    }
-
-    val (darkMode, _) = rememberEnumPreference(
-        DarkModeKey,
-        defaultValue = DarkMode.AUTO
+    val downloadUtil = LocalDownloadUtil.current.get()
+    val downloads by downloadUtil.downloads.collectAsStateWithLifecycle()
+    val downloadState = remember(songs, downloads) { combinedDownloadState(songs, downloads) { it.song.id } }
+    val launchCoverPicker = rememberPlaylistCoverPicker(
+        playlist = playlist,
+        onError = { message -> scope.launch { snackbarHostState.showSnackbar(message) } },
     )
-
-    val cropColor = MaterialTheme.colorScheme
-    val darkTheme = darkMode == DarkMode.ON || (darkMode == DarkMode.AUTO && isSystemInDarkTheme())
-
-    val pickLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickVisualMedia()
-    ) { uri ->
-        uri?.let { sourceUri ->
-            val destFile = java.io.File(context.cacheDir, "playlist_cover_crop_${System.currentTimeMillis()}.jpg")
-            val destUri = FileProvider.getUriForFile(context, "${context.packageName}.FileProvider", destFile)
-            pendingCropDestUri = destUri
-    
-            val options = UCrop.Options().apply {
-                setCompressionFormat(Bitmap.CompressFormat.JPEG)
-                setCompressionQuality(90)
-                setHideBottomControls(true)
-                setToolbarTitle(context.getString(R.string.edit_playlist_cover))
-                
-                setStatusBarLight(!darkTheme)
-
-                setToolbarColor(cropColor.surface.toArgb())
-                setToolbarWidgetColor(cropColor.inverseSurface.toArgb())
-                setRootViewBackgroundColor(cropColor.surface.toArgb())
-                setLogoColor(cropColor.surface.toArgb())
-            }
-
-            val intent = UCrop.of(sourceUri, destUri)
-                .withAspectRatio(1f, 1f)
-                .withOptions(options)
-                .getIntent(context)
-            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-            cropLauncher.launch(intent)
-        }
-    }
-
-    LaunchedEffect(result.value) {
-        val uri = result.value ?: return@LaunchedEffect
-        withContext(Dispatchers.IO) {
-            when {
-                playlist.playlist.browseId == null -> {
-                    overrideThumbnail.value = uri.toString()
-                    isCustomThumbnail = true
-
-                    // Update the database with the new thumbnail
-                    database.query {
-                        update(playlist.playlist.copy(thumbnailUrl = uri.toString()))
-                    }
-                }
-
-                else -> {
-                    val bytes = uriToByteArray(context, uri)
-                    YouTube.uploadCustomThumbnailLink(
-                        playlist.playlist.browseId,
-                        bytes!!
-                    ).onSuccess { newThumbnailUrl ->
-                        overrideThumbnail.value = newThumbnailUrl
-                        isCustomThumbnail = true
-
-                        // Update the database with the new thumbnail URL
-                        database.query {
-                            update(playlist.playlist.copy(thumbnailUrl = newThumbnailUrl))
-                        }
-                    }.onFailure {
-                        if (it is ClientRequestException) {
-                            snackbarHostState.showSnackbar("${it.response.status.value} ${it.response.status.description}")
-                        }
-                        reportException(it)
-                    }
-                }
-            }
-        }
-    }
-
-    // See the main LocalPlaylistScreen composable: debounce against the local
-    // scan streaming thumbnails in one at a time.
-    val rawHeroUrl = playlist.thumbnails.firstOrNull()
-    var heroUrl by remember { mutableStateOf(rawHeroUrl) }
-    LaunchedEffect(rawHeroUrl) {
-        delay(1500)
-        heroUrl = rawHeroUrl
-    }
-
-    val heroSource = rememberHeroSource(
-        staticArt = heroUrl,
-        songs = songs.map { it.song.song.thumbnailUrl to false },
-    )
-    val tint = rememberHeroTint(heroUrl)
-    val onTint = AppleTokens.onColor(tint)
-
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            if (showEditNoteDialog) {
-                ActionPromptDialog(
-                    title = stringResource(R.string.edit_playlist_cover),
-                    onDismiss = { showEditNoteDialog = false },
-                    onConfirm = {
-                        showEditNoteDialog = false
-                        pickLauncher.launch(
-                            PickVisualMediaRequest(mediaType = ActivityResultContracts.PickVisualMedia.ImageOnly)
-                        )
-                    },
-                    onCancel = { showEditNoteDialog = false }
-                ) {
-                    if (playlist.playlist.browseId != null) {
-                        Text(
-                            text = stringResource(R.string.edit_playlist_cover_note),
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        Spacer(Modifier.height(8.dp))
-                    }
-                    Text(
-                        text = stringResource(R.string.edit_playlist_cover_note_wait),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                    )
-                }
-            }
-
-            // Wide layout: bounded artwork card with the name beside it instead of
-            // the full-bleed square, which would fill the fold on a tablet.
-            val tabView = LocalTabView.current
-            val songCount = if (playlist.songCount == 0 && playlist.playlist.remoteSongCount != null) {
-                playlist.playlist.remoteSongCount
-            } else {
-                playlist.songCount
-            }
-            val playlistInfoText = buildString {
-                append(pluralStringResource(R.plurals.n_song, songCount, songCount))
-                if (playlistLength > 0) {
-                    append(" • ")
-                    append(makeTimeString(playlistLength * 1000L))
-                }
-            }
-
-            if (tabView) {
-                HeroCardHeader(
-                    artworkUrl = heroUrl,
-                    title = {
-                        Text(
-                            text = playlist.playlist.name,
-                            style = MaterialTheme.typography.headlineLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = onTint,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    },
-                    subtitle = playlist.playlist.description?.takeIf { it.isNotBlank() }?.let { desc ->
-                        {
-                            Text(
-                                text = desc,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = onTint.copy(alpha = 0.7f),
-                                maxLines = 3,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                    },
-                    actions = {
-                        Text(
-                            text = playlistInfoText,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = onTint.copy(alpha = 0.5f),
-                        )
-                    },
-                )
-            } else {
-
-            Box(
-                contentAlignment = Alignment.BottomEnd,
-                modifier = if (editable) {
-                    Modifier.clickable { showEditNoteDialog = true }
-                } else {
-                    Modifier
-                },
-            ) {
-                AlbumStyleHeroImage(artworkUrl = heroUrl, heroScale = heroScale)
-                if (editable) {
-                    Box(
-                        modifier = Modifier
-                            .padding(12.dp)
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(Color.Black.copy(alpha = 0.45f))
-                            .clickable { showEditNoteDialog = true },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.edit),
-                            contentDescription = stringResource(R.string.edit_playlist_cover),
-                            tint = Color.White,
-                            modifier = Modifier.size(20.dp),
-                        )
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(16.dp))
-
-            // Playlist Name
-            Text(
-                text = playlist.playlist.name,
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center,
-                color = onTint,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = 32.dp)
-            )
-
-            playlist.playlist.description?.takeIf { it.isNotBlank() }?.let { desc ->
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = desc,
-                    style = MaterialTheme.typography.bodyMedium,
-                    textAlign = TextAlign.Center,
-                    color = onTint.copy(alpha = 0.7f),
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(horizontal = 32.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Metadata - Song Count • Duration
-            Text(
-                text = playlistInfoText,
-                style = MaterialTheme.typography.bodyMedium,
-                color = onTint.copy(alpha = 0.7f)
-            )
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Action Buttons Row — Redesigned for unified circular look
-            // These keep the ambient (unattached) heroBackdrop deliberately.
-            // Providing the list's own attached backdrop here is a RenderNode
-            // cycle: this header is drawn INSIDE Modifier.layerBackdrop(
-            // listBackdrop), so glass sampling it captures its own draw pass
-            // (native stack overflow in RenderNode::prepareTreeImpl). Only the
-            // floating chrome row — a *sibling* of that layer — may use it.
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 32.dp),
-                horizontalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterHorizontally),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // More Options Button (Left - Circular)
-                GlassCircleButton(
-                    onClick = {
+    val artwork = com.convx.music.ui.utils.pendingSharedArtworkThumbFor(playlist.id) ?: playlist.thumbnails.firstOrNull()
+    val appearance = com.convx.music.ui.component.rememberPlaylistAppearance(artwork)
+    val duration = remember(songs) { songs.fastSumBy { it.song.song.duration } }
+    val count = if (playlist.songCount == 0) playlist.playlist.remoteSongCount ?: 0 else playlist.songCount
+    com.convx.music.ui.component.CollectionDetailHeader(
+        title = playlist.playlist.name,
+        artwork = artwork,
+        metadata = pluralStringResource(R.plurals.n_song, count, count) +
+            if (duration > 0) " \u00b7 " + makeTimeString(duration * 1000L) else "",
+        description = playlist.playlist.description,
+        foreground = appearance.foreground,
+        playing = isPlaying && songs.any { it.song.id == mediaMetadata?.id },
+        enabled = songs.isNotEmpty(),
+        onPlay = {
+            if (songs.any { it.song.id == mediaMetadata?.id }) playerConnection.togglePlayPause()
+            else playerConnection.playQueue(ListQueue(title = playlist.playlist.name, items = songs.map { it.song.toMediaItem() }))
+        },
+        onShuffle = { playerConnection.playQueue(ListQueue(title = playlist.playlist.name, items = songs.shuffled().map { it.song.toMediaItem() })) },
+        onSearch = onStartSearch,
+        searchValue = searchValue,
+        onSearchValueChange = onSearchValueChange,
+        onSearchImeAction = onSearchImeAction,
+        searchFocusRequester = searchFocusRequester,
+        onRightAction = {
                         menuState.show {
                             LocalPlaylistMenu(
                                 playlist = playlist,
@@ -1468,36 +1111,36 @@ fun LocalPlaylistHeader(
                                 downloadState = downloadState,
                                 onEdit = onShowEditDialog,
                                 onSync = {
-                                    scope.launch(Dispatchers.IO) {
-                                        val playlistPage = YouTube.playlist(playlist.playlist.browseId!!)
-                                            .completed()
-                                            .getOrNull() ?: return@launch
-                                        database.transaction {
-                                            clearPlaylist(playlist.id)
-                                            playlistPage.songs
-                                                .map(SongItem::toMediaMetadata)
-                                                .onEach(::insert)
-                                                .mapIndexed { position, song ->
-                                                    PlaylistSongMap(
-                                                        songId = song.id,
-                                                        playlistId = playlist.id,
-                                                        position = position,
-                                                        setVideoId = song.setVideoId
-                                                    )
-                                                }
-                                                .forEach(::insert)
+                                    playlist.playlist.browseId?.let { browseId ->
+                                        scope.launch(Dispatchers.IO) {
+                                            val playlistPage = YouTube.playlist(browseId)
+                                                .completed()
+                                                .getOrNull() ?: return@launch
+                                            database.transaction {
+                                                clearPlaylist(playlist.id)
+                                                playlistPage.songs
+                                                    .map(SongItem::toMediaMetadata)
+                                                    .onEach(::insert)
+                                                    .mapIndexed { position, song ->
+                                                        PlaylistSongMap(
+                                                            songId = song.id,
+                                                            playlistId = playlist.id,
+                                                            position = position,
+                                                            setVideoId = song.setVideoId
+                                                        )
+                                                    }
+                                                    .forEach(::insert)
+                                            }
                                         }
-                                    }
-                                    scope.launch(Dispatchers.Main) {
-                                        snackbarHostState.showSnackbar(context.getString(R.string.playlist_synced))
+                                        scope.launch(Dispatchers.Main) {
+                                            snackbarHostState.showSnackbar(context.getString(R.string.playlist_synced))
+                                        }
                                     }
                                 },
                                 onDelete = onshowDeletePlaylistDialog,
                                 onDownload = {
                                     when (downloadState) {
                                         Download.STATE_COMPLETED -> onShowRemoveDownloadDialog()
-                                        // Cancel, not remove: this used to delete every
-                                        // song in the playlist, finished ones included.
                                         Download.STATE_DOWNLOADING -> cancelDownloads(
                                             context,
                                             songs.map { it.song.id },
@@ -1507,7 +1150,12 @@ fun LocalPlaylistHeader(
                                         else -> downloadSongs(
                                             context,
                                             songs.map {
-                                                DownloadTarget(it.song.id, it.song.song.title)
+                                                DownloadTarget(
+                                                    it.song.id,
+                                                    it.song.song.title,
+                                                    it.song.artists.firstOrNull()?.name,
+                                                    it.song.song.duration,
+                                                )
                                             },
                                             downloads,
                                         )
@@ -1523,102 +1171,9 @@ fun LocalPlaylistHeader(
                             )
                         }
                     },
-                    size = 48.dp,
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.more_vert),
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
-
-                // Play Button (Center - Large Circle)
-                // A playlist's own id never matches a song's albumId (different
-                // id spaces) — that comparison was always false, so this button
-                // never showed "pause" and always restarted the queue on tap.
-                // Membership of the current song in this playlist's own song
-                // list is the same "is this the active context" heuristic
-                // AlbumScreen uses (there, albumId happens to match directly).
-                val isPlayingThisPlaylist = isPlaying && songs.any { it.song.id == mediaMetadata?.id }
-                GlassCircleButton(
-                    onClick = {
-                        if (isPlayingThisPlaylist) {
-                            playerConnection.player.pause()
-                        } else if (songs.any { it.song.id == mediaMetadata?.id }) {
-                            playerConnection.player.play()
-                        } else {
-                            playerConnection.playQueue(
-                                ListQueue(
-                                    title = playlist.playlist.name,
-                                    items = songs.map { it.song.toMediaItem() },
-                                )
-                            )
-                        }
-                    },
-                    size = 72.dp,
-                ) {
-                    AnimatedPlayPauseIcon(
-                        isPlaying = isPlayingThisPlaylist,
-                        size = 32.dp,
-                        modifier = Modifier.offset(x = 2.dp),
-                    )
-                }
-
-                // Shuffle Button (Right - Circular)
-                GlassCircleButton(
-                    onClick = {
-                        playerConnection.playQueue(
-                            ListQueue(
-                                title = playlist.playlist.name,
-                                items = songs.shuffled().map { it.song.toMediaItem() },
-                            )
-                        )
-                    },
-                    size = 48.dp,
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.shuffle),
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(24.dp))
-
-            val staticDescription = remember(songCount, playlistLength) {
-                val name = playlist.playlist.name
-                val trackCountText = context.resources.getQuantityString(R.plurals.n_song, songCount, songCount)
-                "$name is a custom playlist featuring $trackCountText.${
-                    if (playlistLength > 0) " Combined duration is ${makeTimeString(playlistLength * 1000L)}." else ""
-                }"
-            }
-
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp)
-            ) {
-                Text(
-                    text = stringResource(R.string.about_playlist),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = onTint,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-
-                androidx.compose.runtime.CompositionLocalProvider(
-                    androidx.compose.material3.LocalContentColor provides onTint,
-                ) {
-                    ExpandableText(
-                        text = staticDescription,
-                        runs = null,
-                        collapsedMaxLines = 3
-                    )
-                }
-            }
-        }
-    }
+        onEditCover = launchCoverPicker.takeIf { playlist.playlist.isEditable },
+        modifier = modifier.padding(top = com.convx.music.ui.component.topBarContentPadding()),
+    )
 }
 
 @Composable
@@ -1630,7 +1185,7 @@ private fun MetadataChip(
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+        color = AppTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
@@ -1641,12 +1196,12 @@ private fun MetadataChip(
                 painter = painterResource(icon),
                 contentDescription = null,
                 modifier = Modifier.size(16.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                tint = AppTheme.colorScheme.onSurfaceVariant
             )
             Text(
                 text = text,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = AppTheme.typography.labelMedium,
+                color = AppTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1
             )
         }

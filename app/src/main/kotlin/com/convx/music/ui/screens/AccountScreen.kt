@@ -6,94 +6,59 @@
 package com.convx.music.ui.screens
 
 import com.convx.music.ui.utils.appTopBarWindowInsets
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.ExperimentalFoundationApi
 
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.lazy.grid.GridCells
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.lazy.grid.GridItemSpan
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.foundation.lazy.grid.items
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.material3.ExperimentalMaterial3Api
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.Icon
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.Text
-import com.convx.music.ui.utils.appTopBarWindowInsets
-import androidx.compose.material3.TopAppBar
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.Text
+import com.convx.music.ui.ios.compat.TopAppBar
 import androidx.compose.material3.TopAppBarScrollBehavior
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.Composable
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.collectAsState
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.getValue
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.runtime.rememberCoroutineScope
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.Modifier
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.platform.LocalHapticFeedback
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.res.painterResource
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.res.stringResource
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.compose.ui.unit.dp
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import androidx.navigation.NavController
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.LocalPlayerAwareWindowInsets
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.R
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.utils.rememberGridColumns
 import com.convx.music.constants.GridItemSize
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.GridItemsSizeKey
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.constants.GridThumbnailHeight
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.component.ChipsRow
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.component.IconButton
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.component.LocalMenuState
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.component.YouTubeGridItem
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.component.shimmer.GridItemPlaceHolder
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.component.shimmer.ShimmerHost
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.menu.YouTubeAlbumMenu
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.menu.YouTubeArtistMenu
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.menu.YouTubePlaylistMenu
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.utils.backToMain
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.utils.bounceClick
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.ui.utils.combinedBounceClick
-import com.convx.music.ui.utils.appTopBarWindowInsets
+import com.convx.music.ui.utils.albumRoute
+import com.convx.music.ui.utils.artistRoute
+import com.convx.music.ui.utils.onlinePlaylistRoute
 import com.convx.music.utils.rememberEnumPreference
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.viewmodels.AccountContentType
-import com.convx.music.ui.utils.appTopBarWindowInsets
 import com.convx.music.viewmodels.AccountViewModel
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import com.convx.music.ui.component.ScreenLargeTitle
+import com.convx.music.ui.component.ScreenScaffold
+import com.convx.music.ui.component.rememberTitleCollapseProgressState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -107,16 +72,32 @@ fun AccountScreen(
 
     val coroutineScope = rememberCoroutineScope()
 
-    val playlists by viewModel.playlists.collectAsState()
-    val albums by viewModel.albums.collectAsState()
-    val artists by viewModel.artists.collectAsState()
-    val selectedContentType by viewModel.selectedContentType.collectAsState()
+    val playlists by viewModel.playlists.collectAsStateWithLifecycle()
+    val albums by viewModel.albums.collectAsStateWithLifecycle()
+    val artists by viewModel.artists.collectAsStateWithLifecycle()
+    val selectedContentType by viewModel.selectedContentType.collectAsStateWithLifecycle()
     val gridItemSize by rememberEnumPreference(GridItemsSizeKey, GridItemSize.BIG)
 
+    val gridState = rememberLazyGridState()
+    val accountTitleProgress = rememberTitleCollapseProgressState(gridState)
+
+    ScreenScaffold(
+        title = stringResource(R.string.account),
+        titleAlpha = 0f,
+        titleAlphaProvider = { accountTitleProgress.value },
+        onBack = navController::navigateUp,
+        onBackLongClick = navController::backToMain,
+    ) { chrome ->
     LazyVerticalGrid(
+        state = gridState,
         columns = rememberGridColumns(),
+        modifier = chrome.contentModifier(),
         contentPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues(),
     ) {
+        item(key = "title", span = { GridItemSpan(maxLineSpan) }) {
+            ScreenLargeTitle(stringResource(R.string.account))
+        }
+
         item(span = { GridItemSpan(maxLineSpan) }) {
             ChipsRow(
                 chips = listOf(
@@ -141,7 +122,7 @@ fun AccountScreen(
                         modifier = Modifier
                             .combinedBounceClick(
                                 onClick = {
-                                    navController.navigate("online_playlist/${item.id}")
+                                    navController.navigate(onlinePlaylistRoute(item.id, item.title, item.thumbnail))
                                 },
                                 onLongClick = {
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -177,7 +158,7 @@ fun AccountScreen(
                         modifier = Modifier
                             .combinedBounceClick(
                                 onClick = {
-                                    navController.navigate("album/${item.id}")
+                                    navController.navigate(albumRoute(item.id, item.thumbnail))
                                 },
                                 onLongClick = {
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -213,7 +194,7 @@ fun AccountScreen(
                         modifier = Modifier
                             .combinedBounceClick(
                                 onClick = {
-                                    navController.navigate("artist/${item.id}")
+                                    navController.navigate(artistRoute(item.id, item.thumbnail))
                                 },
                                 onLongClick = {
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -238,20 +219,5 @@ fun AccountScreen(
             }
         }
     }
-
-    TopAppBar(
-            windowInsets = appTopBarWindowInsets(),
-        title = { Text(stringResource(R.string.account)) },
-        navigationIcon = {
-            IconButton(
-                onClick = navController::navigateUp,
-                onLongClick = navController::backToMain,
-            ) {
-                Icon(
-                    painterResource(R.drawable.arrow_back),
-                    contentDescription = null,
-                )
-            }
-        },
-    )
+}
 }

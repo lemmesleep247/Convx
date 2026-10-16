@@ -1,113 +1,107 @@
-name: 🐛 Bug Report
-description: Something is broken? Help us fix it!
+name: Bug report
+description: Something in Convx is broken
 title: "[Bug]: "
-labels: ["bug", "triage"]
+labels: ["bug"]
 body:
   - type: markdown
     attributes:
       value: |
-        ### 🛠️ Bug Report
-        Thank you for reporting! Please fill out the form below.
+        Thanks for reporting. A clear report gets fixed faster. The maintainer will add severity and area labels.
 
   - type: checkboxes
     id: checklist
     attributes:
-      label: Pre-flight Checklist
+      label: Before you submit
       options:
-        - label: I am running the [latest debug version](https://github.com/cosmictaserdev-creator/Convx/actions).
+        - label: I'm using the [latest nightly build](https://github.com/cosmictaserdev-creator/Convx/releases/tag/2.0.0-nightly) (or the problem also happens on stable).
           required: true
-        - label: I checked for duplicate issues.
+        - label: I searched the existing issues and this isn't a duplicate.
           required: true
 
   - type: dropdown
-    id: component
+    id: area
     attributes:
-      label: 📍 Where does the bug happen?
-      description: Select the area of the app.
+      label: Where does it happen?
       options:
-        - 🎵 Music Player (Now Playing)
-        - 📚 Library / Playlists
-        - 🔍 Search
-        - ⚙️ Settings
-        - 📥 Downloads
-        - 🎨 UI / Visuals
-        - 🔌 Integrations (Discord/LastFM)
-        - 📱 Widgets / Notification
-        - ❓ Other
+        - Player (now playing, mini player, queue)
+        - Playback (audio, streaming, crossfade, Automix)
+        - Lyrics
+        - Library, playlists or downloads
+        - Search
+        - Settings
+        - Look and animations (glass, themes)
+        - Accounts (YouTube Music, Spotify, Discord, Last.fm)
+        - Listen Together
+        - Network storage
+        - Widgets or notifications
+        - Other
     validations:
       required: true
 
   - type: dropdown
     id: frequency
     attributes:
-      label: 📉 How often does it happen?
+      label: How often does it happen?
       options:
-        - 🔴 Every time (100%)
-        - 🟠 Often (> 50%)
-        - 🟡 Sometimes (< 50%)
-        - 🟢 Rarely (Once or twice)
+        - Every time
+        - Often
+        - Sometimes
+        - Once or twice
     validations:
       required: true
 
   - type: textarea
-    id: reproduce-steps
+    id: steps
     attributes:
-      label: 🔄 Steps to Reproduce
-      description: clear steps lead to a faster fix!
+      label: Steps to reproduce
       placeholder: |
-        1. Go to ...
-        2. Tap on ...
-        3. See error
-      value: |
-        1. 
-        2. 
-        3. 
+        1. Open ...
+        2. Tap ...
+        3. See the problem
     validations:
       required: true
 
   - type: textarea
     id: expected-actual
     attributes:
-      label: 🆚 Expected vs. Actual
-      description: What happened vs. what should have happened.
+      label: What you expected and what happened
       placeholder: |
-        Expected: Music starts playing.
-        Actual: App crashes immediately.
-    validations:
-      required: true
-
-  - type: markdown
-    attributes:
-      value: "---"
-
-  - type: dropdown
-    id: android-version
-    attributes:
-      label: 🤖 Android Version
-      options:
-        - Android 16 (Preview)
-        - Android 15
-        - Android 14
-        - Android 13
-        - Android 12
-        - Android 11
-        - Android 10
-        - Android 9 or older
-        - Custom ROM
+        Expected: the song starts playing.
+        Actual: the app closes.
     validations:
       required: true
 
   - type: input
     id: app-version
     attributes:
-      label: 📦 App Version
-      placeholder: e.g. 5.0.3 (Check Settings -> About)
+      label: Convx version
+      description: Settings → Help & About → About. For a nightly, give the date you installed it.
+      placeholder: "2.0.0 nightly"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: build
+    attributes:
+      label: Which build?
+      options:
+        - Nightly
+        - Stable
+        - Debug build I made myself
+    validations:
+      required: true
+
+  - type: input
+    id: android-version
+    attributes:
+      label: Android version and device
+      placeholder: "Android 15, Pixel 8"
     validations:
       required: true
 
   - type: textarea
     id: logs
     attributes:
-      label: 📄 Logs / Screenshots
-      description: Paste logs or drag & drop screenshots here.
+      label: Logs, screenshots or a recording
+      description: For a crash, paste the report from Settings → Help & About → Crash report, or `adb logcat` output. Drag screenshots or a screen recording here.
       render: shell

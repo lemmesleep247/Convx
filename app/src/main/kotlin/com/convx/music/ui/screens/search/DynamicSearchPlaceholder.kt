@@ -10,7 +10,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
-import androidx.compose.material3.Text
+import com.convx.music.ui.ios.compat.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -47,7 +47,7 @@ fun DynamicSearchPlaceholder(
         return
     }
 
-    val database = LocalDatabase.current
+    val database = LocalDatabase.current.get()
     val defaultPrompt = stringResource(R.string.search_yt_music)
     val promptWhatsOnMind = stringResource(R.string.search_prompt_whats_on_mind)
     val promptTodaysPick = stringResource(R.string.search_prompt_todays_pick)
@@ -61,7 +61,6 @@ fun DynamicSearchPlaceholder(
 
     val placeholders = remember { mutableStateListOf<String>() }
 
-    // Initialize placeholders and fetch taste-based recommendations from the database
     LaunchedEffect(database) {
         val basePrompts = listOf(
             defaultPrompt,
@@ -75,7 +74,6 @@ fun DynamicSearchPlaceholder(
         placeholders.addAll(basePrompts)
 
         try {
-            // Fetch top 5 liked songs to suggest searches
             val liked = database.likedSongsByRowIdAsc().first()
             if (liked.isNotEmpty()) {
                 liked.shuffled().take(5).forEach { song ->
@@ -87,7 +85,6 @@ fun DynamicSearchPlaceholder(
         }
 
         try {
-            // Fetch top 5 quick picks
             val picks = database.quickPicks().first()
             if (picks.isNotEmpty()) {
                 picks.shuffled().take(5).forEach { song ->
@@ -99,7 +96,6 @@ fun DynamicSearchPlaceholder(
         }
 
         try {
-            // Fetch top 3 most listened artists
             val topArtists = database.allArtistsByPlayTime().first()
             if (topArtists.isNotEmpty()) {
                 topArtists.shuffled().take(3).forEach { artist ->

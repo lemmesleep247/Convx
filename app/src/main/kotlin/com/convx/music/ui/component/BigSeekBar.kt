@@ -10,7 +10,7 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
+import com.convx.music.ui.ios.compat.AppTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -28,8 +28,8 @@ fun BigSeekBar(
     progressProvider: () -> Float,
     onProgressChange: (Float) -> Unit,
     modifier: Modifier = Modifier,
-    background: Color = MaterialTheme.colorScheme.surfaceTint.copy(alpha = 0.13f),
-    color: Color = MaterialTheme.colorScheme.primary,
+    background: Color = AppTheme.colorScheme.surfaceTint.copy(alpha = 0.13f),
+    color: Color = AppTheme.colorScheme.primary,
 ) {
     var width by remember {
         mutableFloatStateOf(0f)

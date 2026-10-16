@@ -184,3 +184,11 @@
 -keepclasseswithmembers class com.convx.music.listentogether.** {
     kotlinx.serialization.KSerializer serializer(...);
 }
+
+# ONNX Runtime's native code looks up its Java classes (OrtException, OrtSession, ...)
+# by name via JNI; renamed classes abort the process in OrtSession.createSession.
+-keep class ai.onnxruntime.** { *; }
+
+# smbj / mbassador reference desktop-only javax.el and Kerberos (GSS) classes that Android does not ship.
+-dontwarn javax.el.**
+-dontwarn org.ietf.jgss.**

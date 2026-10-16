@@ -7,30 +7,9 @@ package com.convx.music.ui.player
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.util.lerp
 
-/*
- * Geometry for a mini-player <-> full-player transition treated as a shared element:
- * one container and one artwork travelling between two measured rects, rather than a
- * sheet sliding up over the top of a separate mini player.
- *
- * The reason this reads better than a straight interpolation is that nothing here moves
- * on a single curve — each axis of each element gets its own, and the
- * asymmetry is the whole effect:
- *
- * - The container's **height** tracks progress linearly while its **width** runs on
- *   [easeInCubic]. The sheet therefore grows tall first and only flares out to full width
- *   near the end, which is what makes it look like it is rising out of the bar instead of
- *   inflating in place.
- * - The artwork's **x** runs on [easeOutCubic] — it commits to its horizontal position
- *   early, so the cover appears to lead the motion — while its **y** is a blend of
- *   [easeInCubic] and linear ([ARTWORK_VERTICAL_LINEAR_WEIGHT]), keeping vertical travel
- *   closer to the finger during a drag.
- *
- * All of this is pure geometry: no Compose state, no animation. Feed it a progress value
- * from whatever already drives the sheet (a drag, a spring) and it returns where things
- * belong at that instant. Kept separate from the sheet itself so the curves can be
- * checked directly, which is the only practical way to verify motion this fiddly.
+/* Pure geometry for the mini-player/full-player shared transition. Each element
+ * uses its own easing so the artwork leads the container during expansion.
  */
-
 /** Weight of the linear term in the artwork's vertical travel; the rest is [easeInCubic]. */
 const val ARTWORK_VERTICAL_LINEAR_WEIGHT = 0.4f
 
@@ -41,13 +20,22 @@ const val ARTWORK_VERTICAL_LINEAR_WEIGHT = 0.4f
  */
 const val SCREEN_CORNER_EXPANSION_MILLIS = 140
 
+/**
+ * Single source of truth for progress sanitization: NaN/Inf from a torn drag
+ * read or a divide-by-zero must clamp to rest, never propagate NaN into a Rect
+ * (which draws nothing and poisons every lerp downstream). All geometry below
+ * routes through here so edge handling lives in one place.
+ */
+internal fun sanitizedProgress(progress: Float): Float =
+    if (progress.isNaN()) 0f else progress.coerceIn(0f, 1f)
+
 fun easeInCubic(value: Float): Float {
-    val clamped = value.coerceIn(0f, 1f)
+    val clamped = sanitizedProgress(value)
     return clamped * clamped * clamped
 }
 
 fun easeOutCubic(value: Float): Float {
-    val clamped = value.coerceIn(0f, 1f)
+    val clamped = sanitizedProgress(value)
     val inverse = 1f - clamped
     return 1f - inverse * inverse * inverse
 }
@@ -55,20 +43,70 @@ fun easeOutCubic(value: Float): Float {
 /**
  * The sheet container's bounds at [progress], 0 being [source] (the mini player) and 1
  * being [target] (the full player).
+ *
+ * Plain linear edge interpolation (the reference app PlayerSheetGeometry): the spring driving
+ * progress already shapes the motion, so the rect itself adds no second curve.
  */
 fun sharedContainerRect(source: Rect, target: Rect, progress: Float): Rect {
-    val fraction = progress.coerceIn(0f, 1f)
-    val centerX = lerp(source.center.x, target.center.x, fraction)
-    val centerY = lerp(source.center.y, target.center.y, fraction)
-    // Width lags behind height on purpose — see the class doc.
-    val width = lerp(source.width, target.width, easeInCubic(fraction))
-    val height = lerp(source.height, target.height, fraction)
+    val fraction = sanitizedProgress(progress)
     return Rect(
-        left = centerX - width / 2f,
-        top = centerY - height / 2f,
-        right = centerX + width / 2f,
-        bottom = centerY + height / 2f,
+        left = lerp(source.left, target.left, fraction),
+        top = lerp(source.top, target.top, fraction),
+        right = lerp(source.right, target.right, fraction),
+        bottom = lerp(source.bottom, target.bottom, fraction),
     )
+}
+
+/**
+ * Who owns finger input during the flight (the reference app PlayerInputOwner).
+ *
+ * While dragging, the end the drag started from owns input so a close gesture
+ * can reverse from the current frame. At rest the mini owns input only before
+ * the handoff; the full player owns it once settled or its layers are ready.
+ * In between, neither does -- taps would fight the settling spring.
+ */
+internal enum class PlayerInputOwner { MINI, FULL, NONE }
+
+internal const val PLAYER_INPUT_MINI_END_PROGRESS = 0.2f
+
+internal fun playerSheetInputOwner(
+    targetOpen: Boolean,
+    isDragging: Boolean,
+    dragStartedFromMiniPlayer: Boolean,
+    progress: Float,
+    sharedLayersReady: Boolean,
+): PlayerInputOwner {
+    val safeProgress = sanitizedProgress(progress)
+    return when {
+        isDragging -> if (dragStartedFromMiniPlayer) PlayerInputOwner.MINI else PlayerInputOwner.FULL
+        !targetOpen && safeProgress <= PLAYER_INPUT_MINI_END_PROGRESS ->
+            PlayerInputOwner.MINI
+        sharedLayersReady || targetOpen && safeProgress >= 1f -> PlayerInputOwner.FULL
+        else -> PlayerInputOwner.NONE
+    }
+}
+
+/**
+ * Where the mini player's halves sit inside the animating container (the reference app
+ * clip split, pill-origin recording, fullscreen coords).
+ *
+ * Title side: x compensates the corner travel so the title stays absolute
+ * while the card grows around it; y rides the card top. Controls side adds
+ * [sharedMiniPlayerControlsShift] so play/next keep their right inset and
+ * break away rightward with the edge.
+ */
+fun sharedMiniPlayerTitleShift(
+    sourcePlayerBounds: Rect,
+    animatedPlayerBounds: Rect,
+): Float = sourcePlayerBounds.left - animatedPlayerBounds.left
+
+fun sharedMiniPlayerControlsShift(
+    sourcePlayerBounds: Rect,
+    animatedPlayerBounds: Rect,
+    controlsBounds: Rect,
+): Float {
+    val sourceRightInset = sourcePlayerBounds.right - controlsBounds.right
+    return animatedPlayerBounds.right - sourceRightInset - controlsBounds.right
 }
 
 /**
@@ -79,7 +117,7 @@ fun sharedContainerRect(source: Rect, target: Rect, progress: Float): Rect {
  * into the target's shape.
  */
 fun sharedArtworkRect(source: Rect, target: Rect, progress: Float): Rect {
-    val fraction = progress.coerceIn(0f, 1f)
+    val fraction = sanitizedProgress(progress)
     val centerX = lerp(source.center.x, target.center.x, easeOutCubic(fraction))
     val verticalFraction = lerp(
         easeInCubic(fraction),
@@ -103,6 +141,41 @@ fun sharedArtworkRect(source: Rect, target: Rect, progress: Float): Rect {
 }
 
 /**
+ * The travelling cover's visible window at [progress]: centre on the same curves as
+ * [sharedArtworkRect], but width and height interpolate per axis, so a square pill cover
+ * can open into a non-square target (V2's Hero, 0.65 of the screen tall) and land on
+ * exactly that rect instead of a square that pops to the real shape on arrival.
+ */
+fun sharedArtworkWindow(source: Rect, target: Rect, progress: Float): Rect {
+    val fraction = sanitizedProgress(progress)
+    val centerX = lerp(source.center.x, target.center.x, easeOutCubic(fraction))
+    val centerY = lerp(
+        source.center.y,
+        target.center.y,
+        lerp(easeInCubic(fraction), fraction, ARTWORK_VERTICAL_LINEAR_WEIGHT),
+    )
+    val halfWidth = lerp(source.width, target.width, fraction).coerceAtLeast(1f) / 2f
+    val halfHeight = lerp(source.height, target.height, fraction).coerceAtLeast(1f) / 2f
+    return Rect(centerX - halfWidth, centerY - halfHeight, centerX + halfWidth, centerY + halfHeight)
+}
+
+/**
+ * Ease-in-out sine: zero velocity at both ends, so a fade or colour change has no
+ * visible start or finish -- the curve every "ambient" transition (background colour,
+ * video fade, artwork melt) uses.
+ */
+val SeamlessEasing = androidx.compose.animation.core.CubicBezierEasing(0.37f, 0f, 0.63f, 1f)
+
+/**
+ * Length of an ambient track-change transition: the DJ crossfade's own length while
+ * one is running, so the backdrop turns over with the audio, else a slow default.
+ */
+fun ambientTransitionMillis(crossfadeMs: Long): Int =
+    if (crossfadeMs > 0L) crossfadeMs.coerceIn(900L, 8_000L).toInt() else AMBIENT_TRANSITION_DEFAULT_MS
+
+const val AMBIENT_TRANSITION_DEFAULT_MS = 1_100
+
+/**
  * Width of the progress band over which the screen-corner expansion fades out.
  *
  * Gating the expansion on `progress == 1f` exactly is fine on the way
@@ -113,6 +186,51 @@ fun sharedArtworkRect(source: Rect, target: Rect, progress: Float): Rect {
  * corners square for the entire time the sheet is actually at rest.
  */
 const val CORNER_EXPANSION_PROGRESS_BAND = 0.02f
+
+/**
+ * Per-corner radii of the travelling card (the reference app SharedContainerCornerRadii).
+ * Uniform in practice; the struct keeps the door open for squircle-style
+ * per-corner treatment without reshaping the call chain.
+ */
+internal data class SharedContainerCornerRadii(
+    val topStart: Float,
+    val topEnd: Float,
+    val bottomEnd: Float,
+    val bottomStart: Float,
+) {
+    companion object {
+        fun uniform(cornerRadius: Float): SharedContainerCornerRadii =
+            SharedContainerCornerRadii(
+                topStart = cornerRadius,
+                topEnd = cornerRadius,
+                bottomEnd = cornerRadius,
+                bottomStart = cornerRadius,
+            )
+    }
+}
+
+/**
+ * Corner radii mid-flight, exactly 0 at full expansion: the card's own curve
+ * ends where the screen glass takes over.
+ */
+internal fun sharedContainerCornerRadii(
+    source: SharedContainerCornerRadii,
+    target: SharedContainerCornerRadii,
+    progress: Float,
+): SharedContainerCornerRadii {
+    val fraction = sanitizedProgress(progress)
+    fun interpolate(sourceRadius: Float, targetRadius: Float): Float = if (fraction < 1f) {
+        lerp(sourceRadius, targetRadius, fraction)
+    } else {
+        0f
+    }
+    return SharedContainerCornerRadii(
+        topStart = interpolate(source.topStart, target.topStart),
+        topEnd = interpolate(source.topEnd, target.topEnd),
+        bottomEnd = interpolate(source.bottomEnd, target.bottomEnd),
+        bottomStart = interpolate(source.bottomStart, target.bottomStart),
+    )
+}
 
 /**
  * Corner radius for the sheet at [progress].
@@ -134,11 +252,13 @@ fun sharedContainerCornerRadius(
     progress: Float,
     screenCornerExpansionProgress: Float,
 ): Float {
-    val fraction = progress.coerceIn(0f, 1f)
-    val transitionRadius = lerp(collapsedCornerRadius, expandedCornerRadius, fraction)
+    val fraction = sanitizedProgress(progress)
+    val collapsed = if (collapsedCornerRadius.isFinite()) collapsedCornerRadius else 0f
+    val expanded = if (expandedCornerRadius.isFinite()) expandedCornerRadius else 0f
+    val transitionRadius = lerp(collapsed, expanded, fraction)
     val settled = ((fraction - (1f - CORNER_EXPANSION_PROGRESS_BAND)) / CORNER_EXPANSION_PROGRESS_BAND)
         .coerceIn(0f, 1f)
-    val expansion = screenCornerExpansionProgress.coerceIn(0f, 1f) * settled
+    val expansion = sanitizedProgress(screenCornerExpansionProgress) * settled
     return lerp(transitionRadius, 0f, expansion)
 }
 

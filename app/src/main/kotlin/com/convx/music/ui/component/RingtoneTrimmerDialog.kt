@@ -13,16 +13,16 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
+import com.convx.music.ui.ios.compat.AlertDialog
+import com.convx.music.ui.ios.compat.Button
+import com.convx.music.ui.ios.compat.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.IconButton
+import com.convx.music.ui.ios.compat.AppTheme
 import androidx.compose.material3.RangeSlider
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.convx.music.ui.ios.compat.Text
+import com.convx.music.ui.ios.compat.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -119,7 +119,7 @@ fun RingtoneTrimmerDialog(
         title = {
             Text(
                 stringResource(R.string.trim_ringtone),
-                style = MaterialTheme.typography.headlineSmall,
+                style = AppTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
             )
         },
@@ -127,7 +127,7 @@ fun RingtoneTrimmerDialog(
             Column(modifier = Modifier.fillMaxWidth()) {
                 Text(
                     text = stringResource(R.string.trim_ringtone_desc, songTitle ?: "Unknown"),
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = AppTheme.typography.bodyMedium,
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -153,11 +153,7 @@ fun RingtoneTrimmerDialog(
                                 }
                             }
                         ) {
-                            Icon(
-                                painter = painterResource(if (isPlaying) R.drawable.pause else R.drawable.play),
-                                contentDescription = if (isPlaying) "Pause Preview" else "Play Preview",
-                                modifier = Modifier.size(48.dp)
-                            )
+                            SymbolIcon(symbol = if (isPlaying) sf("pause.fill") else sf("play.fill"), contentDescription = if (isPlaying) "Pause Preview" else "Play Preview", size = 48.dp)
                         }
                     }
                 }
@@ -170,13 +166,13 @@ fun RingtoneTrimmerDialog(
                 ) {
                     Text(
                         text = makeTimeString((rangeSec.start * 1000).toLong()),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary
+                        style = AppTheme.typography.labelLarge,
+                        color = AppTheme.colorScheme.primary
                     )
                     Text(
                         text = makeTimeString((rangeSec.endInclusive * 1000).toLong()),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary
+                        style = AppTheme.typography.labelLarge,
+                        color = AppTheme.colorScheme.primary
                     )
                 }
 
@@ -199,9 +195,9 @@ fun RingtoneTrimmerDialog(
                 val selectedDurationSec = (rangeSec.endInclusive - rangeSec.start).toLong()
                 Text(
                     text = stringResource(R.string.selected_duration, makeTimeString(selectedDurationSec * 1000)),
-                    style = MaterialTheme.typography.labelMedium,
+                    style = AppTheme.typography.labelMedium,
                     modifier = Modifier.align(Alignment.CenterHorizontally),
-                    color = if (selectedDurationSec > 40) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                    color = if (selectedDurationSec > 40) AppTheme.colorScheme.error else AppTheme.colorScheme.onSurfaceVariant
                 )
             }
         },

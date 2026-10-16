@@ -1,5 +1,7 @@
 package com.convx.music.ui.utils
 
+import com.convx.music.ui.component.sf
+import com.convx.music.ui.component.SymbolIcon
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,12 +13,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
+import com.convx.music.ui.ios.compat.Icon
+import com.convx.music.ui.ios.compat.IconButton
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.Slider
+import com.convx.music.ui.ios.compat.Text
+import com.convx.music.ui.ios.compat.OutlinedTextField as TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -28,13 +30,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.composables.sfsymbols.SfSymbols
+import com.composables.sfsymbols.monochrome.SFArrowCounterclockwise
+import com.composables.sfsymbols.monochrome.SFForwardFill
+import com.composables.sfsymbols.monochrome.SFMinus
+import com.composables.sfsymbols.monochrome.SFPlus
 import com.convx.music.LocalDatabase
 import com.convx.music.R
 import com.convx.music.db.entities.SongEntity
@@ -43,7 +49,7 @@ import kotlinx.coroutines.FlowPreview
 @OptIn(FlowPreview::class)
 @Composable
 fun ShowOffsetDialog(songProvider: () -> SongEntity?) {
-    val database = LocalDatabase.current
+    val database = LocalDatabase.current.get()
     val song = songProvider()
     var lyricsOffset by rememberSaveable { mutableIntStateOf(song?.lyricsOffset ?: 0) }
     var textFieldValue by rememberSaveable { mutableStateOf(lyricsOffset.toString()) }
@@ -73,18 +79,13 @@ fun ShowOffsetDialog(songProvider: () -> SongEntity?) {
             .fillMaxWidth()
             .padding(horizontal = 24.dp, vertical = 20.dp)
     ) {
-        Icon(
-            painter = painterResource(R.drawable.fast_forward),
-            contentDescription = null,
-            modifier = Modifier.size(40.dp),
-            tint = MaterialTheme.colorScheme.primary
-        )
+        SymbolIcon(symbol = sf("SFForwardFill"), contentDescription = null, size = 40.dp, tint = AppTheme.colorScheme.primary)
 
         Spacer(modifier = Modifier.height(12.dp))
 
         Text(
             text = stringResource(R.string.lyrics_offset),
-            style = MaterialTheme.typography.headlineSmall,
+            style = AppTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold
         )
 
@@ -136,7 +137,7 @@ fun ShowOffsetDialog(songProvider: () -> SongEntity?) {
                     }
                 },
                 singleLine = true,
-                textStyle = MaterialTheme.typography.displaySmall.copy(
+                textStyle = AppTheme.typography.displaySmall.copy(
                     textAlign = TextAlign.Center,
                     fontWeight = FontWeight.Bold
                 ),
@@ -144,11 +145,11 @@ fun ShowOffsetDialog(songProvider: () -> SongEntity?) {
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = Color.Transparent,
                     unfocusedContainerColor = Color.Transparent,
-                    cursorColor = MaterialTheme.colorScheme.primary,
-                    focusedIndicatorColor = MaterialTheme.colorScheme.primary,
-                    unfocusedIndicatorColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                    cursorColor = AppTheme.colorScheme.primary,
+                    focusedIndicatorColor = AppTheme.colorScheme.primary,
+                    unfocusedIndicatorColor = AppTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                     disabledIndicatorColor = Color.Transparent,
-                    errorIndicatorColor = MaterialTheme.colorScheme.error
+                    errorIndicatorColor = AppTheme.colorScheme.error
                 ),
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Number,
@@ -160,8 +161,8 @@ fun ShowOffsetDialog(songProvider: () -> SongEntity?) {
 
             Text(
                 text = "ms",
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = AppTheme.typography.titleLarge,
+                color = AppTheme.colorScheme.onSurfaceVariant,
                 fontWeight = FontWeight.Medium
             )
 
@@ -174,11 +175,7 @@ fun ShowOffsetDialog(songProvider: () -> SongEntity?) {
                         textFieldValue = "0"
                     }
                 ) {
-                    Icon(
-                        painter = painterResource(R.drawable.replay),
-                        tint = MaterialTheme.colorScheme.primary,
-                        contentDescription = "Reset"
-                    )
+                    SymbolIcon(symbol = sf("SFArrowCounterclockwise"), contentDescription = "Reset", tint = AppTheme.colorScheme.primary)
                 }
             }
         }
@@ -195,10 +192,7 @@ fun ShowOffsetDialog(songProvider: () -> SongEntity?) {
                     textFieldValue = lyricsOffset.toString()
                 }
             ) {
-                Icon(
-                    painter = painterResource(R.drawable.remove),
-                    contentDescription = "Decrease"
-                )
+                SymbolIcon(symbol = sf("SFMinus"), contentDescription = "Decrease")
             }
 
             Slider(
@@ -219,10 +213,7 @@ fun ShowOffsetDialog(songProvider: () -> SongEntity?) {
                     textFieldValue = lyricsOffset.toString()
                 }
             ) {
-                Icon(
-                    painter = painterResource(R.drawable.add),
-                    contentDescription = "Increase"
-                )
+                SymbolIcon(symbol = sf("SFPlus"), contentDescription = "Increase")
             }
         }
 
@@ -236,13 +227,13 @@ fun ShowOffsetDialog(songProvider: () -> SongEntity?) {
         ) {
             Text(
                 text = "-3000ms",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                style = AppTheme.typography.labelLarge,
+                color = AppTheme.colorScheme.onSurfaceVariant
             )
             Text(
                 text = "+3000ms",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                style = AppTheme.typography.labelLarge,
+                color = AppTheme.colorScheme.onSurfaceVariant
             )
         }
     }

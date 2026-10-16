@@ -24,5 +24,7 @@ data class SuggestionAlbum(
     val title: String,
     val artist: String,
     val thumbnailUrl: String?,
-    val appleMusicUrl: String? = null
-)
+    val appleMusicUrl: String? = null,
+) {
+    val sharedArtworkId: String get() = "suggestion_album_$rank"
+}

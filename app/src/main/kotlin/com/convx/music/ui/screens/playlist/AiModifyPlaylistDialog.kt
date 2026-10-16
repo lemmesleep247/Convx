@@ -17,13 +17,13 @@ import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.convx.music.ui.ios.compat.Button
+import com.convx.music.ui.ios.compat.CircularProgressIndicator
+import com.convx.music.ui.ios.compat.AppTheme
+import com.convx.music.ui.ios.compat.OutlinedTextField
+import com.convx.music.ui.ios.compat.Surface
+import com.convx.music.ui.ios.compat.Text
+import com.convx.music.ui.ios.compat.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -69,7 +69,7 @@ fun AiModifyPlaylistDialog(
                 .fillMaxWidth(0.9f)
                 .wrapContentHeight(),
             shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.surface,
+            color = AppTheme.colorScheme.surface,
             tonalElevation = 6.dp
         ) {
             Column(
@@ -78,8 +78,8 @@ fun AiModifyPlaylistDialog(
             ) {
                 Text(
                     text = stringResource(R.string.modify_with_ai),
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = MaterialTheme.colorScheme.onSurface
+                    style = AppTheme.typography.headlineSmall,
+                    color = AppTheme.colorScheme.onSurface
                 )
 
                 if (!isProcessing) {
@@ -95,7 +95,7 @@ fun AiModifyPlaylistDialog(
                     )
 
                     if (logs.isNotEmpty()) {
-                        Text(text = "Logs:", style = MaterialTheme.typography.bodyMedium)
+                        Text(text = "Logs:", style = AppTheme.typography.bodyMedium)
                         val scrollState = rememberScrollState()
                         Text(
                             text = logs,
@@ -103,8 +103,8 @@ fun AiModifyPlaylistDialog(
                                 .fillMaxWidth()
                                 .heightIn(max = 120.dp)
                                 .verticalScroll(scrollState),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            style = AppTheme.typography.bodySmall,
+                            color = AppTheme.colorScheme.onSurfaceVariant
                         )
                     }
 
@@ -149,14 +149,14 @@ fun AiModifyPlaylistDialog(
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         CircularProgressIndicator(
-                            color = MaterialTheme.colorScheme.primary,
+                            color = AppTheme.colorScheme.primary,
                             modifier = Modifier.padding(top = 16.dp)
                         )
                         val latestLog = logs.split("\n").firstOrNull { it.isNotBlank() } ?: "Processing..."
                         Text(
                             text = latestLog,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = AppTheme.typography.bodyMedium,
+                            color = AppTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center
                         )
                     }

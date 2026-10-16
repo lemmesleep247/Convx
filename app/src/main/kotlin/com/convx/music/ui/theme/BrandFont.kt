@@ -33,6 +33,6 @@ val ChillaxFontFamily = FontFamily(
  */
 @Composable
 fun rememberBrandFontFamily(): FontFamily? {
-    val enabled by rememberPreference(BrandFontEnabledKey, defaultValue = true)
+    val enabled by rememberPreference(BrandFontEnabledKey, defaultValue = false)
     return if (enabled) ChillaxFontFamily else null
 }
