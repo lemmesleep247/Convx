@@ -4,6 +4,8 @@ Thanks for helping with Convx. This guide describes how the project is laid out,
 
 By taking part you agree to follow the [Code of Conduct](../CODE_OF_CONDUCT.md).
 
+AI agents should also follow the [Agent Contribution Guide](../AGENT_CONTRIBUTION_GUIDE.md) and use the bundled skills in [contributor/skills/](../contributor/skills/).
+
 ## Quick start
 
 1. Fork the repo and clone your fork.

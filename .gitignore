@@ -120,6 +120,8 @@ app/keystore/
 # Local-only notes and design references
 *.md
 !README.md
+!/AGENT_CONTRIBUTION_GUIDE.md
+!/contributor/skills/**/*.md
 !SECURITY.md
 !docs/CODEBASE_REVIEW_2026-10.md
 !.github/CONTRIBUTING.md
