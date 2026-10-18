@@ -144,6 +144,10 @@ object MusicRecognitionService {
             AUDIO_FORMAT,
             bufferSize
         )
+        if (audioRecord.state != AudioRecord.STATE_INITIALIZED) {
+            audioRecord.release()
+            error("Microphone could not be initialized")
+        }
         
         val outputStream = ByteArrayOutputStream()
         val buffer = ByteArray(bufferSize)
@@ -156,6 +160,8 @@ object MusicRecognitionService {
                 val bytesRead = audioRecord.read(buffer, 0, bufferSize)
                 if (bytesRead > 0) {
                     outputStream.write(buffer, 0, bytesRead)
+                } else if (bytesRead < 0) {
+                    error("Microphone recording failed: $bytesRead")
                 }
             }
         } finally {
@@ -163,7 +169,7 @@ object MusicRecognitionService {
             audioRecord.release()
         }
         
-        outputStream.toByteArray()
+        outputStream.toByteArray().also { require(it.isNotEmpty()) { "No audio was recorded" } }
     }
     
     fun reset() {

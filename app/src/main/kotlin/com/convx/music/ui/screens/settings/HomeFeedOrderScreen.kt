@@ -42,6 +42,7 @@ import androidx.navigation.NavController
 import com.convx.music.R
 import com.convx.music.constants.HomeSectionOrderKey
 import com.convx.music.constants.HomeSectionHiddenKey
+import com.convx.music.constants.RandomizeHomeOrderKey
 import com.convx.music.ui.component.shapes.ContinuousRoundedRectangle
 import com.convx.music.ui.theme.AppleTokens
 import com.convx.music.utils.rememberPreference
@@ -86,6 +87,7 @@ fun HomeFeedOrderScreen(
     scrollBehavior: TopAppBarScrollBehavior,
 ) {
     val (savedOrder, onSavedOrderChange) = rememberPreference(HomeSectionOrderKey, "")
+    val (_, onRandomizeHomeOrderChange) = rememberPreference(RandomizeHomeOrderKey, true)
     val (hiddenIds, onHiddenIdsChange) = rememberPreference(HomeSectionHiddenKey, "")
     // Read straight off the preference rather than mirrored into local state: a switch
     // writes one value and DataStore is the single source of truth for what is hidden.
@@ -117,6 +119,7 @@ fun HomeFeedOrderScreen(
     LaunchedEffect(reorderableState.isAnyItemDragging) {
         if (!reorderableState.isAnyItemDragging && hasDragged) {
             onSavedOrderChange(rows.joinToString("\n") { it.id })
+            onRandomizeHomeOrderChange(false)
             hasDragged = false
         }
     }

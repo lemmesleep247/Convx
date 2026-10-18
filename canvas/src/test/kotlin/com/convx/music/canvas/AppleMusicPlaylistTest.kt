@@ -9,7 +9,7 @@ import org.junit.Test
 class AppleMusicPlaylistTest {
     private val link = ApplePlaylistLink("us", "pl.test")
     private val base = "/v1/catalog/us/playlists/pl.test"
-    private val detail = Json.parseToJsonElement("""{"data":[{"attributes":{"name":"A playlist"}}]}""").jsonObject
+    private val detail = Json.parseToJsonElement("""{"data":[{"attributes":{"name":"A playlist","artwork":{"url":"https://example.test/{w}x{h}bb.{f}"}}}]}""").jsonObject
 
     @Test fun fetchesAllPagesInOrderAndCountsUnsupportedItems() = runBlocking {
         val pages = mapOf(
@@ -19,6 +19,7 @@ class AppleMusicPlaylistTest {
         )
         val playlist = AppleMusicPlaylist.fetch(link) { pages[it] }
         assertEquals("A playlist", playlist.title)
+        assertEquals("https://example.test/600x600bb.jpg", playlist.artworkUrl)
         assertEquals(listOf("First", "Second"), playlist.tracks.map { it.title })
         assertEquals(123000, playlist.tracks.first().durationMs)
         assertEquals(1, playlist.unsupportedTracks)

@@ -18,11 +18,13 @@ import com.convx.music.utils.dataStore
 import com.convx.music.utils.reportException
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 
 class LyricsHelper
@@ -64,13 +66,6 @@ constructor(
     suspend fun getLyrics(mediaMetadata: MediaMetadata): LyricsWithProvider {
         currentLyricsJob?.cancel()
 
-        val cached = cache.get(mediaMetadata.id)?.firstOrNull()
-        if (cached != null) {
-            val providerId = LyricsProviderRegistry.getProviderForStoredName(cached.providerId)?.id
-                ?: cached.providerId
-            return LyricsWithProvider(cached.lyrics, providerId)
-        }
-
         if (!hasNetworkConnection()) {
             return LyricsWithProvider(LYRICS_NOT_FOUND, "Unknown")
         }
@@ -80,17 +75,21 @@ constructor(
             if (!LyricsProviderSettings.isEnabled(context, provider)) continue
 
             try {
-                val result = providerRepository.fetch(
-                    provider,
-                    mediaMetadata.id,
-                    mediaMetadata.title,
-                    mediaMetadata.artists.joinToString { it.name },
-                    mediaMetadata.duration,
-                    mediaMetadata.album?.title,
-                )
+                val result = withTimeoutOrNull(10_000) {
+                    providerRepository.fetch(
+                        provider,
+                        mediaMetadata.id,
+                        mediaMetadata.title,
+                        mediaMetadata.artists.joinToString { it.name },
+                        mediaMetadata.duration,
+                        mediaMetadata.album?.title,
+                    )
+                } ?: continue
                 val lyrics = result.getOrNull()
                 if (lyrics != null) return LyricsWithProvider(lyrics, provider.id)
                 result.exceptionOrNull()?.let(::reportException)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 reportException(e)
             }
@@ -109,7 +108,12 @@ constructor(
     ) {
         currentLyricsJob?.cancel()
 
-        val cacheKey = "$songArtists-$songTitle".replace(" ", "")
+        val providers = resolveLyricsProviders().usableFor(isLocalSong(mediaId))
+            .filter { LyricsProviderSettings.isEnabled(context, it) }
+        // Priority and enabled state are part of the cache identity. Otherwise a
+        // previously cached result silently ignores a changed provider order.
+        val cacheKey = listOf(mediaId, songArtists, songTitle, duration.toString(), album.orEmpty(),
+            providers.joinToString(",") { it.id }).joinToString("|")
         cache.get(cacheKey)?.let { results ->
             results.forEach {
                 callback(it)
@@ -120,21 +124,22 @@ constructor(
         if (!hasNetworkConnection()) return
 
         val allResult = mutableListOf<LyricsResult>()
-        val providers = resolveLyricsProviders().usableFor(isLocalSong(mediaId))
         currentLyricsJob = CoroutineScope(SupervisorJob()).launch {
             providers.forEach { provider ->
-                if (LyricsProviderSettings.isEnabled(context, provider)) {
                     try {
                         LyricsProviderSettings.initialize(context, provider)
-                        provider.getAllLyrics(mediaId, songTitle, songArtists, duration, album) { lyrics ->
-                            val result = LyricsResult(provider.id, provider.displayName, lyrics)
-                            allResult += result
-                            callback(result)
+                        withTimeoutOrNull(10_000) {
+                            provider.getAllLyrics(mediaId, songTitle, songArtists, duration, album) { lyrics ->
+                                val result = LyricsResult(provider.id, provider.displayName, lyrics)
+                                allResult += result
+                                callback(result)
+                            }
                         }
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
                         reportException(e)
                     }
-                }
             }
             cache.put(cacheKey, allResult)
         }

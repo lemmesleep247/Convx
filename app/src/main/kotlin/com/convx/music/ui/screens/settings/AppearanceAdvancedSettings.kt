@@ -62,6 +62,7 @@ import com.convx.music.constants.GridItemSize
 import com.convx.music.constants.GridItemsSizeKey
 import com.convx.music.constants.GridSpacingKey
 import com.convx.music.constants.HideHomeFavoriteIconKey
+import com.convx.music.constants.HiddenNavigationRoutesKey
 import com.convx.music.constants.HidePlayerThumbnailKey
 import com.convx.music.constants.HomeCardCornerRadiusOverrideKey
 import com.convx.music.constants.HomeGridColumnsOverrideKey
@@ -86,6 +87,7 @@ import com.convx.music.constants.SpeedDialColumnsOverrideKey
 import com.convx.music.constants.SheetCornerRadiusKey
 import com.convx.music.constants.ThumbnailCornerRadiusKey
 import com.convx.music.ui.component.ColorPickerDialog
+import com.convx.music.ui.screens.Screens
 import com.convx.music.ui.component.DefaultDialog
 import com.convx.music.ui.component.EnumDialog
 import com.convx.music.ui.component.IconButton
@@ -127,6 +129,15 @@ fun AppearanceAdvancedSettings(
     }
 
     val (iosOverscroll, onIosOverscrollChange) = rememberPreference(IosOverscrollKey, defaultValue = true)
+    val (hiddenNavigationRoutes, onHiddenNavigationRoutesChange) = rememberPreference(HiddenNavigationRoutesKey, "")
+    val hiddenTabs = remember(hiddenNavigationRoutes) {
+        hiddenNavigationRoutes.lineSequence().map(String::trim).filter(String::isNotEmpty).toSet()
+    }
+    val optionalTabs = listOf(Screens.Radio, Screens.Explore)
+    val onTabVisibilityChange: (Screens, Boolean) -> Unit = { tab, visible ->
+        val updated = if (visible) hiddenTabs - tab.route else hiddenTabs + tab.route
+        onHiddenNavigationRoutesChange(updated.sorted().joinToString("\n"))
+    }
     val (enableSettingsPopup, onEnableSettingsPopupChange) = rememberPreference(
         EnableSettingsPopupKey,
         defaultValue = false
@@ -461,6 +472,23 @@ fun AppearanceAdvancedSettings(
                             onClick = { onLibraryIconsOnlyChange(!libraryIconsOnly) }
                         ),
                     )
+                )
+
+                Spacer(modifier = Modifier.height(27.dp))
+
+                IosSettingsGroup(
+                    title = "Navigation tabs",
+                    items = optionalTabs.map { tab ->
+                        val visible = tab.route !in hiddenTabs
+                        IosSettingsItem(
+                            icon = painterResource(tab.icon(false)),
+                            title = { Text(stringResource(tab.titleId)) },
+                            trailingContent = {
+                                Switch(checked = visible, onCheckedChange = { onTabVisibilityChange(tab, it) })
+                            },
+                            onClick = { onTabVisibilityChange(tab, !visible) },
+                        )
+                    },
                 )
 
                 Spacer(modifier = Modifier.height(27.dp))

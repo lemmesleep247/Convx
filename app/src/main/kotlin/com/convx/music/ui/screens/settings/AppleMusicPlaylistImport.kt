@@ -7,6 +7,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.navigation.NavController
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.convx.music.R
@@ -21,7 +22,10 @@ import com.convx.music.viewmodels.AppleMusicImportState
 import com.convx.music.viewmodels.AppleMusicImportViewModel
 
 @Composable
-fun AppleMusicPlaylistImport(viewModel: AppleMusicImportViewModel = hiltViewModel()) {
+fun AppleMusicPlaylistImport(
+    navController: NavController,
+    viewModel: AppleMusicImportViewModel = hiltViewModel(),
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val exportPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(viewModel::loadExport)
@@ -32,7 +36,12 @@ fun AppleMusicPlaylistImport(viewModel: AppleMusicImportViewModel = hiltViewMode
         onClick = viewModel::open,
     )))
     if (state.visible) AppleMusicImportDialog(
-        state, viewModel::updateUrl, viewModel::load, viewModel::chooseDestination, viewModel::dismiss,
+        state,
+        viewModel::updateUrl,
+        viewModel::load,
+        viewModel::chooseDestination,
+        onCreatePlaylist = { viewModel.createPlaylist { id -> navController.navigate("local_playlist/$id") } },
+        onDismiss = viewModel::dismiss,
         onImportFile = { exportPicker.launch(arrayOf("application/xml", "text/xml", "text/plain")) },
     )
     key(state.session) {
@@ -52,6 +61,7 @@ private fun AppleMusicImportDialog(
     onUrlChange: (String) -> Unit,
     onLoad: () -> Unit,
     onChooseDestination: () -> Unit,
+    onCreatePlaylist: () -> Unit,
     onDismiss: () -> Unit,
     onImportFile: () -> Unit,
 ) {
@@ -62,7 +72,8 @@ private fun AppleMusicImportDialog(
             TextButton(onClick = onDismiss) { Text(stringResource(android.R.string.cancel)) }
             if (!state.busy) {
                 if (state.ready) {
-                    TextButton(onClick = onChooseDestination, enabled = state.songs.isNotEmpty()) { Text(stringResource(R.string.apple_music_choose_playlist)) }
+                    TextButton(onClick = onChooseDestination, enabled = state.songs.isNotEmpty() && !state.busy) { Text(stringResource(R.string.apple_music_choose_playlist)) }
+                    TextButton(onClick = onCreatePlaylist, enabled = state.songs.isNotEmpty() && !state.busy) { Text(stringResource(R.string.create_playlist)) }
                 } else {
                     TextButton(onClick = onLoad, enabled = state.url.isNotBlank()) { Text(stringResource(R.string.import_playlist)) }
                 }
@@ -70,10 +81,17 @@ private fun AppleMusicImportDialog(
         },
     ) {
         when {
-            state.busy -> Text(if (state.total == 0) stringResource(R.string.apple_music_loading) else stringResource(R.string.apple_music_matching, state.completed, state.total))
+            state.busy -> Text(
+                when {
+                    state.creatingPlaylist -> stringResource(R.string.apple_music_creating_playlist)
+                    state.total == 0 -> stringResource(R.string.apple_music_loading)
+                    else -> stringResource(R.string.apple_music_matching, state.completed, state.total)
+                }
+            )
             state.ready -> {
                 Text(state.title)
                 Text(stringResource(R.string.apple_music_match_summary, state.songs.size, state.skipped))
+                state.error?.let { Text(stringResource(it)) }
             }
             else -> {
                 Text(stringResource(R.string.apple_music_public_link_description))

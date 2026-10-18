@@ -21,7 +21,12 @@ data class ApplePlaylistLink(val storefront: String, val id: String) {
 }
 
 data class ApplePlaylistTrack(val title: String, val artist: String, val durationMs: Int)
-data class ApplePlaylist(val title: String, val tracks: List<ApplePlaylistTrack>, val unsupportedTracks: Int)
+data class ApplePlaylist(
+    val title: String,
+    val tracks: List<ApplePlaylistTrack>,
+    val unsupportedTracks: Int,
+    val artworkUrl: String? = null,
+)
 
 object AppleMusicPlaylist {
     suspend fun fetch(link: ApplePlaylistLink): ApplePlaylist = fetch(link) {
@@ -34,8 +39,13 @@ object AppleMusicPlaylist {
             ?: error("Playlist is unavailable")
         val playlist = root["data"]?.jsonArray?.firstOrNull()?.jsonObject
             ?: error("Playlist is unavailable")
-        val title = playlist["attributes"]?.jsonObject?.get("name")?.jsonPrimitive?.contentOrNull
+        val attributes = playlist["attributes"]?.jsonObject ?: error("Playlist has no metadata")
+        val title = attributes["name"]?.jsonPrimitive?.contentOrNull
             ?: error("Playlist has no name")
+        val artworkUrl = attributes["artwork"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
+            ?.replace("{w}", "600")
+            ?.replace("{h}", "600")
+            ?.replace("{f}", "jpg")
         val tracks = mutableListOf<ApplePlaylistTrack>()
         var unsupported = 0
         var page: String? = "$base/tracks?limit=100"
@@ -65,6 +75,6 @@ object AppleMusicPlaylist {
                 next
             }
         }
-        return ApplePlaylist(title, tracks, unsupported)
+        return ApplePlaylist(title, tracks, unsupported, artworkUrl)
     }
 }

@@ -6,7 +6,7 @@
     <a href="https://github.com/cosmictaserdev-creator/Convx/releases/latest">
       <img src="https://img.shields.io/badge/Download-Stable-37A866?style=for-the-badge&logo=android&logoColor=white" alt="Download the stable Convx release">
     </a>
-    <a href="https://github.com/cosmictaserdev-creator/Convx/releases/tag/2.0.0-nightly">
+    <a href="https://github.com/cosmictaserdev-creator/Convx/releases/tag/2.0.3-nightly">
       <img src="https://img.shields.io/badge/Download-Nightly-5268D8?style=for-the-badge&logo=android&logoColor=white" alt="Download the Convx nightly build">
     </a>
   </p>
@@ -58,7 +58,7 @@ Convx brings music discovery, playback, lyrics, and your library together in one
 ## Download
 
 - **Stable:** [Download the latest release](https://github.com/cosmictaserdev-creator/Convx/releases/latest).
-- **Nightly:** [Download the latest nightly build](https://github.com/cosmictaserdev-creator/Convx/releases/tag/2.0.0-nightly). Nightlies are pre-release builds and may be unstable.
+- **Nightly:** [Download the latest nightly build](https://github.com/cosmictaserdev-creator/Convx/releases/tag/2.0.3-nightly). Nightlies are pre-release builds and may be unstable. On a 32-bit-only phone (for example Galaxy A13) that says "app not compatible", download the `arm32` APK from the same release.
 
 Convx supports Android 8.0 (API 26) and later. Install APKs only from sources you trust. Android may ask you to allow installation from the app you used to download the APK.
 

@@ -12,12 +12,15 @@ import com.convx.music.canvas.ApplePlaylistExport
 import com.convx.music.canvas.ApplePlaylistLink
 import com.convx.music.canvas.ApplePlaylistTrack
 import com.convx.music.db.MusicDatabase
+import com.convx.music.db.entities.PlaylistEntity
+import com.convx.music.db.entities.PlaylistSongMap
 import com.convx.music.models.MediaMetadata
 import com.convx.music.models.toMediaMetadata
 import com.music.innertube.SearchFilter
 import com.music.innertube.YouTube
 import com.music.innertube.models.SongItem
 import com.music.spotify.SpotifyMapper
+import com.convx.music.utils.reportException
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.ByteArrayOutputStream
@@ -33,6 +36,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.time.LocalDateTime
 
 private const val MIN_SONG_MATCH_SCORE = 0.78
 
@@ -71,7 +75,9 @@ data class AppleMusicImportState(
     val visible: Boolean = false,
     val url: String = "",
     val busy: Boolean = false,
+    val creatingPlaylist: Boolean = false,
     val title: String = "",
+    val artworkUrl: String? = null,
     val completed: Int = 0,
     val total: Int = 0,
     val skipped: Int = 0,
@@ -141,6 +147,7 @@ class AppleMusicImportViewModel @Inject constructor(
         mutableState.update {
             it.copy(
                 busy = true,
+                creatingPlaylist = false,
                 error = null,
                 ready = false,
                 songs = emptyList(),
@@ -155,6 +162,7 @@ class AppleMusicImportViewModel @Inject constructor(
                 mutableState.update {
                     it.copy(
                         title = playlist.title,
+                        artworkUrl = playlist.artworkUrl,
                         total = playlist.tracks.size,
                         skipped = playlist.unsupportedTracks,
                     )
@@ -182,16 +190,63 @@ class AppleMusicImportViewModel @Inject constructor(
     }
 
     private suspend fun findBestMatch(track: ApplePlaylistTrack): SongItem? {
-        val results = YouTube.search(
-            "${track.artist} ${track.title}",
-            SearchFilter.FILTER_SONG,
-        ).getOrThrow()
-        return chooseBestMatch(track, results.items.filterIsInstance<SongItem>())
+        var lastFailure: Throwable? = null
+        repeat(2) { attempt ->
+            try {
+                val results = YouTube.search(
+                    "${track.artist} ${track.title}",
+                    SearchFilter.FILTER_SONG,
+                ).getOrThrow()
+                return chooseBestMatch(track, results.items.filterIsInstance<SongItem>())
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                lastFailure = failure
+                if (attempt == 0) delay(500)
+            }
+        }
+        lastFailure?.let(::reportException)
+        // A single unavailable YouTube search should not discard the other songs
+        // already matched from this Apple Music playlist.
+        return null
     }
 
     suspend fun persistSongs(): List<String> = withContext(Dispatchers.IO) {
         val songs = state.value.songs
         database.withTransaction { songs.forEach { insert(it) } }
         songs.map { it.id }
+    }
+
+    fun createPlaylist(onCreated: (String) -> Unit) {
+        val snapshot = state.value
+        if (!snapshot.ready || snapshot.busy || snapshot.songs.isEmpty()) return
+
+        mutableState.update { it.copy(busy = true, creatingPlaylist = true, error = null) }
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val songs = snapshot.songs
+                val playlist = PlaylistEntity(
+                    name = snapshot.title.trim().ifEmpty { "Apple Music playlist" },
+                    bookmarkedAt = LocalDateTime.now(),
+                    thumbnailUrl = snapshot.artworkUrl,
+                    isEditable = true,
+                )
+                database.withTransaction {
+                    insert(playlist)
+                    songs.forEach { insert(it) }
+                    songs.forEachIndexed { index, song ->
+                        insert(PlaylistSongMap(playlistId = playlist.id, songId = song.id, position = index))
+                    }
+                }
+                withContext(Dispatchers.Main) {
+                    mutableState.update { it.copy(visible = false, choosingDestination = false, busy = false, creatingPlaylist = false, ready = false, error = null) }
+                    onCreated(playlist.id)
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                mutableState.update { it.copy(busy = false, creatingPlaylist = false, error = R.string.playlist_creation_failed) }
+            }
+        }
     }
 }

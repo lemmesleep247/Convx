@@ -87,6 +87,13 @@ android {
             buildConfigField("String", "ARCHITECTURE", "\"arm64\"")
             ndk { abiFilters.add("arm64-v8a") }
         }
+        // 32-bit-only ARM userland (e.g. Galaxy A13). MMKV 2.x has no 32-bit library,
+        // so this flavor swaps in the 1.3.x line below.
+        create("arm32") {
+            dimension = "abi"
+            buildConfigField("String", "ARCHITECTURE", "\"arm32\"")
+            ndk { abiFilters.add("armeabi-v7a") }
+        }
         create("x86_64") {
             dimension = "abi"
             buildConfigField("String", "ARCHITECTURE", "\"x86_64\"")
@@ -260,7 +267,10 @@ dependencies {
     implementation(libs.activity)
     implementation(libs.hilt.navigation)
     implementation(libs.datastore)
-    implementation(libs.mmkv)
+    "universalImplementation"(libs.mmkv)
+    "arm64Implementation"(libs.mmkv)
+    "x86_64Implementation"(libs.mmkv)
+    "arm32Implementation"(libs.mmkv.legacy)
     implementation(libs.webkit)
 
     implementation(libs.compose.runtime)

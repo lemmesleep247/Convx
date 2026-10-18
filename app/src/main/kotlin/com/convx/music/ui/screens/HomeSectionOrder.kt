@@ -79,7 +79,11 @@ internal fun buildHomeSections(
         .filter(String::isNotEmpty)
         .toList()
 
-    return if (customOrder.isNotEmpty()) {
+    return if (randomizeHomeOrder) {
+        list.map { section -> section to randomizedSectionWeight(section, randomSeed) }
+            .sortedByDescending { it.second }
+            .map { it.first }
+    } else if (customOrder.isNotEmpty()) {
         val customOrderRank = customOrder.distinct()
             .withIndex()
             .associate { (index, id) -> id to index }
@@ -91,10 +95,6 @@ internal fun buildHomeSections(
                 { section -> -section.baseWeight },
             ),
         )
-    } else if (randomizeHomeOrder) {
-        list.map { section -> section to randomizedSectionWeight(section, randomSeed) }
-            .sortedByDescending { it.second }
-            .map { it.first }
     } else {
         list.sortedByDescending { section ->
             when (section) {

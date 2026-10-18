@@ -860,8 +860,8 @@ fun LocalPlaylistScreen(
                                                 playerConnection.playQueue(
                                                     ListQueue(
                                                         title = currentPlaylist.playlist.name,
-                                                        items = songs.map { it.song.toMediaItem() },
-                                                        startIndex = songs.indexOfFirst { it.map.id == song.map.id },
+                                                        items = mutableSongs.map { it.song.toMediaItem() },
+                                                        startIndex = mutableSongs.indexOfFirst { it.map.id == song.map.id },
                                                     ),
                                                 )
                                             }

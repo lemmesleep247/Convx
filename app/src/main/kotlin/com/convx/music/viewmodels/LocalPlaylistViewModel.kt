@@ -97,8 +97,10 @@ constructor(
         refresh()
 
         viewModelScope.launch {
-            val sortedSongs =
-                playlistSongs.first().sortedWith(compareBy({ it.map.position }, { it.map.id }))
+            // Normalize the stored custom order, not the current display order. The
+            // latter may be sorted by title/artist and would overwrite positions.
+            val sortedSongs = database.playlistSongs(playlistId).first()
+                .sortedWith(compareBy({ it.map.position }, { it.map.id }))
             database.transaction {
                 sortedSongs.forEachIndexed { index, playlistSong ->
                     if (playlistSong.map.position != index) {

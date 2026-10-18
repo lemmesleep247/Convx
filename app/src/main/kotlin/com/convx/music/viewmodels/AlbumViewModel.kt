@@ -22,6 +22,8 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withTimeoutOrNull
 import com.convx.music.utils.Wikipedia
 import com.convx.music.utils.AppleMusicAboutAlbum
 import com.convx.music.utils.ArtistWordmarkAssets
@@ -86,8 +88,15 @@ constructor(
             if (album?.description != null) {
                 description.value = album.description
             }
-            YouTube
-                .album(albumId)
+            val albumResult = try {
+                withTimeoutOrNull(25_000) { YouTube.album(albumId) }
+                    ?: Result.failure(java.io.IOException("Album request timed out"))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+            albumResult
                 .onSuccess {
                     playlistId.value = it.album.playlistId
                     otherVersions.value = it.otherVersions

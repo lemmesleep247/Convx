@@ -717,6 +717,9 @@ val HomeSectionOrderKey = stringPreferencesKey("homeSectionOrder")
 /** Newline-separated ids of hidden Home sections; sections without an id remain visible. */
 val HomeSectionHiddenKey = stringPreferencesKey("homeSectionHidden")
 
+/** Newline-separated routes omitted from the bottom navigation. Home and Library stay available. */
+val HiddenNavigationRoutesKey = stringPreferencesKey("hiddenNavigationRoutes")
+
 /** Show YouTube's mood/genre filter chips (Energize, Relax, Feel good) in Home's top bar. */
 val ShowHomeMoodFiltersKey = booleanPreferencesKey("showHomeMoodFilters")
 

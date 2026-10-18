@@ -172,7 +172,7 @@ fun BackupAndRestore(
                 )
             )
         )
-        AppleMusicPlaylistImport()
+        AppleMusicPlaylistImport(navController)
     
     }
 

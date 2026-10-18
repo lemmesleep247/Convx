@@ -1413,7 +1413,7 @@ class MusicService :
 
         player.setOffloadEnabled(cachedOffloadEnabled && !analysisOnly)
         player.skipSilenceEnabled = cachedSkipSilence && !cachedBitPerfect
-        if (!analysisOnly) player.addAnalyticsListener(PlaybackStatsListener(false, this@MusicService))
+        if (!analysisOnly) player.addAnalyticsListener(crashSafe(PlaybackStatsListener(false, this@MusicService)))
 
         if (role == PlayerRole.SESSION) _playerFlow.value = player
         return player
@@ -2565,6 +2565,12 @@ class MusicService :
         mediaItem: MediaItem?,
         reason: Int,
     ) {
+        // A failed transition may need standard audio once. Let a later visit to
+        // that track try the preferred lossless source again without restarting.
+        forceStandardAudioMediaIds.filter { it != mediaItem?.mediaId }.forEach { departedId ->
+            forceStandardAudioMediaIds.remove(departedId)
+            bypassCacheForQualityChange.add(departedId)
+        }
         // Video mode belongs to one queue item. If playback leaves that item,
         // discard its standard-audio variant so returning to it as a song can
         // resolve the preferred lossless source again.
@@ -3782,6 +3788,23 @@ class MusicService :
     }
 
     private val streamResolver = StreamResolver()
+
+    // PlaybackStatsListener throws a message-less IllegalArgumentException when an event
+    // carries an older timestamp than its tracker state; a stats glitch must not kill playback.
+    private fun crashSafe(inner: AnalyticsListener): AnalyticsListener =
+        java.lang.reflect.Proxy.newProxyInstance(
+            AnalyticsListener::class.java.classLoader,
+            arrayOf(AnalyticsListener::class.java),
+        ) { _, method, args ->
+            try {
+                method.invoke(inner, *(args ?: emptyArray()))
+            } catch (e: java.lang.reflect.InvocationTargetException) {
+                if (e.cause !is IllegalArgumentException) throw e.cause ?: e
+                reportException(e.cause!!)
+                null
+            }
+        } as AnalyticsListener
+
 
     override fun onPlaybackStatsReady(
         eventTime: AnalyticsListener.EventTime,

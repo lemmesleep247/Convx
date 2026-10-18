@@ -1384,6 +1384,7 @@
     <string name="apple_music_matching">Matching tracks: %1$d of %2$d</string>
     <string name="apple_music_match_summary">%1$d tracks matched, %2$d skipped.</string>
     <string name="apple_music_choose_playlist">Choose playlist</string>
+    <string name="apple_music_creating_playlist">Creating playlist…</string>
     <string name="apple_music_private_export_description">For a private playlist, export it as XML from Music on Mac or iTunes, then import the file here.</string>
     <string name="apple_music_import_export">Import playlist XML</string>
     <string name="apple_music_export_failed">Could not import this file. Export one playlist as XML, keep the file under 8 MB, and check your connection.</string>

@@ -113,7 +113,6 @@ import com.convx.music.ui.component.LocalAppleMusicUi
 import com.convx.music.ui.screens.Screens
 import com.convx.music.ui.component.backdrop.backdrops.layerBackdrop
 import com.convx.music.ui.component.backdrop.backdrops.rememberLayerBackdrop
-import com.convx.music.ui.component.isGlassAllowed
 import com.convx.music.ui.component.liquidGlass
 import com.convx.music.ui.component.shapes.ContinuousRoundedRectangle
 import com.convx.music.ui.component.IconButton as AppIconButton
@@ -294,8 +293,13 @@ fun GlassEffectSettings(
         lensAmount = lensAmount,
         chromaticAberration = chromaticAberration,
         depthEffect = depthEffect,
-        surfaceTintColor = if (surfaceTintColorInt == 0) Color.Unspecified else Color(surfaceTintColorInt),
+        surfaceTintColor = surfaceTintColor,
         surfaceOpacity = surfaceOpacity,
+        highlightColor = if (highlightColorInt == 0) Color.Unspecified else Color(highlightColorInt),
+        highlightOpacity = highlightOpacity,
+        style = glassStyle,
+        puckColor = if (puckColorInt == 0) Color.Unspecified else Color(puckColorInt),
+        puckOpacity = puckOpacity,
         textColor = textColor,
     )
 
@@ -1120,13 +1124,7 @@ private fun GlassLivePreview(
             // Built once and applied to both surfaces: a Modifier chain is an
             // immutable description, and each node it is attached to gets its own
             // state. Cannot be a local helper function — liquidGlass is @Composable.
-            val previewGlass = if (isGlassAllowed()) {
-                Modifier.liquidGlass(config = config, shape = pillShape, highlightAlpha = 0.3f)
-            } else {
-                // Same fallback every other glass call site uses when the device
-                // can't run the RenderEffect chain.
-                Modifier.background(Color.White.copy(alpha = config.surfaceOpacity), pillShape)
-            }
+            val previewGlass = Modifier.liquidGlass(config = config, shape = pillShape, highlightAlpha = 0.3f)
 
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),

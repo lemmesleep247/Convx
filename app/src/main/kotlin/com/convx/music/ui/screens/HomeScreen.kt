@@ -331,7 +331,7 @@ fun HomeScreen(
 
     val accountImageUrl = homeState.accountImageUrl
     val innerTubeCookie by rememberPreference(InnerTubeCookieKey, "")
-    val (randomizeHomeOrder) = rememberPreference(RandomizeHomeOrderKey, false)
+    val (randomizeHomeOrder) = rememberPreference(RandomizeHomeOrderKey, true)
 
     val shouldShowWrappedCard = homeState.showWrappedCard
     val wrappedState by viewModel.wrappedManager.state.collectAsStateWithLifecycle()

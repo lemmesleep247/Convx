@@ -1914,7 +1914,11 @@ interface DatabaseDao {
             playlistEntity.copy(
                 name = playlistItem.title,
                 browseId = playlistItem.id,
-                thumbnailUrl = playlistItem.thumbnail,
+                // A cropped cover is stored in filesDir. Keep that local override
+                // when the account sync refreshes the remote playlist metadata.
+                thumbnailUrl = playlistEntity.thumbnailUrl
+                    ?.takeIf { it.startsWith("file:") }
+                    ?: playlistItem.thumbnail,
                 isEditable = playlistItem.isEditable,
                 remoteSongCount = playlistItem.songCountText?.let { Regex("""\d+""").find(it)?.value?.toIntOrNull() },
                 playEndpointParams = playlistItem.playEndpoint?.params,

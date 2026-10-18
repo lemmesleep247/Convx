@@ -6,12 +6,10 @@
 package com.convx.music.ui.screens.settings
 
 import android.annotation.SuppressLint
+import android.net.Uri
 import android.os.Build
-import android.view.View
 import android.view.ViewGroup
 import android.webkit.CookieManager
-import android.webkit.JsResult
-import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
@@ -22,10 +20,11 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import com.convx.music.ui.ios.compat.AppTheme
 import com.convx.music.ui.ios.compat.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -36,12 +35,23 @@ import com.convx.music.R
 import com.convx.music.constants.DiscordTokenKey
 import com.convx.music.ui.utils.backToMain
 import com.convx.music.utils.rememberPreference
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import timber.log.Timber
+import org.json.JSONTokener
 
-private const val JS_SNIPPET =
-    "javascript:(function()%7Bvar%20i%3Ddocument.createElement('iframe')%3Bdocument.body.appendChild(i)%3Balert(i.contentWindow.localStorage.token.slice(1,-1))%7D)()"
+// Discord's web app removes window.localStorage from the page; an about:blank iframe
+// shares the origin and still exposes the real storage.
+private const val DISCORD_TOKEN_SCRIPT = """(() => {
+    const read = () => {
+        try { const v = window.localStorage.getItem('token'); if (v) return v; } catch (_) {}
+        let frame;
+        try {
+            frame = document.body.appendChild(document.createElement('iframe'));
+            return frame.contentWindow.localStorage.getItem('token') || '';
+        } catch (_) { return ''; } finally { if (frame) frame.remove(); }
+    };
+    const value = read();
+    if (!value) return '';
+    try { return JSON.parse(value); } catch (_) { return value; }
+})()"""
 
 private const val MOTOROLA = "motorola"
 private const val SAMSUNG_USER_AGENT =
@@ -51,9 +61,21 @@ private const val SAMSUNG_USER_AGENT =
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DiscordLoginScreen(navController: NavController) {
-    val scope = rememberCoroutineScope()
     val discordTokenPref = rememberPreference(DiscordTokenKey, "")
-    val webViewRef = remember { mutableStateOf<WebView?>(null) }
+    var webView by remember { mutableStateOf<WebView?>(null) }
+    var tokenCaptured by remember { mutableStateOf(false) }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            webView?.apply {
+                stopLoading()
+                loadUrl("about:blank")
+                removeAllViews()
+                destroy()
+            }
+            webView = null
+        }
+    }
 
     SettingsScaffold(
         navController = navController,
@@ -77,6 +99,9 @@ fun DiscordLoginScreen(navController: NavController) {
 
                     settings.javaScriptEnabled = true
                     settings.domStorageEnabled = true
+                    settings.loadsImagesAutomatically = true
+                    settings.javaScriptCanOpenWindowsAutomatically = true
+                    settings.setSupportMultipleWindows(false)
                     // Discord's 2FA challenge (and its captcha widget) runs on a
                     // separate origin and needs third-party cookies to complete —
                     // WebView blocks those by default, so 2FA accounts got stuck
@@ -90,48 +115,55 @@ fun DiscordLoginScreen(navController: NavController) {
                     }
 
                     webViewClient = object : WebViewClient() {
-                        @Deprecated("Deprecated in Java")
-                        override fun shouldOverrideUrlLoading(
-                            view: WebView,
-                            url: String,
-                        ): Boolean {
-                            if (url.endsWith("/app")) {
-                                view.stopLoading()
-                                view.loadUrl(JS_SNIPPET)
-                                view.visibility = View.GONE
-                            }
-                            return false
-                        }
-                    }
+                        override fun onPageFinished(view: WebView, url: String?) {
+                            super.onPageFinished(view, url)
+                            val uri = url?.let { runCatching { Uri.parse(it) }.getOrNull() }
+                            if (tokenCaptured || uri?.host != "discord.com" || uri.path?.trimEnd('/') != "/app") return
 
-                    webChromeClient = object : WebChromeClient() {
-                        override fun onJsAlert(
-                            view: WebView,
-                            url: String,
-                            message: String,
-                            result: JsResult
-                        ): Boolean {
-                            Timber.d("Discord Token received")
-                            if (message.isNotBlank() && message != "null" && message != "undefined") {
-                                discordTokenPref.value = message
-                                scope.launch(Dispatchers.Main) {
-                                    navController.navigateUp()
+                            // Wait until Discord's app shell has finished loading before reading
+                            // its own-origin storage. Keep the page visible if the token is not
+                            // available yet so the user can recover or retry the login.
+                            var attempts = 0
+                            val captureTask = object : Runnable {
+                                override fun run() {
+                                    if (tokenCaptured || view.url?.let { current ->
+                                            runCatching { Uri.parse(current) }.getOrNull()?.let {
+                                                it.host == "discord.com" && it.path?.trimEnd('/') == "/app"
+                                            }
+                                        } != true
+                                    ) return
+
+                                    attempts++
+                                    view.evaluateJavascript(DISCORD_TOKEN_SCRIPT) { encodedValue ->
+                                        if (tokenCaptured) return@evaluateJavascript
+                                        val storedValue = runCatching {
+                                            JSONTokener(encodedValue.orEmpty()).nextValue() as? String
+                                        }.getOrNull().orEmpty()
+                                        val token = runCatching {
+                                            JSONTokener(storedValue).nextValue() as? String
+                                        }.getOrNull() ?: storedValue.removeSurrounding("\"")
+                                        if (token.isNotBlank() && token != "null" && token != "undefined") {
+                                            tokenCaptured = true
+                                            discordTokenPref.value = token
+                                            navController.navigateUp()
+                                        } else if (attempts < 12) {
+                                            view.postDelayed(this, 500)
+                                        }
+                                    }
                                 }
                             }
-                            view.visibility = View.GONE
-                            result.confirm()
-                            return true
+                            view.post(captureTask)
                         }
                     }
 
-                    webViewRef.value = this
+                    webView = this
                     loadUrl("https://discord.com/login")
                 }
             }
         )
     }
 
-    BackHandler(enabled = webViewRef.value?.canGoBack() == true) {
-        webViewRef.value?.goBack()
+    BackHandler(enabled = webView?.canGoBack() == true) {
+        webView?.goBack()
     }
 }

@@ -105,7 +105,11 @@ fun rememberPlaylistCoverPicker(
             // Persist the crop out of the volatile cache dir and store it as a local DB
             // override so EVERY card (local or online) updates immediately, regardless of
             // whether the playlist can be synced to YouTube.
-            val localUri = persistPlaylistCover(context, uri, playlist.playlist.id) ?: uri
+            val localUri = persistPlaylistCover(context, uri, playlist.playlist.id)
+            if (localUri == null) {
+                withContext(Dispatchers.Main) { onError(context.getString(R.string.edit_playlist_cover)) }
+                return@withContext
+            }
             database.query { update(playlist.playlist.copy(thumbnailUrl = localUri.toString())) }
             
             withContext(Dispatchers.Main) {
@@ -118,9 +122,6 @@ fun rememberPlaylistCoverPicker(
                 val bytes = uriToByteArray(context, uri)
                 if (bytes != null) {
                     YouTube.uploadCustomThumbnailLink(browseId, bytes)
-                        .onSuccess { newUrl ->
-                            database.query { update(playlist.playlist.copy(thumbnailUrl = newUrl)) }
-                        }
                         .onFailure {
                             if (it is ClientRequestException) {
                                 onError("${it.response.status.value} ${it.response.status.description}")
@@ -148,10 +149,14 @@ fun rememberPlaylistCoverPicker(
 internal fun persistPlaylistCover(context: Context, src: Uri, playlistId: String): Uri? = runCatching {
     val safeId = playlistId.replace(Regex("[^A-Za-z0-9_-]"), "_")
     val dir = File(context.filesDir, "playlist_covers").apply { mkdirs() }
-    dir.listFiles { f -> f.name.startsWith("${safeId}_") }?.forEach { it.delete() }
     val dest = File(dir, "${safeId}_${System.currentTimeMillis()}.jpg")
     context.contentResolver.openInputStream(src)?.use { input ->
         dest.outputStream().use { out -> input.copyTo(out) }
     } ?: return@runCatching null
+    if (dest.length() == 0L) {
+        dest.delete()
+        return@runCatching null
+    }
+    dir.listFiles { f -> f != dest && f.name.startsWith("${safeId}_") }?.forEach { it.delete() }
     dest.toUri()
 }.getOrNull()

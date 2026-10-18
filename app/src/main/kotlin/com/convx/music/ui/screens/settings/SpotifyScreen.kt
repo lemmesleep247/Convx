@@ -8,6 +8,8 @@ import android.webkit.CookieManager
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.webkit.WebSettingsCompat
+import androidx.webkit.WebViewFeature
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -505,6 +507,11 @@ private fun SpotifyLoginSheet(
                         settings.setSupportZoom(true)
                         settings.builtInZoomControls = true
                         settings.displayZoomControls = false
+                        // Spotify rejects embedded WebViews; drop the WebView markers from the UA.
+                        settings.userAgentString = settings.userAgentString.replace("; wv", "")
+                        if (WebViewFeature.isFeatureSupported(WebViewFeature.REQUESTED_WITH_HEADER_ALLOW_LIST)) {
+                            WebSettingsCompat.setRequestedWithHeaderOriginAllowList(settings, emptySet())
+                        }
                         webViewClient = object : WebViewClient() {
                             private fun captureCookies(url: String?): Boolean {
                                 if (captured) return true
@@ -537,7 +544,7 @@ private fun SpotifyLoginSheet(
                             override fun shouldOverrideUrlLoading(
                                 view: WebView,
                                 request: WebResourceRequest,
-                            ): Boolean = captureCookies(request.url?.toString())
+                            ): Boolean = request.isForMainFrame && captureCookies(request.url?.toString())
 
                             override fun onPageStarted(
                                 view: WebView,
@@ -553,8 +560,10 @@ private fun SpotifyLoginSheet(
                         }
                         webChromeClient = android.webkit.WebChromeClient()
                         webView = this
-                        cookieManager.removeAllCookies(null)
-                        cookieManager.flush()
+                        // CookieManager is shared by every WebView in the app. Clearing it here
+                        // races its asynchronous callback against loadUrl(), and also removes the
+                        // user's Discord session. Keep the existing browser session and let the
+                        // normal page callbacks detect Spotify's authenticated cookie.
                         loadUrl(SpotifyAuth.LOGIN_URL)
                     }
                 },

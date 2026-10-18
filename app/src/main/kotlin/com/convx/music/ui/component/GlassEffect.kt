@@ -276,8 +276,8 @@ val LocalAppleMusicUi = staticCompositionLocalOf { false }
 
 /**
  * Draws a glass surface from [LocalAppBackdrop], applying configured blur,
- * vibrancy, tint, and optional edge effects. No-op on devices without
- * RenderEffect support. [shape] must be a [CornerBasedShape] for lens effects.
+ * vibrancy, tint, and optional edge effects. On unsupported devices it paints
+ * a readable tinted surface. [shape] must be a [CornerBasedShape] for lens effects.
  */
 @Composable
 fun Modifier.liquidGlass(
@@ -298,7 +298,14 @@ fun Modifier.liquidGlass(
     /** Disable for surfaces that draw their own elevation shadow. */
     outerShadow: Boolean = true,
 ): Modifier {
-    if (!isGlassAllowed()) return this
+    if (!isGlassAllowed()) {
+        val dark = glassUsesDarkAppearance()
+        val base = com.convx.music.ui.theme.GlassTintTokens.glassBaseColor(dark)
+        val tint = config.surfaceTintColor.takeIf { it.isSpecified }
+        return this.clip(shape)
+            .background(base.copy(alpha = 0.85f))
+            .then(if (tint != null) Modifier.background(tint.copy(alpha = config.surfaceOpacity.coerceIn(0f, 1f))) else Modifier)
+    }
     val pool = LocalPooledGlass.current
     // Only when the pool holds this exact treatment; a caller that asked for its own
     // radius (the full player's heavier blur) still runs its own chain.
@@ -322,7 +329,10 @@ fun Modifier.liquidGlass(
     val ambientColor = LocalAmbientBackgroundColor.current.value
     val isDark = glassUsesDarkAppearance()
     val baseSurfaceColor = com.convx.music.ui.theme.GlassTintTokens.glassBaseColor(isDark)
-    val baseSurfaceOpacity = if (isDark) {
+    // A configured tint already carries the chosen opacity. Painting the base
+    // beneath it made the transparency slider barely visible, especially when
+    // the default tint and base were the same color.
+    val baseSurfaceOpacity = if (config.surfaceTintColor.isSpecified) 0f else if (isDark) {
         com.convx.music.ui.theme.GlassTintTokens.BaseSurfaceOpacityDark
     } else {
         com.convx.music.ui.theme.GlassTintTokens.BaseSurfaceOpacityLight

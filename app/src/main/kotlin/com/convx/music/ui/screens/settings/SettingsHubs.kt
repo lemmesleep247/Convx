@@ -143,6 +143,8 @@ object SettingsHubs {
                     SettingsLink("Advanced playback", R.drawable.settings, { systemGray }, route("settings/player/advanced"),
                         "Offload, bit-perfect and queue rules", "offload bit perfect duplicates history duration"),
                     SettingsLink("JioSaavn", R.drawable.music_note, { systemTeal }, route("settings/player/jio"), "Streaming source settings"),
+                    SettingsLink("AI DJ analysis", R.drawable.equalizer, { systemPurple }, route("ai_dj_set"),
+                        "Analyze songs and build a mix", "bpm key mix analysis"),
                 ),
             ),
         ),
@@ -215,6 +217,7 @@ object SettingsHubs {
                 listOf(
                     SettingsLink("YouTube Music", R.drawable.account, { systemRed }, route("settings/account"), "Sign-in, sync and ListenBrainz", "login youtube sync listenbrainz"),
                     SettingsLink("Spotify", R.drawable.spotify, { systemGreen }, route("settings/spotify"), "Connect and import playlists", "import"),
+                    SettingsLink("Apple Music import", R.drawable.playlist_add, { systemRed }, route("settings/backup_restore"), "Import playlists from a link or export", "apple music import"),
                     SettingsLink("Discord", R.drawable.discord, { systemIndigo }, route("settings/integrations/discord"), "Listening status", "rich presence"),
                     SettingsLink("Last.fm", R.drawable.music_note, { systemRed }, route("settings/integrations/lastfm"), "Scrobbling", "scrobble"),
                 ),

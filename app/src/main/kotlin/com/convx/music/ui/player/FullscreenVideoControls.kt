@@ -55,9 +55,10 @@ internal fun FullscreenVideoOrientation() {
     val view = LocalView.current
     DisposableEffect(activity) {
         val previous = activity?.requestedOrientation
-        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        // Fullscreen video follows the device in portrait and landscape.
+        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR
         onDispose {
-            if (activity != null && previous != null && activity.requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE) {
+            if (activity != null && previous != null && activity.requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR) {
                 activity.requestedOrientation = previous
             }
         }

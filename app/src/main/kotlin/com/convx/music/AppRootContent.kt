@@ -965,6 +965,7 @@ internal fun AppRootContent(
                                 listOf(Screens.Explore) +
                                 navigationItems.filter { it == Screens.Radio } +
                                 listOf(Screens.Library)
+                            val visibleRailItems = railItems.filter { it in floatingNavigationItems }
                             val onRailClick: (Screens, Boolean) -> Unit = { screen, selected ->
                                 if (screen == Screens.Library) {
                                     onLibraryFilterChange(com.convx.music.constants.LibraryFilter.LIBRARY)
@@ -987,7 +988,7 @@ internal fun AppRootContent(
                                     Box(Modifier.fillMaxSize()) {
                                         if (asPill) {
                                             AppTabViewTopPill(
-                                                navigationItems = railItems,
+                                                navigationItems = visibleRailItems,
                                                 currentRoute = effectiveRoute,
                                                 onItemClick = onRailClick,
                                                 onOpenSidebar = { topNavMenuOpen = true },
@@ -1000,7 +1001,7 @@ internal fun AppRootContent(
                                             )
                                         } else {
                                             AppFloatingSideBar(
-                                                navigationItems = railItems,
+                                                navigationItems = visibleRailItems,
                                                 currentRoute = effectiveRoute,
                                                 onItemClick = onRailClick,
                                                 sections = sidebarSections,

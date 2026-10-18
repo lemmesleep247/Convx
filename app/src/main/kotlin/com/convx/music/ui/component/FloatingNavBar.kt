@@ -230,8 +230,8 @@ private fun AppFloatingNavBarChrome(
     // The Library screens' accent, so the selected tab matches the icons on those screens.
     val selectedIconColor = IosTheme.tint
     val selectedLabelColor = selectedIconColor
-    // Inactive tabs are a fixed grey; the additive chrome lifts it a little.
-    val unselectedIconColor = if (isDark) NavInactiveGreyDark else NavInactiveGreyLight
+    // Keep every tab readable, including after restoring an older theme backup.
+    val unselectedIconColor = AppTheme.colorScheme.onSurface.copy(alpha = 0.82f)
     val unselectedLabelColor = unselectedIconColor
 
     val targetRimColor = com.convx.music.ui.theme.GlassTintTokens.pluckColor(isDark, ambientColor, glassConfig.highlightColor)
@@ -357,11 +357,9 @@ private fun AppFloatingNavBarChrome(
                 key = screen.route,
                 title = {
                     // Inactive labels get the same chrome as the glyphs: light ink, colour-dodged onto the glass.
-                    val labelChrome = isDark && !isSelected
                     Text(
                         text = stringResource(screen.titleId),
-                        modifier = Modifier.vibrantChrome(labelChrome).additiveChrome(labelChrome, 0.5f),
-                        color = if (isSelected) selectedLabelColor else if (isDark) VibrantIconInk else unselectedLabelColor,
+                        color = if (isSelected) selectedLabelColor else unselectedLabelColor,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         fontSize = 10.sp,
@@ -378,7 +376,7 @@ private fun AppFloatingNavBarChrome(
                                 symbol = sf(name),
                                 contentDescription = stringResource(screen.titleId),
                                 size = screen.glyphSize() * 0.8f,
-                                chrome = MenuIconChrome,
+                                chrome = 0f,
                                 tint = tint,
                                 mode = SfRenderingMode.Monochrome,
                                 bounceOnEnter = true,

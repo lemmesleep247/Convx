@@ -71,7 +71,7 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          ./gradlew assembleUniversalGmsRelease -Pnightly=true -PnightlyRun=${{ github.run_number }} --no-configuration-cache --console=plain --warning-mode summary -x lint
+          ./gradlew assembleUniversalGmsRelease assembleArm32GmsRelease -Pnightly=true -PnightlyRun=${{ github.run_number }} --no-configuration-cache --console=plain --warning-mode summary -x lint
 
       - name: Upload Signed APK
         uses: actions/upload-artifact@v4
@@ -85,16 +85,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="2.0.0-nightly"
-          TITLE="Convx 2.0.0 Nightly"
+          VERSION=$(sed -n 's/^VERSION_MAJOR=//p' version.properties).$(sed -n 's/^VERSION_MINOR=//p' version.properties).$(sed -n 's/^VERSION_PATCH=//p' version.properties)
+          TAG="${VERSION}-nightly"
+          TITLE="Convx ${VERSION} Nightly"
           APK=$(find app/build/outputs/apk/universalGms/release -name '*.apk' | head -n 1)
           cp "$APK" "convx-${TAG}.apk"
+          APK32=$(find app/build/outputs/apk/arm32Gms/release -name '*.apk' | head -n 1)
+          cp "$APK32" "convx-arm32-${TAG}.apk"
           git tag -f "$TAG" "$GITHUB_SHA"
           git push -f origin "refs/tags/$TAG"
-          NOTES=".github/release-notes/2.0.0-nightly.md"
+          NOTES=".github/release-notes/${TAG}.md"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TITLE" --notes-file "$NOTES" --prerelease
-            gh release upload "$TAG" "convx-${TAG}.apk" --repo "$GITHUB_REPOSITORY" --clobber
+            gh release upload "$TAG" "convx-${TAG}.apk" "convx-arm32-${TAG}.apk" --repo "$GITHUB_REPOSITORY" --clobber
           else
-            gh release create "$TAG" "convx-${TAG}.apk" --repo "$GITHUB_REPOSITORY" --title "$TITLE" --notes-file "$NOTES" --prerelease --latest=false
+            gh release create "$TAG" "convx-${TAG}.apk" "convx-arm32-${TAG}.apk" --repo "$GITHUB_REPOSITORY" --title "$TITLE" --notes-file "$NOTES" --prerelease --latest=false
           fi

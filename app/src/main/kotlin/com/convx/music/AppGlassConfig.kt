@@ -93,46 +93,28 @@ fun rememberGlassConfigState(artworkChromeDark: Boolean): GlassConfigState {
     val (liquidGlassSidePanelSurfaceOpacity) = rememberPreference(LiquidGlassSidePanelSurfaceOpacityKey, defaultValue = 0.75f)
     val (liquidGlassSidePanelTextColorInt) = rememberPreference(LiquidGlassSidePanelTextColorKey, defaultValue = 0)
 
-    // Zero uses the current theme defaults; custom colors use saved opacity.
+    // The tint follows the theme, while opacity always follows the user's slider.
     val resolvedGlassTint = resolveGlassTint(
         liquidGlassSurfaceTintColorInt,
         artworkChromeDark,
         GlassTintTokens.DefaultSurfaceDark,
         GlassTintTokens.DefaultSurfaceLight,
     )
-    val resolvedGlassOpacity = resolveGlassOpacity(
-        liquidGlassSurfaceTintColorInt,
-        liquidGlassSurfaceOpacity,
-        artworkChromeDark,
-        GlassTintTokens.DefaultSurfaceOpacityDark,
-        GlassTintTokens.DefaultSurfaceOpacityLight,
-    )
+    val resolvedGlassOpacity = liquidGlassSurfaceOpacity.coerceIn(0f, 1f)
     val resolvedPuckTint = resolveGlassTint(
         liquidGlassPuckColorInt,
         artworkChromeDark,
         GlassTintTokens.DefaultPuckDark,
         GlassTintTokens.DefaultPuckLight,
     )
-    val resolvedPuckOpacity = resolveGlassOpacity(
-        liquidGlassPuckColorInt,
-        liquidGlassPuckOpacity,
-        artworkChromeDark,
-        GlassTintTokens.DefaultPuckOpacityDark,
-        GlassTintTokens.DefaultPuckOpacityLight,
-    )
+    val resolvedPuckOpacity = liquidGlassPuckOpacity.coerceIn(0f, 1f)
     val resolvedHighlightTint = resolveGlassTint(
         liquidGlassHighlightColorInt,
         artworkChromeDark,
         GlassTintTokens.DefaultHighlightDark,
         GlassTintTokens.DefaultHighlightLight,
     )
-    val resolvedHighlightOpacity = resolveGlassOpacity(
-        liquidGlassHighlightColorInt,
-        liquidGlassHighlightOpacity,
-        artworkChromeDark,
-        GlassTintTokens.DefaultHighlightOpacityDark,
-        GlassTintTokens.DefaultHighlightOpacityLight,
-    )
+    val resolvedHighlightOpacity = liquidGlassHighlightOpacity.coerceIn(0f, 1f)
     val resolvedSidePanelTint = if (liquidGlassSidePanelColorInt == 0) {
         if (artworkChromeDark) Color.Black else Color.White
     } else {
@@ -214,18 +196,6 @@ private fun resolveGlassTint(
     lightDefault: Color,
 ): Color = when {
     customColor != 0 -> Color(customColor)
-    artworkChromeDark -> darkDefault
-    else -> lightDefault
-}
-
-private fun resolveGlassOpacity(
-    customColor: Int,
-    customOpacity: Float,
-    artworkChromeDark: Boolean,
-    darkDefault: Float,
-    lightDefault: Float,
-): Float = when {
-    customColor != 0 -> customOpacity
     artworkChromeDark -> darkDefault
     else -> lightDefault
 }

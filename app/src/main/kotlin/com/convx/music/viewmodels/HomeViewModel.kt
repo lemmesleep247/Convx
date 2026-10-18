@@ -808,7 +808,15 @@ class HomeViewModel @Inject constructor(
                 val hideExplicit = context.dataStore.get(HideExplicitKey, false)
                 val hideVideoSongs = context.dataStore.get(HideVideoSongsKey, false) || context.dataStore.get(DataSaverEnabledKey, false)
                 val hideYoutubeShorts = context.dataStore.get(HideYoutubeShortsKey, false)
-                val nextPage = YouTube.home(continuation).getOrNull() ?: return@launch
+                val nextPage = YouTube.home(continuation).getOrElse {
+                    reportException(it)
+                    // The list remains near its end after a failed request. Clear the
+                    // continuation so the scroll observer cannot hammer the same page.
+                    homePage.value?.takeIf { it.continuation == continuation }?.let { current ->
+                        homePage.value = current.copy(continuation = null)
+                    }
+                    return@launch
+                }
                 val currentPage = homePage.value
                 // A chip switch or refresh replaced the page while this was in flight.
                 if (currentPage == null || currentPage.continuation != continuation) return@launch
@@ -816,9 +824,14 @@ class HomeViewModel @Inject constructor(
                     val items = filterHomeItems(section.items, hideExplicit, hideVideoSongs, hideYoutubeShorts)
                     if (items.isEmpty()) null else section.copy(items = items)
                 }
+                // YouTube can return an empty terminal page or echo the same token.
+                // In either case there is no next page to request; leaving the token
+                // unchanged makes the near-end scroll observer retry forever.
+                val nextContinuation = nextPage.continuation
+                    ?.takeIf { it != continuation && newSections.isNotEmpty() }
                 val extended = currentPage.copy(
                     sections = currentPage.sections + newSections,
-                    continuation = nextPage.continuation,
+                    continuation = nextContinuation,
                 )
                 homePage.value = extended
                 selectedChip.value?.let { cacheChipPage(it, extended) }
@@ -917,8 +930,12 @@ class HomeViewModel @Inject constructor(
         synchronized(chipPages) { chipPages.clear() }
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                load()
+                // Refresh includes optional recommendations and account shelves. A
+                // stalled auxiliary request must not leave the pull indicator spinning
+                // forever after the main feed has already been refreshed.
+                kotlinx.coroutines.withTimeoutOrNull(30_000L) { load() }
             } finally {
+                isLoading.value = false
                 isRefreshing.value = false
             }
         }
