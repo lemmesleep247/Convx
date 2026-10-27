@@ -127,6 +127,17 @@
                 <data android:host="party" />
             </intent-filter>
 
+            <!-- General Convx scheme for direct deep links (convx://watch?v=..., convx://playlist?list=..., etc.) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.media.action.MEDIA_PLAY_FROM_SEARCH" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data android:scheme="convx" />
+            </intent-filter>
+
             <!-- Custom scheme for direct opens from browser (works in ALL browsers) -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
@@ -164,6 +175,34 @@
                 <!-- playlist prefix -->
                 <data android:pathPrefix="/playlist" />
                 <!-- browse prefix -->
+                <data android:pathPrefix="/browse/" />
+                <!-- search prefix -->
+                <data android:pathPrefix="/search" />
+            </intent-filter>
+
+            <!-- Convx domain filter -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.media.action.MEDIA_PLAY_FROM_SEARCH" />
+                <action android:name="android.nfc.action.NDEF_DISCOVERED" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data android:scheme="http" />
+                <data android:scheme="https" />
+                <data android:host="convx.aryavl.com" />
+                <!-- video prefix -->
+                <data android:pathPrefix="/v/" />
+                <data android:pathPrefix="/watch" />
+                <data android:pathPrefix="/song/" />
+                <!-- channel prefix -->
+                <data android:pathPrefix="/channel/" />
+                <data android:pathPrefix="/artist/" />
+                <!-- playlist prefix -->
+                <data android:pathPrefix="/playlist" />
+                <!-- album prefix -->
+                <data android:pathPrefix="/album/" />
                 <data android:pathPrefix="/browse/" />
                 <!-- search prefix -->
                 <data android:pathPrefix="/search" />
